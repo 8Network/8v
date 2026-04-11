@@ -1,0 +1,29 @@
+# Expected diagnostics for the terraform-violations fixture.
+#
+# Contains known Terraform violations:
+#   - terraform_deprecated_interpolation: "${var.name}" instead of var.name
+#   - terraform_unused_declarations: unused_var declared but never used
+#   - terraform_naming_convention: myAppName uses camelCase instead of snake_case
+
+stack = "terraform"
+
+[[check]]
+tool = "tflint"
+
+[[check.diagnostic]]
+rule = "terraform_deprecated_interpolation"
+file = "main.tf"
+severity = "warning"
+message_contains = "deprecated"
+
+[[check.diagnostic]]
+rule = "terraform_unused_declarations"
+file = "main.tf"
+severity = "warning"
+message_contains = "unused"
+
+[[check.diagnostic]]
+rule = "terraform_naming_convention"
+file = "main.tf"
+severity = "warning"
+message_contains = "should be"

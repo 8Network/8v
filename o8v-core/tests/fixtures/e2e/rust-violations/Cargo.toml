@@ -1,0 +1,10 @@
+[workspace]
+members = ["lib-crate", "app-crate"]
+resolver = "2"
+
+[package]
+name = "test-violations"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

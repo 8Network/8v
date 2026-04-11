@@ -1,0 +1,12 @@
+{
+  // Deno workspace root fixture
+  "name": "@acme/edge-suite",
+  "version": "3.1.0",
+  "workspace": [
+    "./apps/api",
+    "./packages/shared"
+  ],
+  "tasks": {
+    "dev": "deno run --watch apps/api/main.ts"
+  }
+}

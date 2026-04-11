@@ -1,0 +1,9 @@
+[project]
+name = "test-violations"
+version = "0.1.0"
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I"]

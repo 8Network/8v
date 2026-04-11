@@ -1,0 +1,36 @@
+# Expected checks for dotnet-violations fixture.
+# Multi-file project: Program.cs + Services/Calculator.cs
+# Violations span two files and three diagnostic codes:
+#   CS0219 — variable assigned but never used (Program.cs)
+#   CS0168 — catch variable declared but never used (Services/Calculator.cs)
+#   CS8602 — dereference of a possibly null reference (Services/Calculator.cs)
+# All promoted to errors by TreatWarningsAsErrors + Nullable=enable.
+
+stack = "dotnet"
+
+[[check]]
+tool = "dotnet build"
+
+[[check.diagnostic]]
+rule = "CS0219"
+file = "Program.cs"
+severity = "error"
+message_contains = "variable 'x'"
+
+[[check.diagnostic]]
+rule = "CS0168"
+file = "Services/Calculator.cs"
+severity = "error"
+message_contains = "variable 'e'"
+
+[[check.diagnostic]]
+rule = "CS8602"
+file = "Services/Calculator.cs"
+severity = "error"
+message_contains = "possibly null reference"
+
+# ─── shellcheck ────────────────────────────────────────────────────────────────
+# No shell files in this fixture.
+
+[[check]]
+tool = "shellcheck"

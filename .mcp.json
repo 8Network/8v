@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "8v-debug": {
+      "command": "./target/debug/8v",
+      "args": ["mcp"]
+    }
+  }
+}

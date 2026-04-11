@@ -1,0 +1,49 @@
+# Expected checks for go-violations fixture.
+#
+# Two source files with cross-file references:
+#   main.go  — printf format mismatch, uses add() from utils.go
+#   utils.go — unreachable code, malformed struct tag, unused funcs
+
+stack = "go"
+
+[[check]]
+tool = "go vet"
+
+[[check.diagnostic]]
+rule = "printf"
+file = "main.go"
+severity = "error"
+message_contains = "wrong type"
+
+[[check.diagnostic]]
+rule = "unreachable"
+file = "utils.go"
+severity = "error"
+message_contains = "unreachable code"
+
+[[check.diagnostic]]
+rule = "structtag"
+file = "utils.go"
+severity = "error"
+message_contains = "bad syntax for struct tag"
+
+[[check]]
+tool = "staticcheck"
+
+[[check.diagnostic]]
+rule = "SA5009"
+file = "main.go"
+severity = "error"
+message_contains = "wrong type"
+
+[[check.diagnostic]]
+rule = "U1000"
+file = "utils.go"
+severity = "error"
+message_contains = "unused"
+
+# ─── shellcheck ────────────────────────────────────────────────────────────────
+# No shell files in this fixture.
+
+[[check]]
+tool = "shellcheck"

@@ -1,0 +1,72 @@
+# Expected checks for python-violations fixture.
+# Multi-file Python project with violations across F, E, and I rule categories.
+
+stack = "python"
+
+[[check]]
+tool = "ruff"
+
+# ── app.py ──────────────────────────────────────────────────────────────────
+
+[[check.diagnostic]]
+rule = "I001"
+file = "app.py"
+severity = "error"
+message_contains = "un-sorted"
+
+[[check.diagnostic]]
+rule = "F401"
+file = "app.py"
+severity = "error"
+message_contains = "sys"
+
+[[check.diagnostic]]
+rule = "F401"
+file = "app.py"
+severity = "error"
+message_contains = "os"
+
+[[check.diagnostic]]
+rule = "F401"
+file = "app.py"
+severity = "error"
+message_contains = "json"
+
+# ── models.py ────────────────────────────────────────────────────────────────
+
+[[check.diagnostic]]
+rule = "F401"
+file = "models.py"
+severity = "error"
+message_contains = "os"
+
+[[check.diagnostic]]
+rule = "I001"
+file = "models.py"
+severity = "error"
+message_contains = "un-sorted"
+
+# ── utils.py ─────────────────────────────────────────────────────────────────
+
+[[check.diagnostic]]
+rule = "F401"
+file = "utils.py"
+severity = "error"
+message_contains = "os"
+
+[[check.diagnostic]]
+rule = "E501"
+file = "utils.py"
+severity = "error"
+message_contains = "Line too long"
+
+# ─── mypy ──────────────────────────────────────────────────────────────────────
+
+[[check]]
+tool = "mypy"
+
+# ─── shellcheck ────────────────────────────────────────────────────────────────
+# No shell files in this fixture.
+
+[[check]]
+tool = "shellcheck"

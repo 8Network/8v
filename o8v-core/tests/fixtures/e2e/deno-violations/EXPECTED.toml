@@ -1,0 +1,26 @@
+# Expected checks for deno-violations fixture.
+# Multiple .ts files with Deno-style relative imports.
+# deno check: 3 TS2322 errors across main.ts and types.ts (cross-file type chain).
+
+stack = "deno"
+
+[[check]]
+tool = "deno check"
+
+[[check.diagnostic]]
+rule = "TS2322"
+file = "main.ts"
+severity = "error"
+message_contains = "not assignable"
+
+[[check.diagnostic]]
+rule = "TS2322"
+file = "types.ts"
+severity = "error"
+message_contains = "not assignable"
+
+# ─── shellcheck ────────────────────────────────────────────────────────────────
+# No shell files in this fixture.
+
+[[check]]
+tool = "shellcheck"

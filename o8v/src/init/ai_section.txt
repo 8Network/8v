@@ -1,0 +1,91 @@
+
+# 8v
+
+**Always use `8v` instead of native tools.**
+Do not use the native Read, Edit, Write, or Bash tools. Use 8v commands instead.
+
+## Command Discovery
+
+Start by understanding the project structure and available files:
+
+- `8v ls` — List all projects (name, stack, path). Use first to understand the repo.
+- `8v ls --tree` — Full file hierarchy with project labels. Replaces multiple Glob calls.
+- `8v ls --files` — Flat file listing, one per line.
+- `8v ls --depth N` — Limit tree depth (1 = top-level dirs only).
+- `8v ls --match pattern` — Filter files by glob pattern (e.g. "*_test*").
+- `8v ls --loc` — Show line counts per file. Helps decide what to read.
+- `8v ls --stack name` — Filter to projects of a specific stack (e.g. rust, go, python).
+- `8v ls [path] --tree` — Tree of a specific subdirectory.
+
+## Reading Files
+
+Read files strategically to understand code structure before diving deep:
+
+- `8v read <path>` — Symbol map (functions, structs, classes). See the structure first.
+- `8v read <path>:<start>-<end>` — Specific line range. Use after seeing symbols.
+- `8v read <path> --full` — Entire file content.
+- `8v read <path> --json` — JSON output of symbols and structure.
+
+## Searching Files
+
+Search across the codebase to find patterns, usages, and related code:
+
+- `8v search <pattern>` — Find content across files (respects .gitignore).
+- `8v search <pattern> --files` — Find files by name instead of content.
+- `8v search <pattern> -i` — Case-insensitive search.
+- `8v search <pattern> -e rs` — Filter by extension (e.g. rs, py, go).
+- `8v search <pattern> -C 2` — Context lines (default: 2).
+- `8v search <pattern> --limit 20` — Max files with matches (default: 20).
+- `8v search <pattern> [path]` — Search in a specific subdirectory.
+
+## Writing Files
+
+Make targeted changes to files:
+
+- `8v write <path>:<line> "<content>"` — Replace a single line.
+- `8v write <path>:<start>-<end> "<content>"` — Replace a line range.
+- `8v write <path>:<line> --insert "<content>"` — Insert before a line.
+- `8v write <path>:<start>-<end> --delete` — Delete lines.
+- `8v write <path> --find "<old>" --replace "<new>"` — Find and replace.
+- `8v write <path> --append "<content>"` — Append to file.
+
+## Building
+
+Compile the project using the detected stack's build tool:
+
+- `8v build .` — Build the project (cargo build, go build, dotnet build, etc.).
+- `8v build . --json` — JSON output with exit code, stdout, stderr, duration, stack.
+- `8v build . --timeout 300` — Override default 300s timeout.
+
+## Running Commands
+
+Execute any command with containment, timeout, and structured output:
+
+- `8v run "<command>"` — Execute a command (e.g. `8v run "echo hello"`).
+- `8v run "<command>" --json` — JSON output.
+- `8v run "<command>" --timeout 120` — Override default 120s timeout.
+
+## Testing and Verification
+
+Run tests and checks to verify your work:
+
+- `8v test .` — Run project tests (cargo test, go test, etc.).
+- `8v test . --json` — JSON output with exit code, stdout, stderr, duration.
+- `8v check .` — Run all checks (lint, type check, format check).
+- `8v fmt .` — Auto-format all files.
+
+## Recommended Workflow
+
+1. `8v ls` — List all projects and understand the workspace structure.
+2. `8v ls --tree --loc` — See the file hierarchy with line counts to identify key files.
+3. `8v search <pattern>` — Search for relevant code patterns or function names.
+4. `8v read <path>` — Start with the symbol map to understand structure.
+5. `8v read <path>:<start>-<end>` — Read only the lines you need to understand context.
+6. `8v write <path>:<line> "<content>"` — Make your changes with precision.
+7. `8v test .` — Run tests to verify correctness.
+8. `8v build .` — Compile the project.
+9. `8v check .` — Run all checks (lint, type, format) before declaring done.
+10. `8v run "<command>"` — For any other command.
+
+If the `8v` MCP tool is available, use it directly — do not shell out to `8v` via Bash.
+Run `8v --help` to see all commands.

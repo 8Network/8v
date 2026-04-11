@@ -1,0 +1,35 @@
+# Expected diagnostics for the ruby-violations fixture.
+#
+# Multi-file Ruby project with rubocop violations across:
+#   - app.rb: unused variables, style violations
+#   - utils.rb: unused variables, dead code
+#
+# Each [[check]] section lists representative violations that rubocop detects.
+# Tools may produce additional diagnostics — extra ones are allowed.
+
+stack = "ruby"
+
+[[check]]
+tool = "rubocop"
+
+# ── app.rb ──────────────────────────────────────────────────────────────────
+
+[[check.diagnostic]]
+rule = "Lint/UselessAssignment"
+file = "app.rb"
+severity = "error"
+message_contains = "unused variable"
+
+[[check.diagnostic]]
+rule = "Style/StringLiterals"
+file = "app.rb"
+severity = "warning"
+message_contains = "single quoted"
+
+# ── utils.rb ────────────────────────────────────────────────────────────────
+
+[[check.diagnostic]]
+rule = "Lint/UselessAssignment"
+file = "utils.rb"
+severity = "error"
+message_contains = "unused variable"

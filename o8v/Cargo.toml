@@ -1,0 +1,70 @@
+[package]
+name = "o8v"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license = "BSL-1.1"
+authors = ["Soheil Alizadeh <soheil@8network.io>"]
+description = "CLI for 8v — one command checks everything"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "8v"
+path = "src/main.rs"
+
+[dependencies]
+o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
+o8v-process = { path = "../o8v-process", version = "0.1.0" }
+o8v-project = { path = "../o8v-project", version = "0.1.0" }
+o8v-core = { path = "../o8v-core", version = "0.1.0" }
+o8v-stacks = { path = "../o8v-stacks", version = "0.1.0" }
+o8v-check = { path = "../o8v-check", version = "0.1.0" }
+o8v-workspace = { path = "../o8v-workspace", version = "0.1.0" }
+o8v-events = { path = "../o8v-events", version = "0.1.0" }
+clap = { version = "4", features = ["derive"] }
+shlex = "1"
+ctrlc = "3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = { version = "2", features = ["rustls"] }
+sha2 = "0.10"
+semver = "1"
+rmcp = { version = "1.3.0", features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["macros", "rt", "io-std"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+dialoguer = "0.11"
+serde_json = "1"
+toml = "0.8"
+url = "2"
+ignore = "0.4"
+regex = "1"
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "https://releases.8vast.io/v{version}/8v-darwin-arm64"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "https://releases.8vast.io/v{version}/8v-darwin-x64"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-musl]
+pkg-url = "https://releases.8vast.io/v{version}/8v-linux-x64"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-musl]
+pkg-url = "https://releases.8vast.io/v{version}/8v-linux-arm64"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "https://releases.8vast.io/v{version}/8v-linux-x64"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "https://releases.8vast.io/v{version}/8v-linux-arm64"
+
+[dev-dependencies]
+tempfile = "3"
+serde_json = "1"
+o8v-testkit = { path = "../o8v-testkit", version = "0.1.0" }

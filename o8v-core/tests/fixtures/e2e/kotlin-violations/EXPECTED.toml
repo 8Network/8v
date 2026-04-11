@@ -1,0 +1,29 @@
+# Expected diagnostics for the kotlin-violations fixture.
+#
+# Single Kotlin project with ktlint violations:
+#   - Indentation inconsistency
+#   - Extra whitespace around assignment
+#   - Missing newline at end of file
+
+stack = "kotlin"
+
+[[check]]
+tool = "ktlint"
+
+[[check.diagnostic]]
+rule = "indent"
+file = "src/main/kotlin/App.kt"
+severity = "error"
+message_contains = "indent"
+
+[[check.diagnostic]]
+rule = "spacing"
+file = "src/main/kotlin/App.kt"
+severity = "error"
+message_contains = "spacing"
+
+[[check.diagnostic]]
+rule = "final-newline"
+file = "src/main/kotlin/App.kt"
+severity = "error"
+message_contains = "newline"

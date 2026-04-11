@@ -1,0 +1,48 @@
+//! TypeScript stack — tsc, eslint, biome, oxlint (via local node_modules/.bin).
+
+use super::node::{biome_check, oxlint_check, prettier_check, prettier_formatter, NodeToolCheck};
+use crate::stack_tools::{BuildTool, StackTools};
+
+const STACK: &str = "typescript";
+
+/// Returns all tools for the typescript stack.
+pub fn tools() -> StackTools {
+    StackTools {
+        checks: vec![
+            Box::new(NodeToolCheck {
+                name: "tsc",
+                program: "tsc",
+                args: &["--noEmit", "--pretty", "false"],
+                stack: STACK,
+                parser: Some(crate::parse::tsc::parse),
+                skip_stderr_pattern: None,
+                optional: false,
+            }),
+            Box::new(NodeToolCheck {
+                name: "eslint",
+                program: "eslint",
+                args: &[
+                    ".",
+                    "--ext",
+                    ".ts,.tsx",
+                    "--format=json",
+                    "--max-warnings",
+                    "0",
+                ],
+                stack: STACK,
+                parser: Some(crate::parse::eslint::parse),
+                skip_stderr_pattern: Some("eslint.config"),
+                optional: false,
+            }),
+            Box::new(prettier_check(STACK)),
+            Box::new(biome_check(STACK)),
+            Box::new(oxlint_check(STACK)),
+        ],
+        formatter: Some(prettier_formatter()),
+        test_runner: None,
+        build_tool: Some(BuildTool {
+            program: "tsc",
+            args: &[],
+        }),
+    }
+}

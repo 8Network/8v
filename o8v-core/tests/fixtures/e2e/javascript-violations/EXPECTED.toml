@@ -1,0 +1,61 @@
+# Expected checks for javascript-violations fixture.
+# Requires npm install before tests run.
+# Multiple .js files with cross-file require() calls.
+# Violations: no-unused-vars, no-console, eqeqeq, no-var across app.js, utils.js, db.js.
+# 8 total diagnostics (within renderer limit of 10 so all file names appear in plain output).
+
+stack = "javascript"
+
+[[check]]
+tool = "eslint"
+
+[[check.diagnostic]]
+rule = "no-var"
+file = "app.js"
+severity = "error"
+message_contains = "Unexpected var"
+
+[[check.diagnostic]]
+rule = "no-unused-vars"
+file = "app.js"
+severity = "error"
+message_contains = "never used"
+
+[[check.diagnostic]]
+rule = "no-console"
+file = "app.js"
+severity = "warning"
+message_contains = "console statement"
+
+[[check.diagnostic]]
+rule = "eqeqeq"
+file = "app.js"
+severity = "error"
+message_contains = "==="
+
+[[check.diagnostic]]
+rule = "no-console"
+file = "db.js"
+severity = "warning"
+message_contains = "console statement"
+
+[[check.diagnostic]]
+rule = "no-unused-vars"
+file = "utils.js"
+severity = "error"
+message_contains = "never used"
+
+[[check]]
+tool = "prettier"
+
+[[check]]
+tool = "biome"
+
+[[check]]
+tool = "oxlint"
+
+# ─── shellcheck ────────────────────────────────────────────────────────────────
+# No shell files in this fixture.
+
+[[check]]
+tool = "shellcheck"

@@ -1,0 +1,36 @@
+# Expected diagnostics for the dockerfile-violations fixture.
+#
+# Dockerfile with known hadolint violations:
+#   DL3007 — Using latest is prone to errors (FROM ubuntu:latest)
+#   DL3008 — Pin versions in apt-get install (apt-get install curl without version pin)
+#   DL3015 — Avoid additional packages with apt-get install (missing --no-install-recommends)
+#   DL3009 — Delete the apt-get lists after installing (missing rm -rf /var/lib/apt/lists/*)
+
+stack = "dockerfile"
+
+[[check]]
+tool = "hadolint"
+
+[[check.diagnostic]]
+rule = "DL3007"
+file = "Dockerfile"
+severity = "warning"
+message_contains = "latest"
+
+[[check.diagnostic]]
+rule = "DL3008"
+file = "Dockerfile"
+severity = "warning"
+message_contains = "pin"
+
+[[check.diagnostic]]
+rule = "DL3015"
+file = "Dockerfile"
+severity = "warning"
+message_contains = "additional packages"
+
+[[check.diagnostic]]
+rule = "DL3009"
+file = "Dockerfile"
+severity = "warning"
+message_contains = "apt-get lists"

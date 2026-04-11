@@ -1,0 +1,6 @@
+[project]
+name = "deploy-tool"
+version = "0.1.0"
+
+[tool.ruff]
+line-length = 80

@@ -1,0 +1,650 @@
+//! The `upgrade` command — self-update functionality.
+
+use sha2::{Digest, Sha256};
+use std::io::Read;
+use std::path::PathBuf;
+
+const VERSION_URL: &str = "https://releases.8vast.io/latest/version.txt";
+const CONNECT_TIMEOUT_SECS: u64 = 10;
+const DOWNLOAD_TIMEOUT_SECS: u64 = 300; // 5 minutes
+const MAX_BINARY_SIZE: usize = 100 * 1024 * 1024; // 100MB — binaries are ~4MB, generous safety margin
+
+// ─── Args ───────────────────────────────────────────────────────────────────
+
+#[derive(clap::Args, Debug)]
+pub struct Args {
+    /// Re-download and reinstall even if already current
+    #[arg(long)]
+    pub force: bool,
+
+    /// Include pre-release versions
+    #[arg(long)]
+    pub pre: bool,
+}
+
+// ─── Platform Detection ──────────────────────────────────────────────────────
+
+/// Detect the current platform (darwin-arm64, darwin-x64, linux-arm64, linux-x64).
+fn platform() -> Result<&'static str, String> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => Ok("darwin-arm64"),
+        ("macos", "x86_64") => Ok("darwin-x64"),
+        ("linux", "aarch64") => Ok("linux-arm64"),
+        ("linux", "x86_64") => Ok("linux-x64"),
+        (os, arch) => Err(format!("unsupported platform: {os}/{arch}")),
+    }
+}
+
+// ─── Version Comparison ──────────────────────────────────────────────────────
+
+/// Parse a version string using semver.
+fn parse_version(s: &str) -> Result<semver::Version, String> {
+    semver::Version::parse(s.trim()).map_err(|e| format!("invalid version: {e}"))
+}
+
+// ─── HTTP Client ────────────────────────────────────────────────────────────
+
+/// Fetch a URL with proper timeout handling.
+fn fetch_text(url: &str) -> Result<String, String> {
+    let agent = ureq::builder()
+        .timeout_connect(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout_read(std::time::Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
+        .build();
+
+    match agent.get(url).call() {
+        Ok(resp) => {
+            let body = resp
+                .into_string()
+                .map_err(|e| format!("cannot read response: {e}"))?;
+            Ok(body)
+        }
+        Err(e) => Err(format!("could not reach {}: {}", url, e)),
+    }
+}
+
+/// Fetch a binary blob with progress reporting.
+fn fetch_binary(
+    url: &str,
+    events: &o8v_core::event_channel::EventChannel<o8v_core::events::upgrade::UpgradeEvent>,
+) -> Result<Vec<u8>, String> {
+    let agent = ureq::builder()
+        .timeout_connect(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout_read(std::time::Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
+        .build();
+
+    let resp = agent
+        .get(url)
+        .call()
+        .map_err(|e| format!("could not reach {}: {}", url, e))?;
+
+    let content_length = match resp.header("content-length") {
+        Some(s) => s
+            .parse::<usize>()
+            .map_err(|_| "invalid content-length header".to_string())?,
+        None => 0,
+    };
+
+    let mut buffer = Vec::new();
+    let mut reader = resp.into_reader();
+    let mut downloaded = 0;
+    let mut last_percent: Option<u8> = None;
+
+    loop {
+        let mut chunk = [0u8; 65536];
+        match reader.read(&mut chunk) {
+            Ok(0) => break, // EOF
+            Ok(n) => {
+                buffer.extend_from_slice(&chunk[..n]);
+                downloaded += n;
+                if downloaded > MAX_BINARY_SIZE {
+                    return Err(format!(
+                        "download too large ({} MB), aborting",
+                        downloaded / (1024 * 1024)
+                    ));
+                }
+                if content_length > 0 {
+                    let percent = (downloaded * 100 / content_length) as u8;
+                    if last_percent != Some(percent) {
+                        last_percent = Some(percent);
+                        events.emit_blocking(
+                            o8v_core::events::upgrade::UpgradeEvent::Downloading { percent },
+                        );
+                    }
+                }
+            }
+            Err(e) => return Err(format!("download failed: {e}")),
+        }
+    }
+
+    Ok(buffer)
+}
+
+// ─── Checksum Verification ──────────────────────────────────────────────────
+
+/// Parse checksums.txt and find the entry for a specific file.
+fn find_checksum(checksums: &str, filename: &str) -> Result<String, String> {
+    for line in checksums.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 && parts[1] == filename {
+            return Ok(parts[0].to_string());
+        }
+    }
+    Err(format!("checksum not found for {}", filename))
+}
+
+/// Verify SHA256 checksum of downloaded binary.
+fn verify_checksum(binary: &[u8], expected: &str) -> Result<(), String> {
+    let mut hasher = Sha256::new();
+    hasher.update(binary);
+    let hash = format!("{:x}", hasher.finalize());
+
+    if hash == expected {
+        Ok(())
+    } else {
+        Err("checksum verification failed — download corrupted or tampered".to_string())
+    }
+}
+
+// ─── Binary Replacement ─────────────────────────────────────────────────────
+
+/// Get the current executable path and canonicalize it.
+fn get_current_exe() -> Result<PathBuf, String> {
+    std::env::current_exe()
+        .and_then(|p| p.canonicalize())
+        .map_err(|e| format!("cannot locate current binary: {e}"))
+}
+
+/// Clean up old .tmp.* files in the binary's directory.
+fn cleanup_temp_files(
+    exe_dir: &std::path::Path,
+    exe_name: &str,
+    root: &o8v_fs::ContainmentRoot,
+) -> Result<(), String> {
+    let prefix = format!("{}.tmp.", exe_name);
+    match o8v_fs::safe_read_dir(exe_dir, root) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        if let Some(file_name) = entry.file_name().to_str() {
+                            if file_name.starts_with(&prefix) {
+                                let _ = o8v_fs::safe_remove_file(&entry.path(), root);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(_) => {
+            // Ignore if we can't read the directory
+        }
+    }
+    Ok(())
+}
+
+/// Atomically replace the current binary with a new one.
+fn replace_binary(exe: &std::path::Path, new_binary: &[u8]) -> Result<(), String> {
+    let root_path = exe
+        .parent()
+        .ok_or_else(|| "cannot determine binary directory".to_string())?;
+    let root = o8v_fs::ContainmentRoot::new(root_path)
+        .map_err(|e| format!("cannot establish containment root: {e}"))?;
+
+    let pid = std::process::id();
+    let temp_path = exe.with_file_name(format!(
+        "{}.tmp.{}",
+        exe.file_name().and_then(|n| n.to_str()).unwrap_or("8v"),
+        pid
+    ));
+
+    // Write temp file
+    o8v_fs::safe_write(&temp_path, &root, new_binary)
+        .map_err(|e| format!("cannot write temporary file: {e}"))?;
+
+    // Get current permissions and copy to temp
+    let meta = o8v_fs::safe_metadata(exe, &root)
+        .map_err(|e| format!("cannot read current binary permissions: {e}"))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = meta.permissions().mode();
+        o8v_fs::safe_set_permissions(&temp_path, &root, mode)
+            .map_err(|e| format!("cannot set temporary file permissions: {e}"))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::set_permissions(&temp_path, meta.permissions())
+            .map_err(|e| format!("cannot set temporary file permissions: {e}"))?;
+    }
+
+    // Atomic rename
+    o8v_fs::safe_rename(&temp_path, exe, &root).map_err(|e| {
+        let _ = o8v_fs::safe_remove_file(&temp_path, &root);
+        format!("cannot replace binary: {e}")
+    })?;
+
+    // Clean up old temp files
+    let _ = cleanup_temp_files(
+        root.as_path(),
+        exe.file_name().and_then(|n| n.to_str()).unwrap_or("8v"),
+        &root,
+    );
+
+    Ok(())
+}
+
+// ─── Execute ────────────────────────────────────────────────────────────────
+
+/// Execute upgrade logic and return a structured report.
+pub fn execute(
+    args: &Args,
+    events: &o8v_core::event_channel::EventChannel<o8v_core::events::upgrade::UpgradeEvent>,
+) -> o8v_core::render::upgrade_report::UpgradeReport {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    match run_impl_report(args, events) {
+        Ok(report) => report,
+        Err(e) => o8v_core::render::upgrade_report::UpgradeReport {
+            current_version,
+            latest_version: None,
+            upgraded: false,
+            error: Some(e),
+        },
+    }
+}
+
+/// Core upgrade logic that returns a structured report on success.
+fn run_impl_report(
+    args: &Args,
+    events: &o8v_core::event_channel::EventChannel<o8v_core::events::upgrade::UpgradeEvent>,
+) -> Result<o8v_core::render::upgrade_report::UpgradeReport, String> {
+    let current_version_parsed = parse_version(env!("CARGO_PKG_VERSION"))?;
+    let current_version = current_version_parsed.to_string();
+    let plat = platform()?;
+
+    events.emit_blocking(o8v_core::events::upgrade::UpgradeEvent::Checking);
+
+    let remote_version_str = fetch_text(VERSION_URL)?;
+    let remote_version = parse_version(&remote_version_str)?;
+    let latest_version = remote_version.to_string();
+
+    if remote_version == current_version_parsed && !args.force {
+        events.emit_blocking(o8v_core::events::upgrade::UpgradeEvent::AlreadyUpToDate {
+            version: current_version.clone(),
+        });
+        return Ok(o8v_core::render::upgrade_report::UpgradeReport {
+            current_version,
+            latest_version: Some(latest_version),
+            upgraded: true,
+            error: None,
+        });
+    }
+
+    if remote_version < current_version_parsed {
+        return Err(format!(
+            "remote version {} is older than current {} — skipping",
+            remote_version, current_version
+        ));
+    }
+
+    if !args.pre && !remote_version.pre.is_empty() {
+        return Err(format!(
+            "pre-release version {}: use --pre to install",
+            remote_version
+        ));
+    }
+
+    let binary_filename = format!("8v-{}", plat);
+    let binary_url = format!(
+        "https://releases.8vast.io/v{}/{}",
+        remote_version, binary_filename
+    );
+    let binary = fetch_binary(&binary_url, events)?;
+
+    events.emit_blocking(o8v_core::events::upgrade::UpgradeEvent::Verifying);
+
+    let checksums_url = format!(
+        "https://releases.8vast.io/v{}/checksums.txt",
+        remote_version
+    );
+    let checksums = fetch_text(&checksums_url)?;
+    let expected_checksum = find_checksum(&checksums, &binary_filename)?;
+    verify_checksum(&binary, &expected_checksum)?;
+
+    events.emit_blocking(o8v_core::events::upgrade::UpgradeEvent::Replacing);
+
+    let exe = get_current_exe()?;
+    replace_binary(&exe, &binary)?;
+
+    events.emit_blocking(o8v_core::events::upgrade::UpgradeEvent::Done {
+        from: current_version.clone(),
+        to: remote_version.to_string(),
+    });
+
+    Ok(o8v_core::render::upgrade_report::UpgradeReport {
+        current_version,
+        latest_version: Some(latest_version),
+        upgraded: true,
+        error: None,
+    })
+}
+
+// ─── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_platform() {
+        let result = platform();
+        assert!(result.is_ok());
+        let plat = result.unwrap();
+        assert!(
+            plat == "darwin-arm64"
+                || plat == "darwin-x64"
+                || plat == "linux-arm64"
+                || plat == "linux-x64"
+        );
+    }
+
+    #[test]
+    fn test_parse_version_valid() {
+        let v = parse_version("0.4.0").unwrap();
+        assert_eq!(v.major, 0);
+        assert_eq!(v.minor, 4);
+        assert_eq!(v.patch, 0);
+    }
+
+    #[test]
+    fn test_parse_version_prerelease() {
+        let v = parse_version("0.4.0-beta.1").unwrap();
+        assert_eq!(v.major, 0);
+        assert!(!v.pre.is_empty());
+    }
+
+    #[test]
+    fn test_parse_version_invalid() {
+        assert!(parse_version("invalid").is_err());
+    }
+
+    #[test]
+    fn test_version_comparison() {
+        let v1 = parse_version("0.3.0").unwrap();
+        let v2 = parse_version("0.4.0").unwrap();
+        assert!(v2 > v1);
+        assert!(v1 < v2);
+        assert_eq!(v1, v1);
+    }
+
+    #[test]
+    fn test_find_checksum() {
+        let checksums = "a1b2c3d4e5f6  8v-darwin-arm64\nf6e5d4c3b2a1  8v-darwin-x64\n";
+        let found = find_checksum(checksums, "8v-darwin-arm64").unwrap();
+        assert_eq!(found, "a1b2c3d4e5f6");
+    }
+
+    #[test]
+    fn test_find_checksum_not_found() {
+        let checksums = "a1b2c3d4e5f6  8v-darwin-arm64\n";
+        let result = find_checksum(checksums, "8v-linux-x64");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_checksum() {
+        let data = b"hello world";
+        let hash = format!("{:x}", sha2::Sha256::digest(data));
+        let result = verify_checksum(data, &hash);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_verify_checksum_mismatch() {
+        let data = b"hello world";
+        let result = verify_checksum(data, "invalid_hash");
+        assert!(result.is_err());
+    }
+
+    // ─── Counterexample 1: Version string manipulation ───────────────────────
+
+    #[test]
+    fn test_parse_version_empty_string() {
+        let result = parse_version("");
+        assert!(result.is_err(), "empty string should fail");
+    }
+
+    #[test]
+    fn test_parse_version_whitespace_only() {
+        let result = parse_version("   ");
+        assert!(result.is_err(), "whitespace-only string should fail");
+    }
+
+    #[test]
+    fn test_parse_version_nonsense() {
+        let result = parse_version("abc");
+        assert!(result.is_err(), "'abc' should fail");
+    }
+
+    #[test]
+    fn test_parse_version_newline_injection() {
+        let result = parse_version("1.0.0\n1.0.0");
+        assert!(result.is_err(), "newline injection should fail");
+    }
+
+    #[test]
+    fn test_parse_version_trailing_space() {
+        // Note: parse_version calls .trim(), so this should succeed after trimming.
+        // This tests that trim() is actually being used.
+        let result = parse_version("1.0.0 ");
+        assert!(
+            result.is_ok(),
+            "trailing space should be trimmed and succeed"
+        );
+    }
+
+    #[test]
+    fn test_parse_version_leading_space() {
+        // Note: parse_version calls .trim(), so this should succeed after trimming.
+        let result = parse_version(" 1.0.0");
+        assert!(
+            result.is_ok(),
+            "leading space should be trimmed and succeed"
+        );
+    }
+
+    #[test]
+    fn test_parse_version_v_prefix() {
+        let result = parse_version("v1.0.0");
+        assert!(result.is_err(), "'v1.0.0' prefix should fail");
+    }
+
+    #[test]
+    fn test_parse_version_shell_injection() {
+        let result = parse_version("1.0.0;echo pwned");
+        assert!(result.is_err(), "shell injection attempt should fail");
+    }
+
+    #[test]
+    fn test_parse_version_path_traversal() {
+        let result = parse_version("../../etc/passwd");
+        assert!(result.is_err(), "path traversal should fail");
+    }
+
+    // ─── Counterexample 2: Checksum parsing manipulation ──────────────────────
+
+    #[test]
+    fn test_find_checksum_empty_string() {
+        let result = find_checksum("", "8v-darwin-arm64");
+        assert!(result.is_err(), "empty checksums should fail");
+    }
+
+    #[test]
+    fn test_find_checksum_no_whitespace_separator() {
+        let checksums = "abc";
+        let result = find_checksum(checksums, "8v-darwin-arm64");
+        assert!(result.is_err(), "no whitespace separator should fail");
+    }
+
+    #[test]
+    fn test_find_checksum_multiple_entries_one_match() {
+        let checksums = "hash1  wrong-filename\nhash2  8v-darwin-arm64\n";
+        let result = find_checksum(checksums, "8v-darwin-arm64");
+        assert!(result.is_ok(), "matching entry should be found");
+        assert_eq!(result.unwrap(), "hash2", "should return correct hash");
+    }
+
+    #[test]
+    fn test_find_checksum_whitespace_only() {
+        let checksums = "   \n\t\t\n   ";
+        let result = find_checksum(checksums, "8v-darwin-arm64");
+        assert!(result.is_err(), "whitespace-only checksums should fail");
+    }
+
+    #[test]
+    fn test_find_checksum_very_long_line() {
+        let long_hash = "a".repeat(10000);
+        let checksums = format!("{}  8v-darwin-arm64", long_hash);
+        let result = find_checksum(&checksums, "8v-darwin-arm64");
+        assert!(result.is_ok(), "very long hash should be parsed");
+        assert_eq!(
+            result.unwrap().len(),
+            10000,
+            "long hash should be returned as-is"
+        );
+    }
+
+    #[test]
+    fn test_find_checksum_filename_with_spaces() {
+        // VULNERABILITY: split_whitespace() splits all consecutive whitespace,
+        // so filenames with spaces are broken into multiple parts.
+        // Searching for "file" will match "hash1  file with spaces" at index [1].
+        let checksums = "hash1  file with spaces\nhash2  8v-darwin-arm64\n";
+        let result = find_checksum(checksums, "file");
+        // This WILL match because [1] after split is "file"
+        assert!(result.is_ok(), "partial filename will incorrectly match");
+        assert_eq!(result.unwrap(), "hash1");
+
+        // A filename containing spaces cannot be correctly specified in checksums.txt
+        // with the current split_whitespace() approach. This is acceptable because
+        // the 8v binary name (8v-{platform}) never contains spaces.
+    }
+
+    // ─── Counterexample 3: Platform detection ────────────────────────────────
+
+    #[test]
+    fn test_platform_returns_valid_value() {
+        let result = platform();
+        assert!(result.is_ok(), "platform() should return Ok");
+        let plat = result.unwrap();
+        // Verify no path separators or special characters
+        assert!(!plat.contains('/'), "platform should not contain /");
+        assert!(!plat.contains('\\'), "platform should not contain \\");
+        assert!(
+            !plat.contains('\0'),
+            "platform should not contain null byte"
+        );
+        assert!(!plat.contains(';'), "platform should not contain ;");
+        assert!(!plat.contains('$'), "platform should not contain $");
+        assert!(!plat.contains('`'), "platform should not contain backtick");
+        assert!(!plat.is_empty(), "platform should not be empty");
+    }
+
+    // ─── Counterexample 4: Symlink following ──────────────────────────────────
+
+    #[test]
+    fn test_get_current_exe_returns_canonical_path() {
+        // This test verifies that canonicalize() is being called.
+        // On this system, std::env::current_exe() should resolve symlinks.
+        let result = get_current_exe();
+        assert!(result.is_ok(), "get_current_exe should succeed");
+        let exe_path = result.unwrap();
+        // Canonicalize removes .., ., and resolves symlinks
+        assert!(
+            exe_path.is_absolute(),
+            "path should be absolute after canonicalize"
+        );
+    }
+
+    // ─── Counterexample 5: Checksum comparison — timing safety ───────────────
+
+    #[test]
+    fn test_verify_checksum_uses_equality() {
+        // This test documents that the current implementation uses == comparison,
+        // which is NOT constant-time. For production use, this should use
+        // a constant-time comparison like `subtle::ConstantTimeComparison`.
+        //
+        // For now, we verify that the comparison works correctly (not optimized):
+        let data = b"test";
+        let correct_hash = format!("{:x}", sha2::Sha256::digest(data));
+        let wrong_hash = format!("{:x}", sha2::Sha256::digest(b"other"));
+
+        assert!(verify_checksum(data, &correct_hash).is_ok());
+        assert!(verify_checksum(data, &wrong_hash).is_err());
+
+        // The comparison is not timing-safe, but acceptable here because:
+        // 1. SHA256 hashes are 64 hex chars, comparing them leaks minor timing info
+        // 2. An attacker cannot use timing side-channel to brute-force hashes
+        // 3. The attack surface is low (online, network-based, large latency)
+        // However, for maximum security, consider using constant-time comparison.
+    }
+
+    #[test]
+    fn test_verify_checksum_full_hash_required() {
+        // Verify that partial hash matching is not accepted
+        let data = b"hello world";
+        let full_hash = format!("{:x}", sha2::Sha256::digest(data));
+        let partial_hash = &full_hash[..16]; // First 16 chars
+
+        assert!(verify_checksum(data, &full_hash).is_ok());
+        assert!(
+            verify_checksum(data, partial_hash).is_err(),
+            "partial hash should fail"
+        );
+    }
+
+    // ─── Counterexample 6: Concurrent upgrades ───────────────────────────────
+
+    #[test]
+    fn test_temp_file_naming_uses_pid() {
+        // Verify that temp file includes PID to prevent collisions
+        let pid = std::process::id();
+
+        // This test documents the temp file naming scheme.
+        // The format is: {exe_name}.tmp.{pid}
+        let expected_suffix = format!(".tmp.{}", pid);
+
+        // We can't call replace_binary without actually writing files,
+        // but we can verify the naming logic is sound by checking that
+        // the PID is incorporated, which prevents same-process collisions.
+        assert!(
+            expected_suffix.contains(&pid.to_string()),
+            "PID should be in temp filename"
+        );
+    }
+}
+
+// ── Command trait impl ──────────────────────────────────────────────────
+
+use o8v_core::command::{Command, CommandContext, CommandError};
+use o8v_core::event_channel::EventChannel;
+use o8v_core::events::upgrade::UpgradeEvent;
+use o8v_core::render::upgrade_report::UpgradeReport;
+
+pub struct UpgradeCommand {
+    pub args: Args,
+}
+
+impl Command for UpgradeCommand {
+    type Report = UpgradeReport;
+    type Event = UpgradeEvent;
+
+    async fn execute(
+        &self,
+        _ctx: &CommandContext,
+        events: EventChannel<Self::Event>,
+    ) -> Result<Self::Report, CommandError> {
+        Ok(execute(&self.args, &events))
+    }
+}

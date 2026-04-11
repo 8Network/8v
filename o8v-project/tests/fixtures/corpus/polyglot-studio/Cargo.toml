@@ -1,0 +1,8 @@
+[package]
+name = "studio-native"
+version = "0.9.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]

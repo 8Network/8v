@@ -1,0 +1,5 @@
+{
+  "name": "@acme/app",
+  "version": "1.8.0",
+  "type": "module"
+}

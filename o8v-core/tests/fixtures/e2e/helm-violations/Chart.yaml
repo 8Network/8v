@@ -1,0 +1,5 @@
+apiVersion: v2
+name: test-violations
+description: Helm chart with violations for testing
+type: application
+version: 0.1.0

@@ -1,0 +1,22 @@
+# Expected diagnostics for the java-violations fixture.
+#
+# Single Maven project with compile violations:
+#   - Unused import (HashMap)
+#   - Unused variable (list, x)
+
+stack = "java"
+
+[[check]]
+tool = "javac"
+
+[[check.diagnostic]]
+rule = "unused_import"
+file = "src/main/java/App.java"
+severity = "error"
+message_contains = "unused import"
+
+[[check.diagnostic]]
+rule = "unused_variable"
+file = "src/main/java/App.java"
+severity = "error"
+message_contains = "is never used"

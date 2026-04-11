@@ -1,0 +1,17 @@
+[package]
+name = "o8v-workspace"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license = "BSL-1.1"
+authors = ["Soheil Alizadeh <soheil@8network.io>"]
+description = "Workspace management for 8v — .8v/ layout, registry, config discovery"
+
+[dependencies]
+o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
+o8v-project = { path = "../o8v-project", version = "0.1.0" }
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

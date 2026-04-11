@@ -1,0 +1,209 @@
+// Copyright (c) 2026 Soheil Alizadeh / 8Network. All rights reserved.
+// Licensed under the Business Source License 1.1 (BSL-1.1).
+// See LICENSE file in the project root.
+
+//! The `read` command — symbol-first file reading.
+//!
+//! - `8v read path` — returns symbol map (functions, structs, types with line numbers)
+//! - `8v read path:10-50` — returns specific line range
+//! - `8v read path --full` — returns entire file content
+//! - `8v read path --json` — structured JSON output
+
+use std::path::Path;
+
+// ─── Args ───────────────────────────────────────────────────────────────────
+
+#[derive(clap::Args, Debug)]
+pub struct Args {
+    /// File path, optionally with line range (path:start-end)
+    pub path: String,
+
+    /// Show full file content instead of symbols
+    #[arg(long)]
+    pub full: bool,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Args {
+    pub fn audience(&self) -> o8v_core::render::Audience {
+        if self.json {
+            o8v_core::render::Audience::Machine
+        } else {
+            o8v_core::render::Audience::Human
+        }
+    }
+}
+
+// ─── Path Parsing ────────────────────────────────────────────────────────────
+
+/// Parse `path:N-M` into (path, Some((N, M))) or (path, None).
+///
+/// Only splits on the last colon followed by `digits-digits` — avoids
+/// splitting Windows-style paths (C:\...) on the drive colon.
+fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
+    if let Some(colon_pos) = input.rfind(':') {
+        let range_part = &input[colon_pos + 1..];
+        if let Some(dash_pos) = range_part.find('-') {
+            if let (Ok(start), Ok(end)) = (
+                range_part[..dash_pos].parse::<usize>(),
+                range_part[dash_pos + 1..].parse::<usize>(),
+            ) {
+                return (input[..colon_pos].to_string(), Some((start, end)));
+            }
+        }
+    }
+    (input.to_string(), None)
+}
+
+// ─── Typed Report ────────────────────────────────────────────────────────────
+
+/// Read a file and return a typed `ReadReport`.
+///
+/// Contains the same file reading, validation, and parsing logic as
+/// `read_to_string` but populates a structured `ReadReport` instead of
+/// formatting to a String. Called by `ReadCommand::execute()`.
+pub fn read_to_report(args: &Args) -> Result<o8v_core::render::read_report::ReadReport, String> {
+    use o8v_core::render::read_report::{LineEntry, ReadReport, SymbolEntry};
+
+    let (file_path, range) = parse_path_range(&args.path);
+
+    let abs_path = crate::util::resolve_path(&file_path).map_err(|e| format!("8v: {e}"))?;
+
+    let root = match std::env::current_dir().and_then(|cwd| {
+        o8v_fs::ContainmentRoot::new(&cwd).map_err(|e| std::io::Error::other(e.to_string()))
+    }) {
+        Ok(r) => r,
+        Err(e) => return Err(format!("8v: cannot create containment root: {e}")),
+    };
+
+    let config = o8v_fs::FsConfig::default();
+    let file = match o8v_fs::safe_read(&abs_path, &root, &config) {
+        Ok(f) => f,
+        Err(o8v_fs::FsError::Io { cause, .. })
+            if cause.kind() == std::io::ErrorKind::InvalidData =>
+        {
+            return Err(format!(
+                "8v: {file_path}: file contains invalid UTF-8 (binary file?)"
+            ));
+        }
+        Err(e) => return Err(format!("8v: {e}")),
+    };
+
+    let content = file.content();
+
+    if content.contains('\0') {
+        return Err(format!(
+            "8v: {file_path}: file contains invalid UTF-8 (binary file?)"
+        ));
+    }
+
+    let total_lines = content.lines().count();
+
+    if let Some((start, end)) = range {
+        if start > end {
+            return Err(format!(
+                "8v: invalid range {}:{}-{} — start must be less than or equal to end",
+                file_path, start, end
+            ));
+        }
+        if start > total_lines {
+            return Err(format!(
+                "8v: range {}:{}-{} is beyond end of file ({} lines)",
+                file_path, start, end, total_lines
+            ));
+        }
+    }
+
+    let report = if let Some((start, end)) = range {
+        // Clamp to valid range (1-indexed), matching output_range_plain behaviour.
+        let clamped_start = start.max(1);
+        let clamped_end = end.min(total_lines);
+        let lines: Vec<LineEntry> = content
+            .lines()
+            .enumerate()
+            .filter_map(|(i, line)| {
+                let line_num = i + 1;
+                if line_num >= clamped_start && line_num <= clamped_end {
+                    Some(LineEntry {
+                        line: line_num,
+                        text: line.to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ReadReport::Range {
+            path: file_path,
+            start: clamped_start,
+            end: clamped_end,
+            total_lines,
+            lines,
+        }
+    } else if args.full {
+        let lines: Vec<LineEntry> = content
+            .lines()
+            .enumerate()
+            .map(|(i, line)| LineEntry {
+                line: i + 1,
+                text: line.to_string(),
+            })
+            .collect();
+        ReadReport::Full {
+            path: file_path,
+            total_lines,
+            lines,
+        }
+    } else {
+        let extension = Path::new(&file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let symbols = o8v_core::symbols::extract_symbols(content, extension);
+        let entries: Vec<SymbolEntry> = symbols
+            .into_iter()
+            .map(|s| SymbolEntry {
+                name: s.name,
+                kind: s.kind,
+                line: s.line,
+                signature: s.signature,
+            })
+            .collect();
+        ReadReport::Symbols {
+            path: file_path,
+            total_lines,
+            symbols: entries,
+        }
+    };
+
+    Ok(report)
+}
+
+// ── Command trait impl ──────────────────────────────────────────────────
+
+use o8v_core::command::{Command, CommandContext, CommandError};
+use o8v_core::event_channel::EventChannel;
+use o8v_core::render::read_report::ReadReport;
+
+pub struct ReadCommand {
+    pub args: Args,
+}
+
+impl Command for ReadCommand {
+    type Report = ReadReport;
+    type Event = (); // read is instant — no progressive events
+
+    async fn execute(
+        &self,
+        _ctx: &CommandContext,
+        _events: EventChannel<Self::Event>,
+    ) -> Result<Self::Report, CommandError> {
+        match read_to_report(&self.args) {
+            Ok(report) => Ok(report),
+            Err(e) => Err(CommandError::Execution(e)),
+        }
+    }
+}

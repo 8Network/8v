@@ -1,0 +1,107 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor: Soheil Alizadeh / 8Network
+Licensed Work: 8v
+Change Date: April 5, 2030
+Change License: Apache License 2.0
+Additional Use Grant: You may use the Licensed Work in production for your own internal business purposes. You may NOT: (a) offer the Licensed Work to third parties as a hosted or managed service; (b) create a product or service whose value derives substantially from the Licensed Work; (c) use the Licensed Work, in whole or in part, as training data for machine learning models or AI/ML systems.
+
+Notice
+
+The Business Source License (this document, or the "License") is not an Open Source
+license. However, the Licensed Work will eventually be made available under an Open
+Source License, as stated in this License.
+
+License text copyright (c) 2017 MariaDB Corporation Ab, all rights reserved.
+"Business Source License" is a trademark of MariaDB Corporation Ab.
+
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative works,
+redistribute, and make non-production use of the Licensed Work. The Licensor may
+make an Additional Use Grant, above, permitting limited production use.
+
+Effective on the Change Date, or if earlier on the date you first distribute a copy
+of the Licensed Work, and on each anniversary thereafter, the Additional Use Grant
+comes to an end, unless extended by written agreement of the Licensor. After the
+end of the Additional Use Grant, you may only use the Licensed Work under the terms
+of the Change License. The Change License is the Apache License, Version 2.0, unless
+another license is specified.
+
+You may not use the Licensed Work except in compliance with the License. You must
+preserve all notices and attribution in any copies or derivative works of the
+Licensed Work that you distribute. You may not remove or alter any License notices
+or restrict the recipient's rights under this License.
+
+If you distribute copies or derivative works of the Licensed Work, you must make
+reasonable efforts to notify recipients that the Licensed Work is provided under
+this License and show them a copy of this License. Do not remove or alter this
+License notice.
+
+Patents
+
+Each Licensor grants you a grant of patent rights ("Patent Grant") subject to the
+restrictions in this License. Each Licensor grants you (for the term of the
+Licensor's applicable patents) the exclusive, worldwide, non-transferable,
+non-exclusive, no-right-to-sublicense right to make, have made, use, offer to sell,
+sell, import, and otherwise transfer the Licensed Work, where such license applies
+only to those patent claims licensable by Licensor that are necessarily infringed by
+the Licensed Work alone or in combination with the Licensed Work in the form
+provided by the Licensor.
+
+Limitations
+
+The grant of rights under this License will not include, and the License does not
+grant to you, the right to Sell the Licensed Work or Sell licenses to the Licensed
+Work, to include the Licensed Work in a product or service whose value derives
+substantially from the value of the Licensed Work; or to use the Licensed Work for
+timesharing or service bureau purposes.
+
+Trademarks
+
+This License does not grant you the right to use any of the Licensor's trade names,
+trademarks, service marks, or logos, except as required to comply with the terms of
+this License.
+
+Term
+
+The term of this License is perpetual unless and until terminated under the terms of
+this License. Upon any breach of this License by you, Licensor may, at its election,
+terminate the License effective immediately and/or pursue any other remedy available
+to it at law or in equity, including specific performance. You may terminate this
+License at any time by ceasing all use of the Licensed Work and destroying all
+copies in your possession or control. Sections 5, 6, 7, 8, 9, 10, 11 shall survive
+any termination of this License.
+
+Termination for Patent Action
+
+This License shall terminate automatically and your rights hereunder will end as of
+the date such litigation is filed if you institute patent litigation (including a
+cross-claim or counterclaim) against any entity alleging that any version of the
+Licensed Work infringes your patent rights.
+
+Severability
+
+If any provision or part of a provision of this License is determined to be invalid,
+illegal or unenforceable, that provision or part of the provision shall be severed
+from this License, and all other provisions of this License shall remain in full
+force and effect.
+
+Disclaimer of Warranties
+
+As between the parties and to the extent permitted by applicable law, the Licensed
+Work and the Licensor's modifications are provided on an "AS IS" basis. THE LICENSOR
+DISCLAIMS ALL WARRANTIES AND CONDITIONS, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OR
+CONDITIONS OF TITLE, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NONINFRINGEMENT.
+
+Limitation of Liability
+
+IN NO EVENT SHALL LICENSOR BE LIABLE TO YOU FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL,
+OR CONSEQUENTIAL DAMAGES OF ANY CHARACTER ARISING OUT OF THIS LICENSE OR OUT OF THE
+USE OR INABILITY TO USE THE LICENSED WORK (INCLUDING BUT NOT LIMITED TO DAMAGES FOR
+LOSS OF PROFITS, LOSS OF GOODWILL, WORK STOPPAGE, COMPUTER FAILURE OR MALFUNCTION, OR
+ANY AND ALL OTHER DAMAGES), EVEN IF LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.

@@ -1,0 +1,11 @@
+{
+  "name": "test-violations",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}

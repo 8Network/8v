@@ -1,0 +1,18 @@
+[package]
+name = "o8v-process"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license = "MIT"
+authors = ["Soheil Alizadeh <soheil@8network.io>"]
+description = "Safe subprocess execution — handles pipe deadlock, timeouts, process group kill, output capture"
+
+[dependencies]
+tracing = "0.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
