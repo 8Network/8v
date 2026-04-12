@@ -104,22 +104,19 @@ pub(crate) fn run(
 
     // Read previous series.json BEFORE running checks (which will overwrite it).
     // Best-effort: any failure produces an empty set, and delta is omitted.
-    let previous_ids: std::collections::HashSet<String> =
-        match o8v_workspace::StorageDir::open() {
-            Ok(storage) => {
-                let config = o8v_fs::FsConfig::default();
-                match o8v_fs::safe_read(&storage.series_json(), storage.containment(), &config) {
-                    Ok(file) => {
-                        match o8v_events::parse_series(file.content().as_bytes()) {
-                            Ok(series) => series.diagnostics.keys().cloned().collect(),
-                            Err(_) => std::collections::HashSet::new(),
-                        }
-                    }
+    let previous_ids: std::collections::HashSet<String> = match o8v_workspace::StorageDir::open() {
+        Ok(storage) => {
+            let config = o8v_fs::FsConfig::default();
+            match o8v_fs::safe_read(&storage.series_json(), storage.containment(), &config) {
+                Ok(file) => match o8v_events::parse_series(file.content().as_bytes()) {
+                    Ok(series) => series.diagnostics.keys().cloned().collect(),
                     Err(_) => std::collections::HashSet::new(),
-                }
+                },
+                Err(_) => std::collections::HashSet::new(),
             }
-            Err(_) => std::collections::HashSet::new(),
-        };
+        }
+        Err(_) => std::collections::HashSet::new(),
+    };
 
     let mut current_project = String::new();
     let mut current_stack = String::new();
@@ -135,12 +132,22 @@ pub(crate) fn run(
                 match entry.outcome() {
                     o8v_core::CheckOutcome::Passed { diagnostics, .. } => {
                         for diagnostic in diagnostics {
-                            event_writer.borrow_mut().on_event(diagnostic, &entry.name, &current_stack, &current_project);
+                            event_writer.borrow_mut().on_event(
+                                diagnostic,
+                                &entry.name,
+                                &current_stack,
+                                &current_project,
+                            );
                         }
                     }
                     o8v_core::CheckOutcome::Failed { diagnostics, .. } => {
                         for diagnostic in diagnostics {
-                            event_writer.borrow_mut().on_event(diagnostic, &entry.name, &current_stack, &current_project);
+                            event_writer.borrow_mut().on_event(
+                                diagnostic,
+                                &entry.name,
+                                &current_stack,
+                                &current_project,
+                            );
                         }
                     }
                     o8v_core::CheckOutcome::Error { .. } => {}
@@ -159,13 +166,21 @@ pub(crate) fn run(
         let new = current_ids.difference(&previous_ids).count();
         let fixed = previous_ids.difference(&current_ids).count();
         let unchanged = current_ids.intersection(&previous_ids).count();
-        report.delta = Some(o8v_core::DeltaSummary { new, fixed, unchanged });
+        report.delta = Some(o8v_core::DeltaSummary {
+            new,
+            fixed,
+            unchanged,
+        });
     }
 
     report.render_config = o8v_core::render::RenderConfig {
-        limit: if args.limit == 0 { None } else { Some(args.limit) },
+        limit: if args.limit == 0 {
+            None
+        } else {
+            Some(args.limit)
+        },
         verbose: args.verbose,
-        color: !args.no_color,
+        color: !args.no_color && std::env::var_os("NO_COLOR").is_none(),
         page: args.page,
     };
 

@@ -156,18 +156,16 @@ pub fn run(args: &Args) -> ExitCode {
 
     // Run a baseline check and record the real run_id.
     match run_baseline_check(&containment_root) {
-        Ok(run_id) => {
-            match StorageDir::open() {
-                Ok(storage) => {
-                    if let Err(e) = set_baseline_run_id(&storage, &run_id) {
-                        tracing::warn!("baseline init failed: {e}");
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("could not open storage dir for baseline init: {e}");
+        Ok(run_id) => match StorageDir::open() {
+            Ok(storage) => {
+                if let Err(e) = set_baseline_run_id(&storage, &run_id) {
+                    tracing::warn!("baseline init failed: {e}");
                 }
             }
-        }
+            Err(e) => {
+                tracing::warn!("could not open storage dir for baseline init: {e}");
+            }
+        },
         Err(e) => {
             tracing::warn!("baseline check failed: {e}");
         }
@@ -329,8 +327,8 @@ fn confirm(prompt: &str, yes: bool) -> bool {
 /// `o8v_check::check`, feeds events through `EventWriter`, and calls
 /// `EventWriter::finalize` which writes `series.json` and returns the series.
 fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<String, String> {
-    let project_root = o8v_project::ProjectRoot::new(containment_root.as_path())
-        .map_err(|e| e.to_string())?;
+    let project_root =
+        o8v_project::ProjectRoot::new(containment_root.as_path()).map_err(|e| e.to_string())?;
 
     let interrupted = Box::leak(Box::new(std::sync::atomic::AtomicBool::new(false)));
     let check_config = o8v_core::CheckConfig {
@@ -338,51 +336,46 @@ fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<Stri
         interrupted,
     };
 
-    let event_writer = std::cell::RefCell::new(
-        match crate::events::EventWriter::open(containment_root) {
+    let event_writer =
+        std::cell::RefCell::new(match crate::events::EventWriter::open(containment_root) {
             Ok(w) => w,
             Err(_) => crate::events::EventWriter::no_op(),
-        },
-    );
+        });
 
     let mut current_project = String::new();
     let mut current_stack = String::new();
 
-    let report = o8v_check::check(&project_root, &check_config, |event| {
-        match event {
-            o8v_core::CheckEvent::ProjectStart { name, stack, .. } => {
-                current_project = name.to_string();
-                current_stack = stack.to_string();
-            }
-            o8v_core::CheckEvent::CheckDone { entry } => {
-                match entry.outcome() {
-                    o8v_core::CheckOutcome::Passed { diagnostics, .. } => {
-                        for diagnostic in diagnostics {
-                            event_writer.borrow_mut().on_event(
-                                diagnostic,
-                                &entry.name,
-                                &current_stack,
-                                &current_project,
-                            );
-                        }
-                    }
-                    o8v_core::CheckOutcome::Failed { diagnostics, .. } => {
-                        for diagnostic in diagnostics {
-                            event_writer.borrow_mut().on_event(
-                                diagnostic,
-                                &entry.name,
-                                &current_stack,
-                                &current_project,
-                            );
-                        }
-                    }
-                    o8v_core::CheckOutcome::Error { .. } => {}
-                    #[allow(unreachable_patterns)]
-                    _ => {}
+    let report = o8v_check::check(&project_root, &check_config, |event| match event {
+        o8v_core::CheckEvent::ProjectStart { name, stack, .. } => {
+            current_project = name.to_string();
+            current_stack = stack.to_string();
+        }
+        o8v_core::CheckEvent::CheckDone { entry } => match entry.outcome() {
+            o8v_core::CheckOutcome::Passed { diagnostics, .. } => {
+                for diagnostic in diagnostics {
+                    event_writer.borrow_mut().on_event(
+                        diagnostic,
+                        &entry.name,
+                        &current_stack,
+                        &current_project,
+                    );
                 }
             }
+            o8v_core::CheckOutcome::Failed { diagnostics, .. } => {
+                for diagnostic in diagnostics {
+                    event_writer.borrow_mut().on_event(
+                        diagnostic,
+                        &entry.name,
+                        &current_stack,
+                        &current_project,
+                    );
+                }
+            }
+            o8v_core::CheckOutcome::Error { .. } => {}
+            #[allow(unreachable_patterns)]
             _ => {}
-        }
+        },
+        _ => {}
     });
 
     let series = event_writer
@@ -404,16 +397,15 @@ fn set_baseline_run_id(storage: &StorageDir, run_id: &str) -> Result<(), String>
     let containment = storage.containment();
     let config = o8v_fs::FsConfig::default();
 
-    let mut series = match o8v_fs::safe_exists(&series_path, containment)
-        .map_err(|e| e.to_string())?
-    {
-        true => {
-            let guarded =
-                o8v_fs::safe_read(&series_path, containment, &config).map_err(|e| e.to_string())?;
-            o8v_events::parse_series(guarded.content().as_bytes()).map_err(|e| e.to_string())?
-        }
-        false => o8v_events::SeriesJson::new(String::new(), 0),
-    };
+    let mut series =
+        match o8v_fs::safe_exists(&series_path, containment).map_err(|e| e.to_string())? {
+            true => {
+                let guarded = o8v_fs::safe_read(&series_path, containment, &config)
+                    .map_err(|e| e.to_string())?;
+                o8v_events::parse_series(guarded.content().as_bytes()).map_err(|e| e.to_string())?
+            }
+            false => o8v_events::SeriesJson::new(String::new(), 0),
+        };
 
     if series.baseline_run_id.is_some() {
         tracing::info!("baseline_run_id already set, skipping");

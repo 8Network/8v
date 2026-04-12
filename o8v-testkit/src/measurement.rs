@@ -44,12 +44,25 @@ pub struct McpMeasurement {
 }
 
 impl McpMeasurement {
-    pub fn from_project(project_path: &Path) -> Result<Self, McpError> {
-        let ndjson_path = project_path.join(".8v").join("mcp-events.ndjson");
+    pub fn from_home() -> Result<Self, McpError> {
+        let home = std::env::var("HOME").map_err(|_| McpError::ReadFailed {
+            path: PathBuf::from("~/.8v/mcp-events.ndjson"),
+            source: "HOME environment variable is not set".to_string(),
+        })?;
+        Self::from_home_dir(&PathBuf::from(home))
+    }
+
+    /// Read MCP events from `<home_dir>/.8v/mcp-events.ndjson`.
+    ///
+    /// Used by benchmarks that set HOME to a per-arm temp dir so measurements
+    /// are isolated. Pass the temp dir root (not the `.8v/` subdir).
+    pub fn from_home_dir(home_dir: &Path) -> Result<Self, McpError> {
+        let dot8v = home_dir.join(".8v");
+        let ndjson_path = dot8v.join("mcp-events.ndjson");
         if !ndjson_path.exists() {
             return Err(McpError::FileNotFound(ndjson_path));
         }
-        let root = ContainmentRoot::new(project_path).map_err(|e| McpError::ReadFailed {
+        let root = ContainmentRoot::new(&dot8v).map_err(|e| McpError::ReadFailed {
             path: ndjson_path.clone(),
             source: e.to_string(),
         })?;
@@ -60,6 +73,11 @@ impl McpMeasurement {
                 source: e.to_string(),
             })?;
         Self::from_ndjson(guarded.content())
+    }
+
+    #[deprecated(note = "MCP events are written to ~/.8v/, not the project dir. Use from_home() instead.")]
+    pub fn from_project(_project_path: &Path) -> Result<Self, McpError> {
+        Self::from_home()
     }
 
     pub fn from_ndjson(content: &str) -> Result<Self, McpError> {

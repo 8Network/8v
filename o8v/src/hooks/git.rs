@@ -89,6 +89,7 @@ pub fn on_commit(interrupted: &'static AtomicBool) -> ExitCode {
         json: false,     // hooks use plain output
         no_color: false, // will be overridden by render_config
         limit: 10,       // default limit for error detail
+        page: 1,         // default to first page
         timeout: Some(std::time::Duration::from_secs(60)),
     };
 

@@ -121,7 +121,7 @@ fn write_entry_detail(
                 }
                 if !combined.is_empty() {
                     buf.push('\n');
-                    write_error_box(buf, entry.name(), &combined, config.limit, c);
+                    write_error_box(buf, entry.name(), &combined, config.limit, config.page, c);
                 }
             }
         }
@@ -143,7 +143,7 @@ fn write_entry_detail(
             }
             if !output.is_empty() {
                 buf.push('\n');
-                write_error_box(buf, entry.name(), &output, config.limit, c);
+                write_error_box(buf, entry.name(), &output, config.limit, config.page, c);
             }
         }
         CheckOutcome::Passed { .. } => {
@@ -317,13 +317,26 @@ fn write_diagnostics(buf: &mut String, diagnostics: &[Diagnostic], limit: Option
 }
 
 /// Write a bordered error box for a failed check.
-fn write_error_box(buf: &mut String, name: &str, output: &str, limit: Option<usize>, c: bool) {
+fn write_error_box(
+    buf: &mut String,
+    name: &str,
+    output: &str,
+    limit: Option<usize>,
+    page: usize,
+    c: bool,
+) {
     let lines: Vec<&str> = output.lines().collect();
     let total = lines.len();
+    let page = page.max(1);
+
     // 0 means "no limit" — show everything.
-    let show = match limit {
-        Some(0) | None => total,
-        Some(n) => n.min(total),
+    let (start, show) = match limit {
+        Some(0) | None => (0, total),
+        Some(n) => {
+            let start = (page - 1) * n;
+            let end = (page * n).min(total);
+            (start, end.saturating_sub(start))
+        }
     };
 
     buf.push_str(&format!(
@@ -333,7 +346,7 @@ fn write_error_box(buf: &mut String, name: &str, output: &str, limit: Option<usi
     ));
 
     const MAX_LINE_BYTES: usize = 4096;
-    for line in &lines[..show] {
+    for line in lines.iter().skip(start).take(show) {
         let clean = super::sanitize_for_display(line);
         if clean.len() > MAX_LINE_BYTES {
             let truncated = &clean[..clean.floor_char_boundary(MAX_LINE_BYTES)];
@@ -351,10 +364,16 @@ fn write_error_box(buf: &mut String, name: &str, output: &str, limit: Option<usi
         }
     }
 
-    let remaining = total.saturating_sub(show);
+    let shown_end = start + show;
+    let remaining = total.saturating_sub(shown_end);
     if remaining > 0 {
+        let next_page = page + 1;
+        let limit_n = match limit {
+            Some(0) | None => remaining,
+            Some(n) => n,
+        };
         buf.push_str(&format!(
-            "    {}│{} {}{remaining} more lines{}\n",
+            "    {}│{} {}… {remaining} more lines (--page {next_page} for next {limit_n}){}\n",
             color(c, RED),
             color(c, RESET),
             color(c, DIM),
@@ -472,7 +491,7 @@ mod tests {
     fn write_error_box_truncates_long_line() {
         let long_line = "y".repeat(10_000);
         let mut buf = String::new();
-        write_error_box(&mut buf, "test", &long_line, None, false);
+        write_error_box(&mut buf, "test", &long_line, None, 1, false);
         assert!(
             buf.contains("line truncated"),
             "long line should be truncated"
@@ -487,7 +506,7 @@ mod tests {
     #[test]
     fn write_error_box_short_line_untouched() {
         let mut buf = String::new();
-        write_error_box(&mut buf, "test", "short error", None, false);
+        write_error_box(&mut buf, "test", "short error", None, 1, false);
         assert!(buf.contains("short error"));
         assert!(!buf.contains("truncated"));
     }
@@ -527,7 +546,7 @@ mod tests {
     fn write_error_box_limit_respected() {
         let output = "line1\nline2\nline3\nline4\nline5";
         let mut buf = String::new();
-        write_error_box(&mut buf, "test", output, Some(2), false);
+        write_error_box(&mut buf, "test", output, Some(2), 1, false);
         assert!(buf.contains("line1"));
         assert!(buf.contains("line2"));
         assert!(!buf.contains("line3"));
@@ -538,7 +557,7 @@ mod tests {
     fn write_error_box_zero_limit_shows_all() {
         let output = "line1\nline2\nline3";
         let mut buf = String::new();
-        write_error_box(&mut buf, "test", output, Some(0), false);
+        write_error_box(&mut buf, "test", output, Some(0), 1, false);
         assert!(buf.contains("line1"));
         assert!(buf.contains("line2"));
         assert!(buf.contains("line3"));

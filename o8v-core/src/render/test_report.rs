@@ -4,11 +4,13 @@
 
 use super::output::Output;
 use crate::process_report::ProcessReport;
+use crate::render::RenderConfig;
 
 pub struct TestReport {
     pub process: ProcessReport,
     pub stack: String,
     pub detection_errors: Vec<String>,
+    pub render_config: RenderConfig,
 }
 
 impl super::Renderable for TestReport {
@@ -23,7 +25,7 @@ impl super::Renderable for TestReport {
         buf.push_str(&format!("$ {}\n", p.command));
         buf.push_str(&format!("exit: {}\n", p.exit_label));
         buf.push_str(&format!("duration: {}\n", p.duration_display));
-        super::run_report::render_process_output(&mut buf, p);
+        super::run_report::render_process_output(&mut buf, p, &self.render_config);
         Output::new(buf)
     }
 
@@ -76,6 +78,7 @@ mod tests {
             },
             stack: "rust".to_string(),
             detection_errors: vec![],
+            render_config: RenderConfig::default(),
         }
     }
 

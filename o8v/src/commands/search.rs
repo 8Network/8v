@@ -61,6 +61,10 @@ pub struct Args {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
+
+    /// Page number for paginated output (default: 1)
+    #[arg(long, default_value = "1")]
+    pub page: usize,
 }
 
 impl Args {
@@ -389,6 +393,12 @@ impl Command for SearchCommand {
             truncated: result.truncated,
             file_mode: self.args.files,
             context: self.args.context,
+            render_config: o8v_core::render::RenderConfig {
+                limit: Some(self.args.limit),
+                verbose: false,
+                color: false,
+                page: self.args.page,
+            },
         })
     }
 }

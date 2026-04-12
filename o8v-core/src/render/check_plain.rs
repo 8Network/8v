@@ -90,10 +90,10 @@ fn write_entry(buf: &mut String, entry: &CheckEntry, config: &super::RenderConfi
             } else if *parse_status == ParseStatus::Unparsed {
                 // Show both streams — don't drop stderr when stdout present.
                 if !raw_stdout.is_empty() {
-                    write_paginated(buf, raw_stdout, config.limit);
+                    write_paginated(buf, raw_stdout, config.limit, config.page);
                 }
                 if !raw_stderr.is_empty() {
-                    write_paginated(buf, raw_stderr, config.limit);
+                    write_paginated(buf, raw_stderr, config.limit, config.page);
                 }
             }
         }
@@ -107,10 +107,10 @@ fn write_entry(buf: &mut String, entry: &CheckEntry, config: &super::RenderConfi
             writeln!(buf, "{} error {ms}ms {cause}", entry.name()).unwrap();
             // Show both streams.
             if !raw_stdout.is_empty() {
-                write_paginated(buf, raw_stdout, config.limit);
+                write_paginated(buf, raw_stdout, config.limit, config.page);
             }
             if !raw_stderr.is_empty() {
-                write_paginated(buf, raw_stderr, config.limit);
+                write_paginated(buf, raw_stderr, config.limit, config.page);
             }
         }
         #[allow(unreachable_patterns)]
@@ -200,18 +200,26 @@ fn write_diagnostics_plain(buf: &mut String, diagnostics: &[Diagnostic], limit: 
 /// with a marker. Prevents single-line floods (e.g., 2MB of minified JS on one line).
 const MAX_LINE_BYTES: usize = 4096;
 
-/// Write error output lines, paginated by limit. ANSI codes stripped.
+/// Write error output lines, paginated by limit and page. ANSI codes stripped.
 /// Individual lines are capped at MAX_LINE_BYTES to prevent single-line floods.
-fn write_paginated(buf: &mut String, output: &str, limit: Option<usize>) {
+/// Page 1 shows lines 0..limit, page 2 shows limit..2*limit, etc.
+fn write_paginated(buf: &mut String, output: &str, limit: Option<usize>, page: usize) {
     let lines: Vec<&str> = output.lines().collect();
     let total = lines.len();
 
-    let show = match limit {
-        Some(0) | None => total,
-        Some(n) => n.min(total),
+    let (start, show) = match limit {
+        Some(0) | None => (0, total),
+        Some(n) => {
+            let p = page.max(1);
+            let start = (p - 1) * n;
+            let end = (p * n).min(total);
+            // If start is past the end, clamp to show nothing.
+            let show = end.saturating_sub(start);
+            (start, show)
+        }
     };
 
-    for line in &lines[..show] {
+    for line in &lines[start..start + show] {
         let sanitized = super::sanitize_for_display(line);
         if sanitized.len() > MAX_LINE_BYTES {
             let truncated = &sanitized[..sanitized.floor_char_boundary(MAX_LINE_BYTES)];
@@ -221,9 +229,18 @@ fn write_paginated(buf: &mut String, output: &str, limit: Option<usize>) {
         }
     }
 
-    let remaining = total.saturating_sub(show);
+    let remaining = total.saturating_sub(start + show);
     if remaining > 0 {
-        writeln!(buf, "  … {remaining} more lines").unwrap();
+        let next_page = page.max(1) + 1;
+        let limit_n = match limit {
+            Some(0) | None => remaining,
+            Some(n) => n,
+        };
+        writeln!(
+            buf,
+            "  … {remaining} more lines (--page {next_page} for next {limit_n})"
+        )
+        .unwrap();
     }
 }
 
@@ -236,7 +253,7 @@ mod tests {
     fn write_paginated_truncates_long_line() {
         let long_line = "x".repeat(10_000);
         let mut buf = String::new();
-        write_paginated(&mut buf, &long_line, None);
+        write_paginated(&mut buf, &long_line, None, 1);
         assert!(
             buf.contains("line truncated"),
             "long line should be truncated: len={}",
@@ -252,7 +269,7 @@ mod tests {
     #[test]
     fn write_paginated_short_line_untouched() {
         let mut buf = String::new();
-        write_paginated(&mut buf, "short line", None);
+        write_paginated(&mut buf, "short line", None, 1);
         assert!(buf.contains("short line"));
         assert!(!buf.contains("truncated"));
     }
@@ -351,7 +368,7 @@ mod tests {
     fn write_paginated_limit_zero_shows_all() {
         let output = "line 1\nline 2\nline 3";
         let mut buf = String::new();
-        write_paginated(&mut buf, output, Some(0));
+        write_paginated(&mut buf, output, Some(0), 1);
 
         assert!(
             buf.contains("line 1"),
@@ -375,7 +392,7 @@ mod tests {
     fn write_paginated_limit_none_shows_all() {
         let output = "line 1\nline 2\nline 3";
         let mut buf = String::new();
-        write_paginated(&mut buf, output, None);
+        write_paginated(&mut buf, output, None, 1);
 
         assert!(buf.contains("line 1"), "limit=None should show all lines");
         assert!(buf.contains("line 2"), "limit=None should show all lines");
@@ -390,7 +407,7 @@ mod tests {
     fn write_paginated_limit_one_shows_single() {
         let output = "line 1\nline 2\nline 3";
         let mut buf = String::new();
-        write_paginated(&mut buf, output, Some(1));
+        write_paginated(&mut buf, output, Some(1), 1);
 
         assert!(
             buf.contains("line 1"),
@@ -433,7 +450,7 @@ mod tests {
         // 100 MB of output should be processable with truncation.
         let huge_output = "x".repeat(100_000_000);
         let mut buf = String::new();
-        write_paginated(&mut buf, &huge_output, Some(10));
+        write_paginated(&mut buf, &huge_output, Some(10), 1);
         assert!(buf.len() < huge_output.len(), "output should be truncated");
     }
 
@@ -481,7 +498,7 @@ mod tests {
         // A single extremely long line should be truncated
         let long_line = "x".repeat(1_000_000);
         let mut buf = String::new();
-        write_paginated(&mut buf, &long_line, None);
+        write_paginated(&mut buf, &long_line, None, 1);
         assert!(
             buf.contains("line truncated"),
             "very long line should be truncated"

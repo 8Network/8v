@@ -5,6 +5,7 @@
 //! Report type for `8v search` — content and file search results.
 
 use super::output::Output;
+use crate::render::RenderConfig;
 
 // ─── Per-match context ────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ pub struct SearchReport {
     pub file_mode: bool,
     /// The context flag value from args (-C N). None = compact, Some(0) = text only, Some(N) = context.
     pub context: Option<usize>,
+    pub render_config: RenderConfig,
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
@@ -61,16 +63,44 @@ impl super::Renderable for SearchReport {
 
         let mut out = String::new();
 
+        let config = &self.render_config;
+        let limit = config.limit.unwrap_or(usize::MAX);
+        let page = config.page.max(1);
+        let total_files = self.files.len();
+        let start = (page - 1) * limit;
+        let end = (start + limit).min(total_files);
+
         if self.file_mode {
-            for file_match in &self.files {
-                out.push_str(&file_match.path);
-                out.push('\n');
+            if start >= total_files {
+                out.push_str(&format!(
+                    "(page {} is out of range -- {} total files)\n",
+                    page, total_files
+                ));
+            } else {
+                for file_match in &self.files[start..end] {
+                    out.push_str(&file_match.path);
+                    out.push('\n');
+                }
+                let remaining = total_files.saturating_sub(end);
+                if remaining > 0 {
+                    out.push_str(&format!(
+                        "... {} more files (--page {} for next {})\n",
+                        remaining,
+                        page + 1,
+                        limit
+                    ));
+                }
             }
+        } else if start >= total_files {
+            out.push_str(&format!(
+                "(page {} is out of range -- {} total files)\n",
+                page, total_files
+            ));
         } else {
             match self.context {
                 None => {
                     // Compact mode: "file:line"
-                    for fm in &self.files {
+                    for fm in &self.files[start..end] {
                         for m in &fm.matches {
                             out.push_str(&format!("{}:{}\n", fm.path, m.line));
                         }
@@ -78,7 +108,7 @@ impl super::Renderable for SearchReport {
                 }
                 Some(0) => {
                     // Text-only mode: "file:line: text"
-                    for fm in &self.files {
+                    for fm in &self.files[start..end] {
                         for m in &fm.matches {
                             if let Some(ref text) = m.content {
                                 out.push_str(&format!("{}:{}: {}\n", fm.path, m.line, text));
@@ -90,7 +120,7 @@ impl super::Renderable for SearchReport {
                 }
                 Some(_) => {
                     // Context mode: "file:line: text" + context before/after
-                    for fm in &self.files {
+                    for fm in &self.files[start..end] {
                         for m in &fm.matches {
                             if let Some(ref text) = m.content {
                                 out.push_str(&format!("{}:{}: {}\n", fm.path, m.line, text));
@@ -106,6 +136,15 @@ impl super::Renderable for SearchReport {
                         }
                     }
                 }
+            }
+            let remaining = total_files.saturating_sub(end);
+            if remaining > 0 {
+                out.push_str(&format!(
+                    "... {} more files (--page {} for next {})\n",
+                    remaining,
+                    page + 1,
+                    limit
+                ));
             }
         }
 
@@ -256,6 +295,7 @@ mod tests {
             truncated: false,
             file_mode: false,
             context: Some(0),
+            render_config: RenderConfig::default(),
         }
     }
 
@@ -296,6 +336,7 @@ mod tests {
             truncated: false,
             file_mode: false,
             context: None,
+            render_config: RenderConfig::default(),
         };
         let out = r.render_plain();
         assert_eq!(out.as_str(), "no matches found");
@@ -327,6 +368,7 @@ mod tests {
             truncated: false,
             file_mode: true,
             context: None,
+            render_config: RenderConfig::default(),
         };
         let out = r.render_plain();
         assert!(out.as_str().contains("src/main.rs\n"));

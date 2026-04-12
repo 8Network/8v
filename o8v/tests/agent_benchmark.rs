@@ -746,6 +746,14 @@ fn v4_token_efficiency() {
         .expect("git init with_8v");
     write_8v_setup(with_8v_dir.path(), binary);
 
+    // Clean MCP events from real HOME before arm 2 so measurements are isolated.
+    let mcp_events_path = std::path::PathBuf::from(
+        std::env::var("HOME").expect("HOME must be set"),
+    )
+    .join(".8v")
+    .join("mcp-events.ndjson");
+    let _ = std::fs::remove_file(&mcp_events_path);
+
     let mcp_config = with_8v_dir.path().join(".mcp.json");
     let with_8v = run_claude_with_mcp(
         prompt,
@@ -758,9 +766,8 @@ fn v4_token_efficiency() {
     )
     .expect("run claude (with 8v)");
 
-    // Read MCP event measurements — exact bytes 8v sent to the agent.
-    // Best-effort: .8v/ may not exist if agent never triggered a check.
-    let mcp = o8v_testkit::McpMeasurement::from_project(with_8v_dir.path()).unwrap_or_else(|e| {
+    // Read MCP event measurements from real HOME after arm 2.
+    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
         eprintln!("  MCP measurement: {e}");
         o8v_testkit::McpMeasurement::zero()
     });
@@ -842,6 +849,75 @@ fn v4_token_efficiency() {
          Tool calls: {:?}",
         with_8v.tool_calls
     );
+
+    // ── Arm 3: Paginated 8v ─────────────────────────────────────────────────
+    // Same fixture and 8v setup as Arm 2, but the prompt instructs the agent
+    // to use --limit and --page flags so 8v check output is paginated.
+    let paginated_dir = TempProject::from_fixture(&fixture);
+    Command::new("git")
+        .args(["init"])
+        .current_dir(paginated_dir.path())
+        .output()
+        .expect("git init paginated");
+    write_8v_setup(paginated_dir.path(), binary);
+
+    let mcp_config_paginated = paginated_dir.path().join(".mcp.json");
+    let paginated_prompt = "Check everything in this project and report any issues. When using 8v check, use --limit 10 to paginate results and --page N to see more.";
+
+    // Clean MCP events from real HOME before arm 3 so arm 2 events don't bleed in.
+    let _ = std::fs::remove_file(&mcp_events_path);
+
+    let paginated = run_claude_with_mcp(
+        paginated_prompt,
+        paginated_dir.path(),
+        Some(&mcp_config_paginated),
+        &[],
+        &[],
+        "bypassPermissions",
+        None,
+    )
+    .expect("run claude (paginated)");
+
+    let mcp_paginated =
+        o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
+            eprintln!("  MCP measurement (paginated): {e}");
+            o8v_testkit::McpMeasurement::zero()
+        });
+
+    // ── Pagination comparison report ─────────────────────────────────────────
+    #[allow(clippy::cast_possible_wrap)]
+    let token_delta = paginated.total_tokens as i64 - with_8v.total_tokens as i64;
+    let token_pct = if with_8v.total_tokens > 0 {
+        (token_delta as f64 / with_8v.total_tokens as f64) * 100.0
+    } else {
+        0.0
+    };
+    let tool_delta = paginated.tool_call_count() as i64 - with_8v.tool_call_count() as i64;
+
+    eprintln!(
+        "\n[v4] === PAGINATION COMPARISON ==="
+    );
+    eprintln!(
+        "[v4] Arm 2 (full output):  {} tokens, {} tool calls, ${:.4} cost, {} render bytes",
+        with_8v.total_tokens,
+        with_8v.tool_call_count(),
+        with_8v.cost_usd,
+        mcp.render_bytes,
+    );
+    eprintln!(
+        "[v4] Arm 3 (paginated):    {} tokens, {} tool calls, ${:.4} cost, {} render bytes",
+        paginated.total_tokens,
+        paginated.tool_call_count(),
+        paginated.cost_usd,
+        mcp_paginated.render_bytes,
+    );
+    eprintln!(
+        "[v4] Delta:                {:+} tokens ({:+.1}%), {:+} tool calls",
+        token_delta,
+        token_pct,
+        tool_delta,
+    );
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1253,7 +1329,7 @@ fn v4_polyglot_token_efficiency() {
     )
     .expect("run claude (with 8v)");
 
-    let mcp = o8v_testkit::McpMeasurement::from_project(with_8v_dir.path()).unwrap_or_else(|e| {
+    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
         eprintln!("  MCP measurement: {e}");
         o8v_testkit::McpMeasurement::zero()
     });
@@ -1455,7 +1531,7 @@ fn v7_read_write_token_efficiency() {
     )
     .expect("8v claude run");
 
-    let mcp = o8v_testkit::McpMeasurement::from_project(eightvee_dir.path()).unwrap_or_else(|e| {
+    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
         eprintln!("  MCP measurement: {e}");
         o8v_testkit::McpMeasurement::zero()
     });
@@ -1798,7 +1874,7 @@ fn v9_ls_discovery() {
     }
 
     // Read MCP event measurements
-    let mcp = o8v_testkit::McpMeasurement::from_project(project_dir.path()).unwrap_or_else(|e| {
+    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
         eprintln!("  MCP measurement: {e}");
         o8v_testkit::McpMeasurement::zero()
     });

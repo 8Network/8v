@@ -6,10 +6,12 @@
 
 use super::output::Output;
 use crate::process_report::ProcessReport;
+use crate::render::RenderConfig;
 
 /// Result of running an arbitrary command.
 pub struct RunReport {
     pub process: ProcessReport,
+    pub render_config: RenderConfig,
 }
 
 impl super::Renderable for RunReport {
@@ -19,7 +21,7 @@ impl super::Renderable for RunReport {
         buf.push_str(&format!("$ {}\n", p.command));
         buf.push_str(&format!("exit: {}\n", p.exit_label));
         buf.push_str(&format!("duration: {}\n", p.duration_display));
-        render_process_output(&mut buf, p);
+        render_process_output(&mut buf, p, &self.render_config);
         Output::new(buf)
     }
 
@@ -50,12 +52,11 @@ impl super::Renderable for RunReport {
 }
 
 /// Render stdout/stderr sections matching the format_process_output convention.
-pub fn render_process_output(buf: &mut String, p: &ProcessReport) {
+pub fn render_process_output(buf: &mut String, p: &ProcessReport, config: &RenderConfig) {
     let stdout = p.stdout.trim();
     if !stdout.is_empty() {
         buf.push_str("\nstdout:\n");
-        buf.push_str(stdout);
-        buf.push('\n');
+        render_paginated_lines(buf, stdout, config);
         if p.stdout_truncated {
             buf.push_str(o8v_process::TRUNCATION_MARKER);
             buf.push('\n');
@@ -65,11 +66,45 @@ pub fn render_process_output(buf: &mut String, p: &ProcessReport) {
     let stderr = p.stderr.trim();
     if !stderr.is_empty() {
         buf.push_str("\nstderr:\n");
-        buf.push_str(stderr);
-        buf.push('\n');
+        render_paginated_lines(buf, stderr, config);
         if p.stderr_truncated {
             buf.push_str(o8v_process::TRUNCATION_MARKER);
             buf.push('\n');
+        }
+    }
+}
+
+fn render_paginated_lines(buf: &mut String, text: &str, config: &RenderConfig) {
+    let lines: Vec<&str> = text.lines().collect();
+    let total = lines.len();
+    match config.limit {
+        None => {
+            buf.push_str(text);
+            buf.push('\n');
+        }
+        Some(limit) => {
+            let page = config.page.max(1);
+            let start = (page - 1) * limit;
+            let end = (start + limit).min(total);
+            if start >= total {
+                buf.push_str(&format!(
+                    "(page {} is out of range -- {} total lines)\n",
+                    page, total
+                ));
+                return;
+            }
+            for line in lines[start..end].iter() {
+                buf.push_str(line);
+                buf.push('\n');
+            }
+            let remaining = total.saturating_sub(end);
+            if remaining > 0 {
+                let next_page = page + 1;
+                buf.push_str(&format!(
+                    "... {} more lines (--page {} for next {})\n",
+                    remaining, next_page, limit
+                ));
+            }
         }
     }
 }
@@ -94,6 +129,7 @@ mod tests {
                 stdout_truncated: false,
                 stderr_truncated: false,
             },
+            render_config: RenderConfig::default(),
         }
     }
 

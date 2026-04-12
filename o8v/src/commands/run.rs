@@ -20,6 +20,14 @@ pub struct Args {
     /// Timeout in seconds (default: 120)
     #[arg(long, default_value = "120")]
     pub timeout: u64,
+
+    /// Maximum output lines to show per section (0 = no limit)
+    #[arg(long, default_value = "30")]
+    pub limit: usize,
+
+    /// Page number for paginated output (default: 1)
+    #[arg(long, default_value = "1")]
+    pub page: usize,
 }
 
 impl Args {
@@ -100,6 +108,16 @@ impl Command for RunCommand {
                 stderr: result.stderr,
                 stdout_truncated: result.stdout_truncated,
                 stderr_truncated: result.stderr_truncated,
+            },
+            render_config: o8v_core::render::RenderConfig {
+                limit: if self.args.limit == 0 {
+                    None
+                } else {
+                    Some(self.args.limit)
+                },
+                verbose: false,
+                color: false,
+                page: self.args.page,
             },
         })
     }

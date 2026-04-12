@@ -76,7 +76,13 @@ impl EventWriter {
     }
 
     /// Record a diagnostic.
-    pub fn on_event(&mut self, diagnostic: &o8v_core::Diagnostic, tool: &str, stack: &str, project: &str) {
+    pub fn on_event(
+        &mut self,
+        diagnostic: &o8v_core::Diagnostic,
+        tool: &str,
+        stack: &str,
+        project: &str,
+    ) {
         let Some(ref mut inner) = self.inner else {
             return;
         };
@@ -100,14 +106,16 @@ impl EventWriter {
 impl ActiveWriter {
     const DIAGNOSTIC_ID_LEN: usize = 16;
 
-    fn on_diagnostic(&mut self, diagnostic: &o8v_core::Diagnostic, tool: &str, stack: &str, project: &str) {
+    fn on_diagnostic(
+        &mut self,
+        diagnostic: &o8v_core::Diagnostic,
+        tool: &str,
+        stack: &str,
+        project: &str,
+    ) {
         let diag_id = self.compute_diagnostic_id(diagnostic);
 
-        let line = diagnostic
-            .span
-            .as_ref()
-            .map(|s| s.line)
-            .unwrap_or(0);
+        let line = diagnostic.span.as_ref().map(|s| s.line).unwrap_or(0);
 
         let entry = o8v_events::SeriesEntry {
             file: loc_str(&diagnostic.location),
