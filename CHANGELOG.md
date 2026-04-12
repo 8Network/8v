@@ -63,7 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - 2 — nothing to check (no supported files detected)
   - 130 — interrupted by signal
 - StackTools architecture: each language stack defines checks, formatter, and optional test runner
-- 577+ tests across all 8 crates (o8v-fs, o8v-project, o8v-process, o8v-core, o8v-render, o8v-cli, o8v-testkit)
+- 577+ tests across all 10 crates (o8v-fs, o8v-project, o8v-process, o8v-core, o8v-stacks, o8v-check, o8v-events, o8v-testkit, o8v-workspace, o8v)
 - BSL-1.1 license
 - Multi-platform support:
   - macOS (arm64, x86_64) — code-signed and notarized

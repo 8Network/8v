@@ -6,7 +6,7 @@
 //!
 //! Provides fixture resolution, check execution, EXPECTED.toml parsing,
 //! diagnostic queries, and assertion helpers. Used by integration tests
-//! across o8v-check, o8v-core, and o8v-cli.
+//! across o8v-check, o8v-core, and o8v.
 
 mod assert;
 mod binary;

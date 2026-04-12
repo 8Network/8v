@@ -9,10 +9,9 @@
 //! One function: [`run`]. One config: [`ProcessConfig`]. One result: [`ProcessResult`].
 //!
 //! ```text
-//! o8v-fs  →  o8v-project  →  o8v-check  →  o8v-core(render)  →  o8v(cli)
-//! (read       (what is it?)   (is it        (present it)          (show me)
-//!  safely)                     correct?)
-//!                                   ↑
+//! o8v-fs  →  o8v-project  →  o8v-core  →  o8v-stacks  →  o8v-check  →  o8v(cli)
+//! (safe I/O)   (detect)       (types)     (toolchains)   (orchestrate)  (interface)
+//!                                ↑             ↑
 //!                           o8v-process  (this crate: run safely)
 //! ```
 //!

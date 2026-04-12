@@ -166,7 +166,7 @@ pub enum ErrorKind {
 /// A single check that can be run against a project directory.
 ///
 /// Implemented by external tool checks (clippy, ruff, tsc) and
-/// by 8v's own rules (from AI-ERRORS.md patterns). The runner
+/// by 8v's own rules. The runner
 /// treats both the same.
 pub trait Check {
     /// Human-readable name of this check (e.g. "clippy", "no-silent-fallback").

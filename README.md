@@ -78,7 +78,7 @@ cargo build -p o8v       # CLI binary
 8v check .                   # self-check
 ```
 
-Workspace: 9 crates (o8v-fs, o8v-process, o8v-project, o8v-check, o8v-render, o8v, o8v-events, o8v-testkit, o8v-workspace).
+Workspace: 10 crates (o8v-fs, o8v-process, o8v-project, o8v-core, o8v-stacks, o8v-check, o8v-events, o8v-testkit, o8v-workspace, o8v).
 
 ## License
 

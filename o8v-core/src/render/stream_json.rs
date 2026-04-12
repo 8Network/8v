@@ -3,9 +3,6 @@
 // See LICENSE file in the project root.
 
 //! JSON check renderer — structured output for tools, CI, and storage.
-//!
-//! Temporary: will be replaced when CheckReport's Renderable::render_json()
-//! is used directly (already implemented in check_json.rs).
 
 use super::{Render, RenderConfig, Summary};
 use crate::{CheckOutcome, CheckReport};

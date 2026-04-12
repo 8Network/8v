@@ -1,7 +1,7 @@
-//! Composite operations — encode the patterns from 39 AI errors.
+//! Composite operations — common filesystem patterns used by multiple callers.
 //!
-//! Every detector used `read_manifest` in the old code — that logic now
-//! lives here as `read_checked`, `read_by_ext`, and `validate_entry`.
+//! Consolidates `read_checked`, `read_by_ext`, and `validate_entry` into
+//! one module for reuse across detectors.
 
 use crate::config::FsConfig;
 use crate::error::FsError;

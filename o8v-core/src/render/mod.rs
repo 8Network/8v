@@ -9,7 +9,7 @@ pub(crate) mod fmt_human;
 pub(crate) mod fmt_json;
 pub(crate) mod fmt_plain;
 pub mod output;
-// Streaming renderers — temporary, replaced by event Renderable impls (Increment 6).
+// Streaming renderers — per-event output for check commands.
 pub mod stream_human;
 pub mod stream_json;
 pub mod stream_plain;

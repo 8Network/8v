@@ -3,8 +3,6 @@
 // See LICENSE file in the project root.
 
 //! Streaming plain text renderer — per-event token-efficient output.
-//!
-//! Temporary: will be replaced when CheckEvent implements Renderable (Increment 6).
 
 use super::{Render, RenderConfig, Summary};
 use crate::diagnostic::{Diagnostic, Location, ParseStatus};

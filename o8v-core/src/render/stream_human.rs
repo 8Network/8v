@@ -3,8 +3,6 @@
 // See LICENSE file in the project root.
 
 //! Streaming human renderer — per-event colored output for terminals.
-//!
-//! Temporary: will be replaced when CheckEvent implements Renderable (Increment 6).
 
 use super::{Render, RenderConfig, Summary};
 use crate::diagnostic::{Diagnostic, Location, ParseStatus, Severity};

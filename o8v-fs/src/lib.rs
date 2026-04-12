@@ -8,9 +8,9 @@
 //! limits, TOCTOU narrowing, BOM stripping.
 //!
 //! ```text
-//! o8v-fs  →  o8v-project  →  o8v-check  →  o8v-core(render)  →  o8v(cli)
-//!                                  ↑
-//!                             o8v-process
+//! o8v-fs  →  o8v-project  →  o8v-core  →  o8v-stacks  →  o8v-check  →  o8v(cli)
+//!                                            ↑
+//!                                       o8v-process
 //! ```
 //!
 //! ## Example
