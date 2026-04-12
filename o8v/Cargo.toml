@@ -7,6 +7,9 @@ homepage.workspace = true
 license = "BSL-1.1"
 authors = ["Soheil Alizadeh <soheil@8network.io>"]
 description = "CLI for 8v — one command checks everything"
+readme = "../README.md"
+keywords = ["mcp", "polyglot", "code-checker", "ai-coding", "devtools"]
+categories = ["development-tools", "command-line-utilities"]
 
 [lib]
 path = "src/lib.rs"

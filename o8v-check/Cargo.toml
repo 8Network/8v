@@ -6,6 +6,7 @@ repository.workspace = true
 homepage.workspace = true
 license = "BSL-1.1"
 authors = ["Soheil Alizadeh <soheil@8network.io>"]
+readme = "../README.md"
 description = "Check orchestration for 8v — detect projects, plan checks, run them, report results"
 
 [dependencies]

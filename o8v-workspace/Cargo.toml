@@ -6,6 +6,7 @@ repository.workspace = true
 homepage.workspace = true
 license = "BSL-1.1"
 authors = ["Soheil Alizadeh <soheil@8network.io>"]
+readme = "../README.md"
 description = "Workspace management for 8v — .8v/ layout, registry, config discovery"
 
 [dependencies]

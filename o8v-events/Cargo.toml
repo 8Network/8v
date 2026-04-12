@@ -6,6 +6,7 @@ repository.workspace = true
 homepage.workspace = true
 authors = ["Soheil Alizadeh <soheil@8network.io>"]
 license = "BSL-1.1"
+readme = "../README.md"
 description = "Event sourcing infrastructure for 8v — persist check results for trend analysis"
 
 [dependencies]
