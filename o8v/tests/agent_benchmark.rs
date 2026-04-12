@@ -122,10 +122,10 @@ struct ClaudeResultUsage {
     cache_read_input_tokens: u64,
 }
 
-// ── MCP event types (for v4b test) ───────────────────────────────────────────
+// ── Command event types (for v4b test) ───────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct McpInvokedEvent {
+struct CommandStartedEvent {
     run_id: String,
     command: String,
     command_bytes: u64,
@@ -133,9 +133,9 @@ struct McpInvokedEvent {
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct McpCompletedEvent {
+struct CommandCompletedEvent {
     run_id: String,
-    render_bytes: u64,
+    output_bytes: u64,
     token_estimate: u64,
     duration_ms: u64,
 }
@@ -751,7 +751,7 @@ fn v4_token_efficiency() {
         std::env::var("HOME").expect("HOME must be set"),
     )
     .join(".8v")
-    .join("mcp-events.ndjson");
+    .join("command-events.ndjson");
     let _ = std::fs::remove_file(&mcp_events_path);
 
     let mcp_config = with_8v_dir.path().join(".mcp.json");
@@ -811,7 +811,7 @@ fn v4_token_efficiency() {
         "\n[v4] EFFICIENCY SUMMARY\n\
          [v4]   without 8v: {} tool calls, {} tokens, ${:.4}\n\
          [v4]   with 8v:    {} tool calls, {} tokens, ${:.4}\n\
-         [v4]   8v exact bytes sent to agent: {} render_bytes (~{} token estimate)\n\
+         [v4]   8v exact bytes sent to agent: {} output_bytes (~{} token estimate)\n\
          [v4]   8v exact bytes from agent:    {} command_bytes (~{} token estimate)\n\
          [v4]   8v calls made:                {}\n\
          [v4]   bytes per 8v call (avg):      {}\n\
@@ -822,8 +822,8 @@ fn v4_token_efficiency() {
         with_8v.tool_call_count(),
         with_8v.total_tokens,
         with_8v.cost_usd,
-        mcp.render_bytes,
-        mcp.render_token_estimate(),
+        mcp.output_bytes,
+        mcp.output_token_estimate(),
         mcp.command_bytes,
         mcp.command_token_estimate(),
         mcp.call_count,
@@ -898,18 +898,18 @@ fn v4_token_efficiency() {
         "\n[v4] === PAGINATION COMPARISON ==="
     );
     eprintln!(
-        "[v4] Arm 2 (full output):  {} tokens, {} tool calls, ${:.4} cost, {} render bytes",
+        "[v4] Arm 2 (full output):  {} tokens, {} tool calls, ${:.4} cost, {} output bytes",
         with_8v.total_tokens,
         with_8v.tool_call_count(),
         with_8v.cost_usd,
-        mcp.render_bytes,
+        mcp.output_bytes,
     );
     eprintln!(
-        "[v4] Arm 3 (paginated):    {} tokens, {} tool calls, ${:.4} cost, {} render bytes",
+        "[v4] Arm 3 (paginated):    {} tokens, {} tool calls, ${:.4} cost, {} output bytes",
         paginated.total_tokens,
         paginated.tool_call_count(),
         paginated.cost_usd,
-        mcp_paginated.render_bytes,
+        mcp_paginated.output_bytes,
     );
     eprintln!(
         "[v4] Delta:                {:+} tokens ({:+.1}%), {:+} tool calls",
@@ -921,18 +921,18 @@ fn v4_token_efficiency() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Value 4b — MCP Events: verify cost measurements are written correctly
+// Value 4b — Command Events: verify cost measurements are written correctly
 //
 // Claim: When an agent uses 8v via MCP, every invocation records cost signals
-//        in `.8v/mcp-events.ndjson` with accurate byte/token measurements.
+//        in `.8v/command-events.ndjson` with accurate byte/token measurements.
 //
 // Setup: Run 8v init to create .8v/ directory, then run agent with prompt.
-// Verify: Parse NDJSON events, check McpInvoked and McpCompleted records.
+// Verify: Parse NDJSON events, check CommandStarted and CommandCompleted records.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 #[ignore = "requires: `claude` in PATH (~10s, costs tokens)"]
-fn v4_mcp_events_written() {
+fn v4_command_events_written() {
     let binary = env!("CARGO_BIN_EXE_8v");
     let fixture = o8v_testkit::fixture_path("o8v", "agent-benchmark/violated-rust");
     let tmpdir = TempProject::from_fixture(&fixture);
@@ -948,23 +948,23 @@ fn v4_mcp_events_written() {
     )
     .expect("run claude");
 
-    // 3. Read the MCP events file (written to ~/.8v/mcp-events.ndjson)
+    // 3. Read the command events file (written to ~/.8v/command-events.ndjson)
     let home = std::env::var("HOME").expect("HOME env var");
     let events_path = std::path::Path::new(&home)
         .join(".8v")
-        .join("mcp-events.ndjson");
+        .join("command-events.ndjson");
 
-    let events_content = fs::read_to_string(&events_path).expect("read mcp-events.ndjson");
+    let events_content = fs::read_to_string(&events_path).expect("read command-events.ndjson");
     let lines: Vec<&str> = events_content.lines().collect();
 
     eprintln!(
-        "\n[v4b] MCP_EVENTS_WRITTEN\n[v4b]   total_lines={}",
+        "\n[v4b] COMMAND_EVENTS_WRITTEN\n[v4b]   total_lines={}",
         lines.len()
     );
 
-    // 4. Parse all lines as JSON and separate McpInvoked vs McpCompleted
-    let mut invoked_events: Vec<McpInvokedEvent> = Vec::new();
-    let mut completed_events: Vec<McpCompletedEvent> = Vec::new();
+    // 4. Parse all lines as JSON and separate CommandStarted vs CommandCompleted
+    let mut started_events: Vec<CommandStartedEvent> = Vec::new();
+    let mut completed_events: Vec<CommandCompletedEvent> = Vec::new();
 
     for (idx, line) in lines.iter().enumerate() {
         // Determine event type first, then deserialize into the appropriate struct.
@@ -976,91 +976,91 @@ fn v4_mcp_events_written() {
             .unwrap_or_else(|| panic!("line {idx}: get event type"));
 
         match event_type {
-            "McpInvoked" => {
-                let ev: McpInvokedEvent = serde_json::from_str(line)
-                    .unwrap_or_else(|e| panic!("line {idx}: deserialize McpInvokedEvent: {e}"));
-                invoked_events.push(ev);
+            "CommandStarted" => {
+                let ev: CommandStartedEvent = serde_json::from_str(line)
+                    .unwrap_or_else(|e| panic!("line {idx}: deserialize CommandStartedEvent: {e}"));
+                started_events.push(ev);
             }
-            "McpCompleted" => {
-                let ev: McpCompletedEvent = serde_json::from_str(line)
-                    .unwrap_or_else(|e| panic!("line {idx}: deserialize McpCompletedEvent: {e}"));
+            "CommandCompleted" => {
+                let ev: CommandCompletedEvent = serde_json::from_str(line)
+                    .unwrap_or_else(|e| panic!("line {idx}: deserialize CommandCompletedEvent: {e}"));
                 completed_events.push(ev);
             }
             _ => {}
         }
     }
 
-    // 5. Assert: at least one McpInvoked event exists
+    // 5. Assert: at least one CommandStarted event exists
     assert!(
-        !invoked_events.is_empty(),
-        "No McpInvoked events found in mcp-events.ndjson"
+        !started_events.is_empty(),
+        "No CommandStarted events found in command-events.ndjson"
     );
 
-    // 6. Assert: at least one McpCompleted event exists
+    // 6. Assert: at least one CommandCompleted event exists
     assert!(
         !completed_events.is_empty(),
-        "No McpCompleted events found in mcp-events.ndjson"
+        "No CommandCompleted events found in command-events.ndjson"
     );
 
-    // 7. Assert: every McpInvoked has command_bytes > 0
-    for (idx, ev) in invoked_events.iter().enumerate() {
+    // 7. Assert: every CommandStarted has command_bytes > 0
+    for (idx, ev) in started_events.iter().enumerate() {
         assert!(
             ev.command_bytes > 0,
-            "McpInvoked[{}]: command_bytes must be > 0, got {}",
+            "CommandStarted[{}]: command_bytes must be > 0, got {}",
             idx,
             ev.command_bytes
         );
     }
 
-    // 8. Assert: every McpCompleted has render_bytes > 0
+    // 8. Assert: every CommandCompleted has output_bytes > 0
     for (idx, ev) in completed_events.iter().enumerate() {
         assert!(
-            ev.render_bytes > 0,
-            "McpCompleted[{}]: render_bytes must be > 0, got {}",
+            ev.output_bytes > 0,
+            "CommandCompleted[{}]: output_bytes must be > 0, got {}",
             idx,
-            ev.render_bytes
+            ev.output_bytes
         );
     }
 
-    // 9. Assert: matching run_ids (each McpInvoked has a McpCompleted)
-    let invoked_run_ids: std::collections::HashSet<_> =
-        invoked_events.iter().map(|ev| ev.run_id.clone()).collect();
+    // 9. Assert: matching run_ids (each CommandStarted has a CommandCompleted)
+    let started_run_ids: std::collections::HashSet<_> =
+        started_events.iter().map(|ev| ev.run_id.clone()).collect();
     let completed_run_ids: std::collections::HashSet<_> = completed_events
         .iter()
         .map(|ev| ev.run_id.clone())
         .collect();
 
-    for run_id in invoked_run_ids.iter() {
+    for run_id in started_run_ids.iter() {
         assert!(
             completed_run_ids.contains(run_id),
-            "McpInvoked with run_id='{}' has no matching McpCompleted",
+            "CommandStarted with run_id='{}' has no matching CommandCompleted",
             run_id
         );
     }
 
-    // 10. Assert: token_estimates = render_bytes / 4 (verify formula)
+    // 10. Assert: token_estimates = output_bytes / 4 (verify formula)
     for (idx, ev) in completed_events.iter().enumerate() {
-        let expected = ev.render_bytes / 4;
+        let expected = ev.output_bytes / 4;
         assert_eq!(
             ev.token_estimate, expected,
-            "McpCompleted[{}]: token_estimate {} != render_bytes / 4 ({})",
+            "CommandCompleted[{}]: token_estimate {} != output_bytes / 4 ({})",
             idx, ev.token_estimate, expected
         );
     }
 
     // 11. Print full measurements with eprintln! for --nocapture visibility
-    eprintln!("[v4b]   invoked_count={}", invoked_events.len());
+    eprintln!("[v4b]   started_count={}", started_events.len());
     eprintln!("[v4b]   completed_count={}", completed_events.len());
-    for (idx, ev) in invoked_events.iter().enumerate() {
+    for (idx, ev) in started_events.iter().enumerate() {
         eprintln!(
-            "[v4b]   McpInvoked[{}]: run_id={}, cmd='{}', bytes={}, tokens={}",
+            "[v4b]   CommandStarted[{}]: run_id={}, cmd='{}', bytes={}, tokens={}",
             idx, ev.run_id, ev.command, ev.command_bytes, ev.command_token_estimate
         );
     }
     for (idx, ev) in completed_events.iter().enumerate() {
         eprintln!(
-            "[v4b]   McpCompleted[{}]: run_id={}, render_bytes={}, tokens={}, duration_ms={}",
-            idx, ev.run_id, ev.render_bytes, ev.token_estimate, ev.duration_ms
+            "[v4b]   CommandCompleted[{}]: run_id={}, output_bytes={}, tokens={}, duration_ms={}",
+            idx, ev.run_id, ev.output_bytes, ev.token_estimate, ev.duration_ms
         );
     }
 }
@@ -1352,10 +1352,10 @@ fn v4_polyglot_token_efficiency() {
         eprintln!("      -> {}", tc.name);
     }
 
-    eprintln!("  MCP EVENTS:");
+    eprintln!("  COMMAND EVENTS:");
     eprintln!("    mcp_calls:      {}", mcp.call_count);
-    eprintln!("    render_bytes:   {}", mcp.render_bytes);
-    eprintln!("    render_tokens:  ~{}", mcp.render_token_estimate());
+    eprintln!("    output_bytes:   {}", mcp.output_bytes);
+    eprintln!("    output_tokens:  ~{}", mcp.output_token_estimate());
     eprintln!("    command_bytes:  {}", mcp.command_bytes);
     eprintln!("    command_tokens: ~{}", mcp.command_token_estimate());
     if mcp.has_events() {
@@ -1590,10 +1590,10 @@ fn v7_read_write_token_efficiency() {
         eprintln!("  used {tool} (hook-blocked): {used}");
     }
 
-    eprintln!("\n--- MCP Events (.8v/mcp-events.ndjson) ---");
+    eprintln!("\n--- Command Events (.8v/command-events.ndjson) ---");
     eprintln!("  calls:               {}", mcp.call_count);
-    eprintln!("  render_bytes:        {}", mcp.render_bytes);
-    eprintln!("  render_tokens (est): {}", mcp.render_token_estimate());
+    eprintln!("  output_bytes:        {}", mcp.output_bytes);
+    eprintln!("  output_tokens (est): {}", mcp.output_token_estimate());
     eprintln!("  command_bytes:       {}", mcp.command_bytes);
     eprintln!("  command_tokens (est):{}", mcp.command_token_estimate());
     eprintln!(
@@ -1882,11 +1882,11 @@ fn v9_ls_discovery() {
     eprintln!(
         "\n[v9] MCP MEASUREMENTS\n\
          [v9]   8v calls made: {}\n\
-         [v9]   render_bytes (8v→agent): {}\n\
+         [v9]   output_bytes (8v→agent): {}\n\
          [v9]   command_bytes (agent→8v): {}\n\
          [v9]   avg bytes per call: {}",
         mcp.call_count,
-        mcp.render_bytes,
+        mcp.output_bytes,
         mcp.command_bytes,
         mcp.avg_bytes_per_call().unwrap_or(0),
     );

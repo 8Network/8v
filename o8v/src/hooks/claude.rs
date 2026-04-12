@@ -48,13 +48,13 @@ fn read_stdin_json() -> HookInput {
 
 // ─── Args ───────────────────────────────────────────────────────────────────
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Debug)]
 pub struct Args {
     #[command(subcommand)]
     pub command: ClaudeCommand,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Debug)]
 pub enum ClaudeCommand {
     /// PreToolUse — block native tools, allow 8v tools
     PreToolUse,

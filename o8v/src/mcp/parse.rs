@@ -16,7 +16,7 @@ pub(super) const MAX_COMMAND_LEN: usize = 65_536; // 64 KB
 pub(super) fn parse_mcp_command(
     command: &str,
     containment_root: &o8v_fs::ContainmentRoot,
-) -> Result<crate::cli::Command, String> {
+) -> Result<crate::commands::Command, String> {
     // Reject null bytes before any further processing — shlex treats them as
     // word separators on some platforms but they are never valid in a command.
     if command.contains('\0') {
@@ -107,12 +107,67 @@ pub(super) fn parse_mcp_command(
     }
 }
 
-/// Return error for command parsing failures with contextual messaging.
+/// Return error for command parsing failures.
 pub(super) fn parse_error(e: clap::error::Error) -> String {
     match e.kind() {
         clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
             e.to_string()
         }
         _ => format!("error parsing command: {}", e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn make_containment_root(dir: &TempDir) -> o8v_fs::ContainmentRoot {
+        let root_path = std::fs::canonicalize(dir.path()).unwrap();
+        o8v_fs::ContainmentRoot::new(&root_path).unwrap()
+    }
+
+    #[test]
+    fn null_byte_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        let result = parse_mcp_command("check\0.", &root);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("null bytes"));
+    }
+
+    #[test]
+    fn oversized_command_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        let command = "a".repeat(100 * 1024);
+        let result = parse_mcp_command(&command, &root);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("maximum length"));
+    }
+
+    #[test]
+    fn empty_command_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        let result = parse_mcp_command("", &root);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unmatched_quote_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        let result = parse_mcp_command(r#"read "unterminated"#, &root);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn shlex_strips_quotes() {
+        let command = r#"write src/main.rs --find "start..end" --replace "start..=end""#;
+        let parts = shlex::split(command).unwrap();
+        assert_eq!(parts.len(), 6);
+        assert_eq!(parts[3], "start..end");
+        assert_eq!(parts[5], "start..=end");
     }
 }

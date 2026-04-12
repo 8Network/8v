@@ -185,7 +185,6 @@ pub fn read_to_report(args: &Args) -> Result<o8v_core::render::read_report::Read
 // ── Command trait impl ──────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
 use o8v_core::render::read_report::ReadReport;
 
 pub struct ReadCommand {
@@ -194,12 +193,10 @@ pub struct ReadCommand {
 
 impl Command for ReadCommand {
     type Report = ReadReport;
-    type Event = (); // read is instant — no progressive events
 
     async fn execute(
         &self,
         _ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
         match read_to_report(&self.args) {
             Ok(report) => Ok(report),

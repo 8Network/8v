@@ -8,5 +8,5 @@
 //! and external tools.
 
 pub mod dispatch;
-pub(crate) mod events;
+pub(crate) mod storage_subscriber;
 pub(crate) mod util;

@@ -188,6 +188,19 @@ pub fn safe_set_permissions(
     write_guard::guarded_set_permissions(path, root.as_path(), mode)
 }
 
+/// Copy permissions from existing metadata to a target path (cross-platform).
+///
+/// Use this when you have metadata from `safe_metadata` and want to apply
+/// the same permissions to another file. Works on all platforms — on Unix
+/// copies the full mode bits, on Windows copies the read-only flag.
+pub fn safe_copy_permissions(
+    path: &std::path::Path,
+    root: &ContainmentRoot,
+    permissions: std::fs::Permissions,
+) -> Result<(), FsError> {
+    write_guard::guarded_copy_permissions(path, root.as_path(), permissions)
+}
+
 /// Get file metadata safely within a containment boundary.
 ///
 /// Rejects symlinks, verifies parent containment.

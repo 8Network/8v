@@ -44,8 +44,6 @@ impl Args {
 // ── Command trait impl ──────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
-use o8v_core::events::test::TestEvent;
 use o8v_core::render::test_report::TestReport;
 
 use o8v_core::{exit_code_number, exit_label, validate_timeout};
@@ -56,12 +54,10 @@ pub struct TestCommand {
 
 impl Command for TestCommand {
     type Report = TestReport;
-    type Event = TestEvent;
 
     async fn execute(
         &self,
         ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
         validate_timeout(self.args.timeout).map_err(CommandError::Execution)?;
 

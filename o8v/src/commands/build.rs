@@ -44,8 +44,6 @@ impl Args {
 // ── Command trait impl ──────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
-use o8v_core::events::build::BuildEvent;
 use o8v_core::render::build_report::BuildReport;
 
 use o8v_core::{exit_code_number, exit_label, validate_timeout};
@@ -56,12 +54,10 @@ pub struct BuildCommand {
 
 impl Command for BuildCommand {
     type Report = BuildReport;
-    type Event = BuildEvent;
 
     async fn execute(
         &self,
         ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
         validate_timeout(self.args.timeout).map_err(CommandError::Execution)?;
 

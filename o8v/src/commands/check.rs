@@ -1,12 +1,11 @@
 //! The `check` command — args + execution.
 
 use o8v_core::parse_timeout;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 // ─── Args ───────────────────────────────────────────────────────────────────
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Debug)]
 // CLI flags are idiomatically bool in clap derive structs — each maps to a
 // --flag on the command line. An enum would not be ergonomic for independent,
 // non-exclusive options like --verbose and --no-color.
@@ -68,110 +67,75 @@ fn parse_limit(s: &str) -> Result<usize, String> {
 
 /// Run `8v check` — execute checks and return the report.
 ///
-/// - Builds `CommandContext` from path argument (project root + storage + config)
+/// - Resolves ProjectRoot from args.path (path argument drives which project to check)
+/// - Gets StorageDir from CommandContext extensions (always ~/.8v/, already wired by dispatch)
 /// - Runs all checks, captures results in batch mode
-/// - Returns Err if context building fails
+/// - Returns Err if project root resolution or storage open fails
 pub(crate) fn run(
     args: &Args,
-    interrupted: &'static AtomicBool,
+    ctx: &CommandContext,
 ) -> Result<o8v_core::CheckReport, String> {
-    let path_str = args.path.as_deref().unwrap_or(".");
-
-    // Build CommandContext at the command boundary — project root detection,
-    // storage opening, and config loading happen here, not in the entrypoint.
-    let ctx = match o8v::dispatch::build_context(path_str) {
-        Ok(ctx) => ctx,
-        Err(e) => {
-            let msg = o8v_core::render::sanitize_for_display(&e.to_string());
-            return Err(msg);
+    // Resolve ProjectRoot from the path argument — the user may pass a path
+    // different from CWD, so we always resolve from args.path here.
+    let project_root = if let Some(path_str) = args.path.as_deref() {
+        match o8v_workspace::resolve_workspace(path_str) {
+            Ok((root, _, _)) => root,
+            Err(e) => {
+                let msg = o8v_core::render::sanitize_for_display(&e.to_string());
+                return Err(msg);
+            }
+        }
+    } else {
+        // No path argument: use ProjectRoot from context (resolved from CWD by dispatch).
+        match ctx.extensions.get::<o8v_project::ProjectRoot>() {
+            Some(root) => root.clone(),
+            None => {
+                // Last resort: resolve from CWD.
+                match o8v_workspace::resolve_workspace(".") {
+                    Ok((root, _, _)) => root,
+                    Err(e) => {
+                        let msg = o8v_core::render::sanitize_for_display(&e.to_string());
+                        return Err(msg);
+                    }
+                }
+            }
         }
     };
-    let root = &ctx.project_root;
+    let root = &project_root;
+
+    // Get StorageDir from context extensions — the StorageSubscriber wired in
+    // build_context() uses this same instance. Falling back to open() only
+    // when context has no storage (e.g. in unit tests that skip build_context).
+    let storage_owned;
+    let storage: &o8v_workspace::StorageDir =
+        if let Some(s) = ctx.extensions.get::<o8v_workspace::StorageDir>() {
+            s
+        } else {
+            storage_owned = o8v_workspace::StorageDir::open().map_err(|e| {
+                o8v_core::render::sanitize_for_display(&format!("storage unavailable: {e}"))
+            })?;
+            &storage_owned
+        };
 
     let check_config = o8v_core::CheckConfig {
         timeout: args.timeout,
-        interrupted,
+        interrupted: ctx.interrupted,
     };
 
-    // Initialize event writer (best-effort: failures are silent).
-    let event_writer = std::cell::RefCell::new(match root.as_containment_root() {
-        Ok(r) => match crate::events::EventWriter::open(&r) {
-            Ok(w) => w,
-            Err(_) => crate::events::EventWriter::no_op(),
-        },
-        Err(_) => crate::events::EventWriter::no_op(),
-    });
+    // Read previous snapshot for delta (best-effort).
+    let previous_ids = read_last_check(storage);
 
-    // Read previous series.json BEFORE running checks (which will overwrite it).
-    // Best-effort: any failure produces an empty set, and delta is omitted.
-    let previous_ids: std::collections::HashSet<String> = match o8v_workspace::StorageDir::open() {
-        Ok(storage) => {
-            let config = o8v_fs::FsConfig::default();
-            match o8v_fs::safe_read(&storage.series_json(), storage.containment(), &config) {
-                Ok(file) => match o8v_events::parse_series(file.content().as_bytes()) {
-                    Ok(series) => series.diagnostics.keys().cloned().collect(),
-                    Err(_) => std::collections::HashSet::new(),
-                },
-                Err(_) => std::collections::HashSet::new(),
-            }
-        }
-        Err(_) => std::collections::HashSet::new(),
-    };
+    let mut report = o8v_check::check(root, &check_config, |_| {});
 
-    let mut current_project = String::new();
-    let mut current_stack = String::new();
+    // Compute delta from two snapshots.
+    let current_ids = diagnostic_ids(&report);
+    let new = current_ids.difference(&previous_ids).count();
+    let fixed = previous_ids.difference(&current_ids).count();
+    let unchanged = current_ids.intersection(&previous_ids).count();
+    report.delta = Some(o8v_core::DeltaSummary { new, fixed, unchanged });
 
-    let mut report = o8v_check::check(root, &check_config, |event| {
-        match event {
-            o8v_core::CheckEvent::ProjectStart { name, stack, .. } => {
-                current_project = name.to_string();
-                current_stack = stack.to_string();
-            }
-            // Capture diagnostic events for trend analysis.
-            o8v_core::CheckEvent::CheckDone { entry } => {
-                match entry.outcome() {
-                    o8v_core::CheckOutcome::Passed { diagnostics, .. } => {
-                        for diagnostic in diagnostics {
-                            event_writer.borrow_mut().on_event(
-                                diagnostic,
-                                &entry.name,
-                                &current_stack,
-                                &current_project,
-                            );
-                        }
-                    }
-                    o8v_core::CheckOutcome::Failed { diagnostics, .. } => {
-                        for diagnostic in diagnostics {
-                            event_writer.borrow_mut().on_event(
-                                diagnostic,
-                                &entry.name,
-                                &current_stack,
-                                &current_project,
-                            );
-                        }
-                    }
-                    o8v_core::CheckOutcome::Error { .. } => {}
-                    // Non-exhaustive: future variants have no diagnostics.
-                    #[allow(unreachable_patterns)]
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    });
-
-    if let Some(series) = event_writer.borrow_mut().finalize(&report) {
-        let current_ids: std::collections::HashSet<String> =
-            series.diagnostics.keys().cloned().collect();
-        let new = current_ids.difference(&previous_ids).count();
-        let fixed = previous_ids.difference(&current_ids).count();
-        let unchanged = current_ids.intersection(&previous_ids).count();
-        report.delta = Some(o8v_core::DeltaSummary {
-            new,
-            fixed,
-            unchanged,
-        });
-    }
+    // Write current snapshot (best-effort).
+    write_last_check(storage, &current_ids);
 
     report.render_config = o8v_core::render::RenderConfig {
         limit: if args.limit == 0 {
@@ -187,11 +151,65 @@ pub(crate) fn run(
     Ok(report)
 }
 
+// ── Snapshot helpers ────────────────────────────────────────────────────
+
+/// Compute diagnostic identity strings from a CheckReport.
+///
+/// Identity = "file:rule:message" for each diagnostic across all check entries.
+fn diagnostic_ids(report: &o8v_core::CheckReport) -> std::collections::HashSet<String> {
+    let mut ids = std::collections::HashSet::new();
+    for result in &report.results {
+        for entry in result.entries() {
+            let diagnostics = match entry.outcome() {
+                o8v_core::CheckOutcome::Passed { diagnostics, .. } => diagnostics,
+                o8v_core::CheckOutcome::Failed { diagnostics, .. } => diagnostics,
+                _ => continue,
+            };
+            for d in diagnostics {
+                let file = match &d.location {
+                    o8v_core::Location::File(p) => p.as_str(),
+                    o8v_core::Location::Absolute(p) => p.as_str(),
+                    _ => "",
+                };
+                let rule = d.rule.as_deref().unwrap_or("");
+                let msg = d.message.as_str();
+                ids.insert(format!("{file}:{rule}:{msg}"));
+            }
+        }
+    }
+    ids
+}
+
+/// Read previous diagnostic IDs from last-check.json.
+fn read_last_check(storage: &o8v_workspace::StorageDir) -> std::collections::HashSet<String> {
+    let path = storage.last_check();
+    let config = o8v_fs::FsConfig::default();
+    match o8v_fs::safe_read(&path, storage.containment(), &config) {
+        Ok(file) => serde_json::from_str(file.content()).unwrap_or_default(),
+        Err(_) => std::collections::HashSet::new(),
+    }
+}
+
+/// Write current diagnostic IDs to last-check.json (best-effort).
+fn write_last_check(
+    storage: &o8v_workspace::StorageDir,
+    ids: &std::collections::HashSet<String>,
+) {
+    let bytes = match serde_json::to_vec(ids) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::debug!("check: could not serialize last-check: {e}");
+            return;
+        }
+    };
+    if let Err(e) = o8v_fs::safe_write(&storage.last_check(), storage.containment(), &bytes) {
+        tracing::debug!("check: could not write last-check.json: {e}");
+    }
+}
+
 // ── Command trait impl ──────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
-use o8v_core::events::check::StreamCheckEvent;
 use o8v_core::CheckReport;
 
 pub struct CheckCommand {
@@ -200,13 +218,11 @@ pub struct CheckCommand {
 
 impl Command for CheckCommand {
     type Report = CheckReport;
-    type Event = StreamCheckEvent;
 
     async fn execute(
         &self,
         ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
-        run(&self.args, ctx.interrupted).map_err(CommandError::Execution)
+        run(&self.args, ctx).map_err(CommandError::Execution)
     }
 }

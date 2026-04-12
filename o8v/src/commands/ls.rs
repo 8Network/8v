@@ -460,7 +460,6 @@ pub(crate) fn do_ls(args: &Args) -> Result<LsResult, String> {
 // ─── Command impl ─────────────────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
 use o8v_core::render::ls_report::{LsFileNode, LsMode, LsProjectEntry, LsReport};
 
 pub struct LsCommand {
@@ -469,12 +468,10 @@ pub struct LsCommand {
 
 impl Command for LsCommand {
     type Report = LsReport;
-    type Event = ();
 
     async fn execute(
         &self,
         _ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
         let result = do_ls(&self.args).map_err(CommandError::Execution)?;
 

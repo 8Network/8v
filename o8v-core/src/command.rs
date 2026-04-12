@@ -5,8 +5,18 @@
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
 
-use crate::event_channel::EventChannel;
-use crate::render::Renderable;
+use crate::extensions::Extensions;
+use crate::render::{Renderable};
+
+/// Exit code when no projects or checks were detected.
+pub const EXIT_NOTHING: u8 = 2;
+
+/// Where rendered output should be written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputTarget {
+    Stdout,
+    Stderr,
+}
 
 /// Typed errors for the command pipeline.
 #[derive(Debug)]
@@ -48,22 +58,17 @@ pub enum CancelMode {
 
 /// The contract every command fulfills.
 ///
-/// A command takes context, sends events through a channel,
-/// and returns a final report. Args are part of `&self`.
+/// A command takes context and returns a final report. Args are part of `&self`.
 pub trait Command: Send + Sync {
     /// The final result — structured facts about what happened.
     type Report: Renderable + Send;
-    /// Progressive events emitted during execution.
-    type Event: Renderable + Send;
 
     /// Execute the command.
     ///
     /// - `ctx`: the environment (project, tools, containment, interrupted flag)
-    /// - `events`: channel for progressive events
     fn execute(
         &self,
         ctx: &CommandContext,
-        events: EventChannel<Self::Event>,
     ) -> impl Future<Output = Result<Self::Report, CommandError>> + Send;
 }
 
@@ -74,10 +79,6 @@ pub trait Command: Send + Sync {
 pub struct CommandContext {
     /// Shared interruption flag — set by Ctrl+C, MCP cancel, or transport failure.
     pub interrupted: &'static AtomicBool,
-    /// Containment root for filesystem operations.
-    pub containment: Option<o8v_fs::ContainmentRoot>,
-    /// Detected stack, if applicable.
-    pub stack: Option<o8v_project::Stack>,
-    /// Detected project root, if applicable.
-    pub project_root: Option<o8v_project::ProjectRoot>,
+    /// Type-safe extension map for optional capabilities.
+    pub extensions: Extensions,
 }

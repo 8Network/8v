@@ -22,7 +22,7 @@ pub mod config;
 pub use config::ConfigDir;
 
 pub mod context;
-pub use context::{CommandContext, ContextError};
+pub use context::{resolve_workspace, ContextError};
 
 pub mod storage;
 pub use storage::StorageDir;

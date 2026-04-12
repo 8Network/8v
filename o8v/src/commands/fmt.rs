@@ -55,19 +55,10 @@ impl Args {
 /// Run `8v fmt`.
 ///
 /// Returns the report. The caller decides how to render and what exit code to use.
-pub(crate) fn run(args: &Args, interrupted: &'static AtomicBool) -> o8v_core::FmtReport {
+pub(crate) fn run(args: &Args, interrupted: &'static AtomicBool) -> Result<o8v_core::FmtReport, String> {
     let path_str = args.path.as_deref().unwrap_or(".");
-    let root = match ProjectRoot::new(path_str) {
-        Ok(r) => r,
-        Err(e) => {
-            let msg = o8v_core::render::sanitize_for_display(&e.to_string());
-            eprintln!("error: {msg}");
-            return o8v_core::FmtReport {
-                entries: Vec::new(),
-                detection_errors: Vec::new(),
-            };
-        }
-    };
+    let root = ProjectRoot::new(path_str)
+        .map_err(|e| o8v_core::render::sanitize_for_display(&e.to_string()))?;
 
     let fmt_config = o8v_core::FmtConfig {
         timeout: args.timeout,
@@ -75,14 +66,12 @@ pub(crate) fn run(args: &Args, interrupted: &'static AtomicBool) -> o8v_core::Fm
         interrupted,
     };
 
-    o8v_stacks::fmt(&root, &fmt_config)
+    Ok(o8v_stacks::fmt(&root, &fmt_config))
 }
 
 // ── Command trait impl ──────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
-use o8v_core::events::fmt::FmtEvent;
 use o8v_core::FmtReport;
 
 pub struct FmtCommand {
@@ -91,13 +80,11 @@ pub struct FmtCommand {
 
 impl Command for FmtCommand {
     type Report = FmtReport;
-    type Event = FmtEvent;
 
     async fn execute(
         &self,
         ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
-        Ok(run(&self.args, ctx.interrupted))
+        run(&self.args, ctx.interrupted).map_err(CommandError::Execution)
     }
 }

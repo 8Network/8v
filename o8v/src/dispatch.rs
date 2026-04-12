@@ -4,94 +4,111 @@
 
 //! Command dispatch — the single entry point for all 8v commands.
 //!
-//! Both CLI (main.rs) and MCP (handler.rs) call `build_context()`.
-//! It builds CommandContext from the path argument: detects project root,
-//! opens storage, loads config. Neither entrypoint does this work itself.
-//!
-//! This is the first step toward a full `CommandHandler` as described in
-//! `docs/design/storage-and-context.md`. The full dispatch with a `Command`
-//! enum is a future step once command signatures take `&CommandContext`.
+//! Interfaces (CLI, MCP) call into this module. They provide the parsed command,
+//! who they are (Caller), and the interrupted flag. Dispatch does everything
+//! else: context, bus, subscribers, execute, render, return.
 
-pub use o8v_workspace::{CommandContext, ContextError};
+pub use o8v_workspace::{resolve_workspace, ContextError};
 
-use o8v_core::command::{Command, CommandContext as CoreCommandContext, CommandError};
+use o8v_core::caller::Caller;
+use o8v_core::command::{Command, CommandContext, CommandError};
+use o8v_core::command_events::{CommandCompleted, CommandStarted};
+use o8v_core::event_bus::EventBus;
+use o8v_core::extensions::Extensions;
 use o8v_core::render::{Audience, Renderable};
 use o8v_core::task::TaskId;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-/// Build a `CommandContext` from a path argument.
+/// Build a fully-wired CommandContext.
 ///
-/// This is the single point where project root detection, storage opening,
-/// and config loading happens. Both CLI and MCP call this.
+/// 1. Creates Extensions with EventBus
+/// 2. Resolves workspace (project root, storage, config) — best effort
+/// 3. Subscribes StorageSubscriber if storage available
 ///
-/// # Errors
-///
-/// Returns `ContextError` if the path cannot be resolved, no project root
-/// is detected, or storage cannot be opened. Every error is visible — no
-/// silent fallbacks.
-pub fn build_context(path: &str) -> Result<CommandContext, ContextError> {
-    CommandContext::from_path(path)
-}
+/// This is the ONE place context is built. Interfaces never touch it.
+pub fn build_context(interrupted: &'static AtomicBool) -> CommandContext {
+    let mut extensions = Extensions::new();
+    let bus = Arc::new(EventBus::new());
 
-/// Build a CoreCommandContext from the workspace context.
-pub fn core_context(interrupted: &'static AtomicBool) -> CoreCommandContext {
-    CoreCommandContext {
+    // Best-effort workspace resolution from CWD.
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok((project_root, storage, config)) =
+            resolve_workspace(cwd.to_string_lossy().as_ref())
+        {
+            // Subscribe StorageSubscriber before any events are emitted.
+            let sub = Arc::new(crate::storage_subscriber::StorageSubscriber::new(
+                storage.clone(),
+            ));
+            bus.subscribe(sub);
+
+            extensions.insert(project_root);
+            extensions.insert(storage);
+            extensions.insert(config);
+        }
+    }
+
+    extensions.insert(bus);
+    CommandContext {
         interrupted,
-        containment: None,
-        stack: None,
-        project_root: None,
+        extensions,
     }
 }
 
-/// Dispatch a command: execute it, render the report, return the output string.
+/// Execute a typed command: emit lifecycle events, execute, render.
 ///
-/// This is the generic dispatch function that replaces the match-on-Command
-/// pattern in handler.rs. Any type implementing the Command trait can be
-/// dispatched here.
+/// Called by `dispatch_command()` after matching on the Command enum.
+/// Caller and command_str are for lifecycle events only.
 pub async fn dispatch<C: Command>(
     command: &C,
-    ctx: &CoreCommandContext,
+    ctx: &CommandContext,
     audience: Audience,
+    caller: Caller,
+    command_str: &str,
 ) -> Result<(String, TaskId, C::Report), CommandError>
 where
     C::Report: Renderable,
-    C::Event: 'static,
 {
     let task_id = TaskId::new();
+    let run_id = task_id.to_string();
+    let start_ms = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
 
-    // Create a channel for events (even if the command doesn't use it).
-    let (events, mut rx) = o8v_core::event_channel::create_event_channel::<C::Event>(64);
+    // Project path from extensions (if available).
+    let project_path = ctx
+        .extensions
+        .get::<o8v_project::ProjectRoot>()
+        .map(|r| r.to_string());
 
-    // Spawn event consumer (drains events to prevent channel blocking).
-    let event_handle = tokio::spawn(async move {
-        let mut rendered_events = Vec::new();
-        while let Some(event) = rx.recv().await {
-            let output = o8v_core::render::render(&event, audience);
-            let s = output.into_string();
-            if !s.is_empty() {
-                rendered_events.push(s);
-            }
-        }
-        rendered_events
-    });
+    // Emit CommandStarted.
+    if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
+        let ev = CommandStarted::new(run_id.clone(), caller, command_str, project_path);
+        bus.emit(&ev);
+    }
 
     // Execute the command.
-    let report = command.execute(ctx, events).await?;
+    let result = command.execute(ctx).await;
+    let success = result.is_ok();
 
-    // Wait for event consumer to finish and collect rendered events.
-    let rendered_events = event_handle.await.unwrap_or_default();
+    // Compute duration.
+    let end_ms = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let duration_ms = end_ms.saturating_sub(start_ms);
+
+    let report = result?;
 
     // Render the final report.
-    let report_output = o8v_core::render::render(&report, audience).into_string();
+    let output = o8v_core::render::render(&report, audience).into_string();
 
-    // Combine: progressive events first, then final report.
-    let output = if rendered_events.is_empty() {
-        report_output
-    } else {
-        let mut combined = rendered_events.join("");
-        combined.push_str(&report_output);
-        combined
-    };
+    // Emit CommandCompleted.
+    if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
+        let ev = CommandCompleted::new(run_id, output.len() as u64, duration_ms, success);
+        bus.emit(&ev);
+    }
 
     Ok((output, task_id, report))
 }
@@ -102,36 +119,68 @@ where
 mod tests {
     use super::*;
 
-    #[test]
-    #[allow(clippy::disallowed_methods)]
-    fn build_context_for_valid_project() {
-        let project = tempfile::TempDir::new().unwrap();
-        let home = tempfile::TempDir::new().unwrap();
-        // Create a Cargo.toml so the directory is recognised as a project root.
-        std::fs::write(
-            project.path().join("Cargo.toml"),
-            "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        // Redirect HOME so StorageDir::open() doesn't touch the real home.
-        std::env::set_var("HOME", home.path());
+    static TEST_INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
-        let result = build_context(project.path().to_str().unwrap());
+    #[test]
+    fn build_context_has_event_bus() {
+        let ctx = build_context(&TEST_INTERRUPTED);
         assert!(
-            result.is_ok(),
-            "expected Ok for valid project, got: {:?}",
-            result.err()
+            ctx.extensions.get::<Arc<EventBus>>().is_some(),
+            "context must include an EventBus"
         );
     }
 
-    #[test]
-    fn build_context_for_invalid_path() {
-        let result = build_context("/nonexistent/path/that/does/not/exist");
-        assert!(result.is_err(), "expected Err for nonexistent path, got Ok");
-        match result {
-            Err(ContextError::PathResolution(_)) => {}
-            Err(e) => panic!("expected PathResolution error, got: {e}"),
-            Ok(_) => panic!("expected Err, got Ok"),
+    /// A test subscriber that records event type names.
+    struct RecordingSubscriber {
+        events: std::sync::Mutex<Vec<&'static str>>,
+    }
+    impl RecordingSubscriber {
+        fn new() -> Self {
+            Self {
+                events: std::sync::Mutex::new(Vec::new()),
+            }
         }
+    }
+    impl o8v_core::event_bus::Subscriber for RecordingSubscriber {
+        fn on_event(&self, message: &[u8]) {
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(message) {
+                if let Some(event_type) = v.get("event").and_then(|e| e.as_str()) {
+                    match event_type {
+                        "CommandStarted" => self.events.lock().unwrap().push("CommandStarted"),
+                        "CommandCompleted" => self.events.lock().unwrap().push("CommandCompleted"),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Minimal command for testing dispatch. Report is () which has Renderable.
+    struct NoopCommand;
+    impl o8v_core::command::Command for NoopCommand {
+        type Report = ();
+        async fn execute(
+            &self,
+            _ctx: &CommandContext,
+        ) -> Result<(), CommandError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_emits_lifecycle_events() {
+        let ctx = build_context(&TEST_INTERRUPTED);
+        let bus = ctx.extensions.get::<Arc<EventBus>>().unwrap().clone();
+        let recorder = Arc::new(RecordingSubscriber::new());
+        bus.subscribe(recorder.clone());
+
+        let cmd = NoopCommand;
+        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "noop").await;
+        assert!(result.is_ok());
+
+        let events = recorder.events.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0], "CommandStarted");
+        assert_eq!(events[1], "CommandCompleted");
     }
 }

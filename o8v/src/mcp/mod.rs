@@ -4,8 +4,6 @@
 
 //! MCP server for 8v — expose check and fmt as tools.
 
-mod dispatch;
-mod events;
 mod handler;
 mod parse;
 mod path;

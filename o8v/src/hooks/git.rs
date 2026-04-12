@@ -40,13 +40,13 @@ fn default_true() -> bool {
 
 // ─── Args ───────────────────────────────────────────────────────────────────
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Debug)]
 pub struct Args {
     #[command(subcommand)]
     pub command: GitCommand,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Debug)]
 pub enum GitCommand {
     /// Run pre-commit checks
     OnCommit,
@@ -93,8 +93,11 @@ pub fn on_commit(interrupted: &'static AtomicBool) -> ExitCode {
         timeout: Some(std::time::Duration::from_secs(60)),
     };
 
+    // Build context (resolves workspace from CWD, wires StorageSubscriber).
+    let ctx = o8v::dispatch::build_context(interrupted);
+
     // Run check and get report.
-    let report = crate::commands::check::run(&check_args, interrupted);
+    let report = crate::commands::check::run(&check_args, &ctx);
 
     // Render and print the report (plain text for hooks).
     let report = match report {

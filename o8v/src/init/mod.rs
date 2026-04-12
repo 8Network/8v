@@ -15,7 +15,7 @@ use claude_settings::setup_claude_settings;
 use dialoguer::{Confirm, Select};
 use mcp_setup::setup_mcp_json;
 use o8v_project::{detect_all, ProjectRoot};
-use o8v_workspace::{register_workspace, StorageDir, WorkspaceDir};
+use o8v_workspace::{register_workspace, WorkspaceDir};
 use std::fs;
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -61,7 +61,7 @@ impl InitDir {
 
 // ─── Args ───────────────────────────────────────────────────────────────────
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Debug)]
 pub struct Args {
     /// Directory to initialize [default: current directory]
     pub path: Option<String>,
@@ -154,21 +154,9 @@ pub fn run(args: &Args) -> ExitCode {
     }
     eprintln!("✓ Created {}", location.display());
 
-    // Run a baseline check and record the real run_id.
-    match run_baseline_check(&containment_root) {
-        Ok(run_id) => match StorageDir::open() {
-            Ok(storage) => {
-                if let Err(e) = set_baseline_run_id(&storage, &run_id) {
-                    tracing::warn!("baseline init failed: {e}");
-                }
-            }
-            Err(e) => {
-                tracing::warn!("could not open storage dir for baseline init: {e}");
-            }
-        },
-        Err(e) => {
-            tracing::warn!("baseline check failed: {e}");
-        }
+    // Run a baseline check so the first `8v check` has a prior snapshot.
+    if let Err(e) = run_baseline_check(&containment_root) {
+        tracing::warn!("baseline check failed: {e}");
     }
 
     // Write default config.toml if it doesn't exist (local config only)
@@ -321,12 +309,11 @@ fn confirm(prompt: &str, yes: bool) -> bool {
 
 // ─── Baseline ───────────────────────────────────────────────────────────────
 
-/// Run a real check and return the `run_id` written to `series.json`.
+/// Run a baseline check during `8v init`.
 ///
-/// Uses the same infrastructure as `8v check`: detects projects, runs
-/// `o8v_check::check`, feeds events through `EventWriter`, and calls
-/// `EventWriter::finalize` which writes `series.json` and returns the series.
-fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<String, String> {
+/// The first `8v check` after init will write `last-check.json`. This run
+/// establishes the initial snapshot so subsequent checks compute a valid delta.
+fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<(), String> {
     let project_root =
         o8v_project::ProjectRoot::new(containment_root.as_path()).map_err(|e| e.to_string())?;
 
@@ -336,90 +323,7 @@ fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<Stri
         interrupted,
     };
 
-    let event_writer =
-        std::cell::RefCell::new(match crate::events::EventWriter::open(containment_root) {
-            Ok(w) => w,
-            Err(_) => crate::events::EventWriter::no_op(),
-        });
-
-    let mut current_project = String::new();
-    let mut current_stack = String::new();
-
-    let report = o8v_check::check(&project_root, &check_config, |event| match event {
-        o8v_core::CheckEvent::ProjectStart { name, stack, .. } => {
-            current_project = name.to_string();
-            current_stack = stack.to_string();
-        }
-        o8v_core::CheckEvent::CheckDone { entry } => match entry.outcome() {
-            o8v_core::CheckOutcome::Passed { diagnostics, .. } => {
-                for diagnostic in diagnostics {
-                    event_writer.borrow_mut().on_event(
-                        diagnostic,
-                        &entry.name,
-                        &current_stack,
-                        &current_project,
-                    );
-                }
-            }
-            o8v_core::CheckOutcome::Failed { diagnostics, .. } => {
-                for diagnostic in diagnostics {
-                    event_writer.borrow_mut().on_event(
-                        diagnostic,
-                        &entry.name,
-                        &current_stack,
-                        &current_project,
-                    );
-                }
-            }
-            o8v_core::CheckOutcome::Error { .. } => {}
-            #[allow(unreachable_patterns)]
-            _ => {}
-        },
-        _ => {}
-    });
-
-    let series = event_writer
-        .borrow_mut()
-        .finalize(&report)
-        .ok_or_else(|| "EventWriter::finalize returned None".to_string())?;
-
-    Ok(series.run_id.clone())
-}
-
-/// Set `baseline_run_id` in `series.json` to `run_id` if not already set.
-///
-/// Reads the current `series.json` (written by `run_baseline_check`),
-/// sets `baseline_run_id`, and writes back atomically via `.tmp` rename.
-/// If `baseline_run_id` is already set, this is a no-op.
-fn set_baseline_run_id(storage: &StorageDir, run_id: &str) -> Result<(), String> {
-    let series_path = storage.series_json();
-    let tmp_path = storage.series_tmp();
-    let containment = storage.containment();
-    let config = o8v_fs::FsConfig::default();
-
-    let mut series =
-        match o8v_fs::safe_exists(&series_path, containment).map_err(|e| e.to_string())? {
-            true => {
-                let guarded = o8v_fs::safe_read(&series_path, containment, &config)
-                    .map_err(|e| e.to_string())?;
-                o8v_events::parse_series(guarded.content().as_bytes()).map_err(|e| e.to_string())?
-            }
-            false => o8v_events::SeriesJson::new(String::new(), 0),
-        };
-
-    if series.baseline_run_id.is_some() {
-        tracing::info!("baseline_run_id already set, skipping");
-        return Ok(());
-    }
-
-    tracing::info!(baseline_run_id = %run_id, "setting baseline_run_id");
-    series.baseline_run_id = Some(run_id.to_string());
-
-    let bytes = o8v_events::serialize_series(&series).map_err(|e| e.to_string())?;
-
-    // Atomic write: write to .tmp then rename.
-    o8v_fs::safe_write(&tmp_path, containment, &bytes).map_err(|e| e.to_string())?;
-    o8v_fs::safe_rename(&tmp_path, &series_path, containment).map_err(|e| e.to_string())?;
+    let _report = o8v_check::check(&project_root, &check_config, |_| {});
 
     Ok(())
 }

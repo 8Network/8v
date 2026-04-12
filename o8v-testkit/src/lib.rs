@@ -10,6 +10,7 @@
 
 mod assert;
 mod binary;
+pub mod release_server;
 mod diagnostic;
 mod expected;
 mod fixture;
@@ -39,6 +40,7 @@ pub use o8v_project::Stack;
 pub use query::{all_check_names, collect_diagnostics, find_entry, find_result, has_check};
 pub use run::{run_check, run_check_interrupted, run_check_path};
 pub use sanitize::assert_sanitized;
+pub use release_server::ReleaseTestServer;
 pub use scaffold::{fixture_path, TempProject};
 
 /// Generate a standard e2e violation test.

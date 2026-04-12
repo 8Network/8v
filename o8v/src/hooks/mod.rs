@@ -22,13 +22,13 @@ use std::sync::atomic::AtomicBool;
 
 // ─── Args ───────────────────────────────────────────────────────────────────
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Debug)]
 pub struct Args {
     #[command(subcommand)]
     pub command: HooksCommand,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Debug)]
 pub enum HooksCommand {
     /// Git hook handlers (pre-commit, commit-msg)
     Git(git::Args),

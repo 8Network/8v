@@ -15,7 +15,6 @@
 
 use ignore::WalkBuilder;
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
 use o8v_core::render::search_report::{
     FileMatches as ReportFileMatches, SearchMatch, SearchReport,
 };
@@ -354,12 +353,10 @@ pub struct SearchCommand {
 
 impl Command for SearchCommand {
     type Report = SearchReport;
-    type Event = ();
 
     async fn execute(
         &self,
         _ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
         let result = do_search(&self.args).map_err(CommandError::Execution)?;
 

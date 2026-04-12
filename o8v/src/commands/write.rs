@@ -584,7 +584,6 @@ mod tests {
 // ── Command trait impl ──────────────────────────────────────────────────
 
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::event_channel::EventChannel;
 use o8v_core::render::write_report::WriteReport;
 
 pub struct WriteCommand {
@@ -593,12 +592,10 @@ pub struct WriteCommand {
 
 impl Command for WriteCommand {
     type Report = WriteReport;
-    type Event = ();
 
     async fn execute(
         &self,
         _ctx: &CommandContext,
-        _events: EventChannel<Self::Event>,
     ) -> Result<Self::Report, CommandError> {
         match write_to_report(&self.args) {
             Ok(report) => Ok(report),

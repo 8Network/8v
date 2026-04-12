@@ -122,6 +122,19 @@ pub(crate) fn guarded_set_permissions(path: &Path, root: &Path, mode: u32) -> Re
     std::fs::set_permissions(path, perms).map_err(|e| classify_io_error(path, e))
 }
 
+/// Copy permissions from existing metadata to a target path (cross-platform).
+///
+/// Same containment and symlink checks as `guarded_set_permissions`.
+/// Same TOCTOU gap applies.
+pub(crate) fn guarded_copy_permissions(
+    path: &Path,
+    root: &Path,
+    permissions: std::fs::Permissions,
+) -> Result<(), FsError> {
+    check_write_target(path, root)?;
+    std::fs::set_permissions(path, permissions).map_err(|e| classify_io_error(path, e))
+}
+
 /// Get file metadata safely within the containment root.
 ///
 /// ## Pipeline
