@@ -193,7 +193,7 @@ mod tests {
     use super::*;
     use o8v_core::diagnostic::{Diagnostic, Location, ParseStatus, Severity};
     use o8v_core::{CheckOutcome, ErrorKind};
-    use o8v_project::ProjectRoot;
+    use o8v_core::project::ProjectRoot;
 
     fn dummy_diagnostic() -> Diagnostic {
         Diagnostic {

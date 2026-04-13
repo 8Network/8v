@@ -87,7 +87,7 @@ pub(crate) fn run(
         }
     } else {
         // No path argument: use ProjectRoot from context (resolved from CWD by dispatch).
-        match ctx.extensions.get::<o8v_project::ProjectRoot>() {
+        match ctx.extensions.get::<o8v_core::project::ProjectRoot>() {
             Some(root) => root.clone(),
             None => {
                 // Last resort: resolve from CWD.

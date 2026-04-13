@@ -68,10 +68,10 @@ impl Command for TestCommand {
 
         let abs_path = workspace.resolve(&self.args.path);
 
-        let root = o8v_project::ProjectRoot::new(&abs_path)
+        let root = o8v_core::project::ProjectRoot::new(&abs_path)
             .map_err(|e| CommandError::Execution(format!("8v: invalid path: {e}")))?;
 
-        let result = o8v_project::detect_all(&root);
+        let result = o8v_stacks::detect_all(&root);
         let (projects, errors) = result.into_parts();
         let detection_errors: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
 

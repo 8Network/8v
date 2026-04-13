@@ -234,7 +234,7 @@ fn interrupt_preserves_checkstart_checkdone_pairing() {
 
 #[test]
 fn every_stack_has_checks() {
-    use o8v_project::Stack;
+    use o8v_core::project::Stack;
 
     let stacks = [
         Stack::Rust,

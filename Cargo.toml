@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "o8v-fs",
-    "o8v-project",
     "o8v-process",
     "o8v-core",
     "o8v-stacks",
@@ -10,7 +9,6 @@ members = [
     "o8v",
 ]
 exclude = [
-    "o8v-project/tests/fixtures",
     "o8v-core/tests/fixtures",
 ]
 resolver = "2"

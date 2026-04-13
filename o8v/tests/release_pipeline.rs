@@ -315,7 +315,6 @@ fn cargo_file_list_in_release_sh_matches_expected() {
         "o8v-core/Cargo.toml",
         "o8v-fs/Cargo.toml",
         "o8v-process/Cargo.toml",
-        "o8v-project/Cargo.toml",
         "o8v-testkit/Cargo.toml",
         "o8v-workspace/Cargo.toml",
     ]

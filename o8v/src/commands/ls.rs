@@ -275,13 +275,13 @@ pub(crate) fn do_ls(
     let fs_config = FsConfig::default();
 
     // Detect projects
-    let project_root = o8v_project::ProjectRoot::new(&root).map_err(|e| {
+    let project_root = o8v_core::project::ProjectRoot::new(&root).map_err(|e| {
         format!(
             "error: cannot create project root for '{}': {e}",
             root.display()
         )
     })?;
-    let detect_result = o8v_project::detect_all(&project_root);
+    let detect_result = o8v_stacks::detect_all(&project_root);
     let detected_projects = detect_result.projects();
 
     // Filter by stack if requested

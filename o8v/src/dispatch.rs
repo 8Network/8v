@@ -86,7 +86,7 @@ where
     // Project path from extensions (if available).
     let project_path = ctx
         .extensions
-        .get::<o8v_project::ProjectRoot>()
+        .get::<o8v_core::project::ProjectRoot>()
         .map(|r| r.to_string());
 
     // Emit CommandStarted.

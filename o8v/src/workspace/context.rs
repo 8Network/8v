@@ -56,7 +56,7 @@ impl std::error::Error for ContextError {
 /// silent fallbacks.
 pub fn resolve_workspace(
     path: impl AsRef<Path>,
-) -> Result<(o8v_project::ProjectRoot, StorageDir, Option<ConfigDir>), ContextError> {
+) -> Result<(o8v_core::project::ProjectRoot, StorageDir, Option<ConfigDir>), ContextError> {
     // 1. Resolve to absolute path.
     let abs = std::fs::canonicalize(path.as_ref()).map_err(|e| {
         ContextError::PathResolution(std::io::Error::other(format!(
@@ -68,7 +68,7 @@ pub fn resolve_workspace(
 
     // 2. Detect ProjectRoot.
     let path_str = abs.to_string_lossy();
-    let project_root = o8v_project::ProjectRoot::new(path_str.as_ref())
+    let project_root = o8v_core::project::ProjectRoot::new(path_str.as_ref())
         .map_err(|e| ContextError::NoProjectRoot(e.to_string()))?;
 
     // 3. Open StorageDir at ~/.8v/.

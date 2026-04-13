@@ -343,7 +343,6 @@ for cargo_file in \
     o8v-core/Cargo.toml \
     o8v-fs/Cargo.toml \
     o8v-process/Cargo.toml \
-    o8v-project/Cargo.toml \
     o8v-testkit/Cargo.toml \
     o8v-workspace/Cargo.toml; do
 

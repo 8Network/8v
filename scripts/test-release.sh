@@ -74,7 +74,7 @@ TARGET_VERSION="9.8.7"
 # All crate Cargo.toml files — must match release.sh's list exactly.
 # Workspace root (Cargo.toml) has no version field and is intentionally excluded.
 CARGO_FILES="o8v/Cargo.toml o8v-core/Cargo.toml o8v-events/Cargo.toml \
-o8v-fs/Cargo.toml o8v-process/Cargo.toml o8v-project/Cargo.toml \
+o8v-fs/Cargo.toml o8v-process/Cargo.toml \
 o8v-testkit/Cargo.toml o8v-workspace/Cargo.toml"
 
 # Copy all Cargo.toml files into temp dir, preserving relative paths

@@ -254,7 +254,7 @@ pub fn fmt(root: &ProjectRoot, config: &FmtConfig) -> FmtReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use o8v_project::Stack;
+    use o8v_core::project::Stack;
 
     #[test]
     fn rust_formatter_config() {

@@ -1,7 +1,7 @@
 //! The `fmt` command — args + execution.
 
 use o8v_core::parse_timeout;
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
