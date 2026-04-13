@@ -23,5 +23,6 @@ pub enum Event {
     CommandStarted(lifecycle::CommandStarted),
     CommandCompleted(lifecycle::CommandCompleted),
     /// Event type not recognized — forward compatibility with newer 8v versions.
-    Unknown(String),
+    /// Stores the full raw payload so it can be forwarded or logged without data loss.
+    Unknown { event_type: String, raw: serde_json::Value },
 }

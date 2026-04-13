@@ -80,7 +80,7 @@ pub fn parse_events(content: &str) -> Result<Vec<Event>, EventReadError> {
                     .map_err(|e| EventReadError::InvalidJson { line: line_num, source: e.to_string() })?;
                 Event::CommandCompleted(completed)
             }
-            other => Event::Unknown(other.to_string()),
+            other => Event::Unknown { event_type: other.to_string(), raw },
         };
 
         events.push(event);
@@ -92,12 +92,18 @@ pub fn parse_events(content: &str) -> Result<Vec<Event>, EventReadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use o8v_core::events::lifecycle::{CommandCompleted, CommandStarted};
+    use o8v_core::caller::Caller;
 
     #[test]
     fn parse_valid_events() {
-        let content = r#"{"event":"CommandStarted","run_id":"r1","timestamp_ms":1000,"version":"0.1.0","caller":"cli","command":"check .","command_bytes":7,"command_token_estimate":1,"project_path":null}
-{"event":"CommandCompleted","run_id":"r1","timestamp_ms":1050,"output_bytes":400,"token_estimate":100,"duration_ms":50,"success":true}"#;
-        let events = parse_events(content).unwrap();
+        let started = CommandStarted::new("r1".into(), Caller::Cli, "check .", None);
+        let completed = CommandCompleted::new("r1".into(), 400, 50, true);
+        let line1 = serde_json::to_string(&started).unwrap();
+        let line2 = serde_json::to_string(&completed).unwrap();
+        let content = format!("{line1}\n{line2}");
+
+        let events = parse_events(&content).unwrap();
         assert_eq!(events.len(), 2);
         assert!(matches!(events[0], Event::CommandStarted(_)));
         assert!(matches!(events[1], Event::CommandCompleted(_)));
@@ -111,12 +117,14 @@ mod tests {
 
     #[test]
     fn parse_empty_lines_skipped() {
-        let content = r#"
-{"event":"CommandStarted","run_id":"r1","timestamp_ms":1000,"version":"0.1.0","caller":"cli","command":"check .","command_bytes":7,"command_token_estimate":1,"project_path":null}
+        let started = CommandStarted::new("r1".into(), Caller::Cli, "check .", None);
+        let completed = CommandCompleted::new("r1".into(), 400, 50, true);
+        let line1 = serde_json::to_string(&started).unwrap();
+        let line2 = serde_json::to_string(&completed).unwrap();
+        // Surround with blank lines — empty lines must be skipped.
+        let content = format!("\n{line1}\n\n{line2}\n");
 
-{"event":"CommandCompleted","run_id":"r1","timestamp_ms":1050,"output_bytes":400,"token_estimate":100,"duration_ms":50,"success":true}
-"#;
-        let events = parse_events(content).unwrap();
+        let events = parse_events(&content).unwrap();
         assert_eq!(events.len(), 2);
     }
 
@@ -148,6 +156,6 @@ not valid json
         let content = r#"{"event":"FutureEvent","data":"something"}"#;
         let events = parse_events(content).unwrap();
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], Event::Unknown(t) if t == "FutureEvent"));
+        assert!(matches!(&events[0], Event::Unknown { event_type, .. } if event_type == "FutureEvent"));
     }
 }
