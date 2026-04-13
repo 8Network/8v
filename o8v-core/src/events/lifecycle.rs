@@ -18,12 +18,12 @@ fn estimate_tokens(bytes: u64) -> u64 {
     bytes / 4
 }
 
-/// Unix milliseconds. Returns 0 if the clock is before epoch.
+/// Unix milliseconds. Panics if the system clock is before Unix epoch.
 fn unix_ms() -> i64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+        .expect("system clock is before Unix epoch")
 }
 
 /// Emitted before a command executes.

@@ -105,8 +105,17 @@ mod tests {
 
         let events = parse_events(&content).unwrap();
         assert_eq!(events.len(), 2);
-        assert!(matches!(events[0], Event::CommandStarted(_)));
-        assert!(matches!(events[1], Event::CommandCompleted(_)));
+        match &events[0] {
+            Event::CommandStarted(s) => assert_eq!(s.run_id, "r1"),
+            other => panic!("expected CommandStarted, got {other:?}"),
+        }
+        match &events[1] {
+            Event::CommandCompleted(c) => {
+                assert_eq!(c.run_id, "r1");
+                assert!(c.success);
+            }
+            other => panic!("expected CommandCompleted, got {other:?}"),
+        }
     }
 
     #[test]
