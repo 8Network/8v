@@ -124,43 +124,6 @@ pub(crate) struct ProjectEntry {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Resolve the scan root from the path argument.
-///
-/// Rejects null bytes in the argument, verifies the path is a directory.
-fn resolve_ls_root(path_arg: Option<&str>) -> Result<PathBuf, String> {
-    if let Some(p) = path_arg {
-        if p.contains('\0') {
-            return Err("error: path argument contains null bytes".to_string());
-        }
-    }
-
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("error: cannot determine working directory: {e}"))?;
-    let root = match path_arg {
-        Some(p) => {
-            let candidate = Path::new(p);
-            if candidate.is_absolute() {
-                candidate.to_path_buf()
-            } else {
-                cwd.join(candidate)
-            }
-        }
-        None => cwd,
-    };
-    let canonical = root
-        .canonicalize()
-        .map_err(|e| format!("error: cannot access path '{}': {e}", root.display()))?;
-
-    if !canonical.is_dir() {
-        return Err(format!(
-            "error: '{}' is not a directory",
-            canonical.display()
-        ));
-    }
-
-    Ok(canonical)
-}
-
 /// Check whether the file name matches the glob pattern (if set).
 fn matches_glob(path: &Path, pattern: Option<&str>) -> bool {
     let pattern = match pattern {
@@ -272,11 +235,38 @@ fn collect_file_metadata(
 // ─── Core implementation ─────────────────────────────────────────────────────
 
 /// Run directory walking and collect all files, grouped by project.
-pub(crate) fn do_ls(args: &Args) -> Result<LsResult, String> {
-    let root = resolve_ls_root(args.path.as_deref())?;
+pub(crate) fn do_ls(
+    args: &Args,
+    ctx: &o8v_core::command::CommandContext,
+) -> Result<LsResult, String> {
+    let workspace = ctx
+        .extensions
+        .get::<o8v_workspace::WorkspaceRoot>()
+        .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
-    // Create containment root for safe file operations
-    let containment = ContainmentRoot::new(&root).map_err(|e| {
+    // Validate and resolve the scan root.
+    let root: PathBuf = match args.path.as_deref() {
+        Some(p) => {
+            if p.contains('\0') {
+                return Err("error: path argument contains null bytes".to_string());
+            }
+            workspace.resolve(p)
+        }
+        None => workspace.as_path().to_path_buf(),
+    };
+
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("error: cannot access path '{}': {e}", root.display()))?;
+
+    if !root.is_dir() {
+        return Err(format!("error: '{}' is not a directory", root.display()));
+    }
+
+    // Create containment root anchored at the scan root (not the workspace root).
+    // Tests use temp fixture directories outside the workspace, so we must anchor
+    // containment at `root` to avoid rejecting those paths.
+    let containment = o8v_fs::ContainmentRoot::new(&root).map_err(|e| {
         format!(
             "error: cannot create containment root for '{}': {e}",
             root.display()
@@ -359,7 +349,7 @@ pub(crate) fn do_ls(args: &Args) -> Result<LsResult, String> {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("warning: cannot walk directory entry: {e}");
+                tracing::debug!("cannot walk directory entry: {e}");
                 files_skipped_gitignore += 1;
                 continue;
             }
@@ -471,9 +461,9 @@ impl Command for LsCommand {
 
     async fn execute(
         &self,
-        _ctx: &CommandContext,
+        ctx: &CommandContext,
     ) -> Result<Self::Report, CommandError> {
-        let result = do_ls(&self.args).map_err(CommandError::Execution)?;
+        let result = do_ls(&self.args, ctx).map_err(CommandError::Execution)?;
 
         let mode = if self.args.tree {
             LsMode::Tree

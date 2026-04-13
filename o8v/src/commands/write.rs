@@ -13,8 +13,6 @@
 //! - `8v write path --find "old" --replace "new"` — find and replace
 //! - `8v write path --json` — structured JSON output
 
-use o8v_fs::ContainmentRoot;
-
 // ─── Args ───────────────────────────────────────────────────────────────────
 
 #[derive(clap::Args, Debug)]
@@ -301,14 +299,6 @@ fn join_lines_with_ending(lines: &[&str], ending: &str, trailing: bool) -> Strin
     result
 }
 
-// ─── File Operations ────────────────────────────────────────────────────────
-
-fn build_root() -> Result<ContainmentRoot, String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("Error: failed to get current directory: {e}"))?;
-    ContainmentRoot::new(cwd).map_err(|e| format!("Error: containment root failed: {e}"))
-}
-
 // ─── Main Run Function ──────────────────────────────────────────────────────
 
 /// Execute the write operation and return a structured [`WriteReport`] with real operation data.
@@ -317,20 +307,25 @@ fn build_root() -> Result<ContainmentRoot, String> {
 /// without duplicating the core write logic.
 pub(crate) fn write_to_report(
     args: &Args,
+    ctx: &o8v_core::command::CommandContext,
 ) -> Result<o8v_core::render::write_report::WriteReport, String> {
     use o8v_core::render::write_report::{WriteOperation as ReportOp, WriteReport};
-    use std::path::Path;
+
+    let workspace = ctx
+        .extensions
+        .get::<o8v_workspace::WorkspaceRoot>()
+        .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
     let op = validate_args(args)?;
     let (path_str, _) = parse_path_line(&args.path)?;
 
-    let root = build_root()?;
+    let root = workspace.containment();
     let config = o8v_fs::FsConfig::default();
-    let path = Path::new(&path_str);
+    let path = workspace.resolve(&path_str);
 
     let report_op: ReportOp = match &op {
         WriteOperation::ReplaceLine { line, content } => {
-            let file = o8v_fs::safe_read(path, &root, &config)
+            let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
             let line_ending = detect_line_ending(existing_content);
@@ -351,7 +346,7 @@ pub(crate) fn write_to_report(
             new_lines.push(content);
             new_lines.extend_from_slice(&lines[*line..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(path, &root, new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Replace {
@@ -364,7 +359,7 @@ pub(crate) fn write_to_report(
             end,
             content,
         } => {
-            let file = o8v_fs::safe_read(path, &root, &config)
+            let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
             let line_ending = detect_line_ending(existing_content);
@@ -395,7 +390,7 @@ pub(crate) fn write_to_report(
             new_lines.push(content);
             new_lines.extend_from_slice(&lines[*end..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(path, &root, new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Replace {
@@ -404,7 +399,7 @@ pub(crate) fn write_to_report(
             }
         }
         WriteOperation::InsertBefore { line, content } => {
-            let file = o8v_fs::safe_read(path, &root, &config)
+            let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
             let line_ending = detect_line_ending(existing_content);
@@ -420,7 +415,7 @@ pub(crate) fn write_to_report(
             let mut new_lines: Vec<&str> = lines.clone();
             new_lines.insert(line - 1, content);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(path, &root, new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Insert {
@@ -428,7 +423,7 @@ pub(crate) fn write_to_report(
             }
         }
         WriteOperation::DeleteLines { start, end } => {
-            let file = o8v_fs::safe_read(path, &root, &config)
+            let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
             let line_ending = detect_line_ending(existing_content);
@@ -454,14 +449,14 @@ pub(crate) fn write_to_report(
                 .map(|(_, line)| *line)
                 .collect();
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(path, &root, new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Delete { deleted_lines }
         }
         WriteOperation::CreateFile { content, force } => {
             if !force {
-                match o8v_fs::safe_exists(path, &root) {
+                match o8v_fs::safe_exists(&path, root) {
                     Ok(true) => {
                         return Err(
                             "Error: file already exists (use --force to overwrite)".to_string()
@@ -473,19 +468,19 @@ pub(crate) fn write_to_report(
                     }
                 }
             }
-            o8v_fs::safe_write(path, &root, content.as_bytes())
+            o8v_fs::safe_write(&path, root,content.as_bytes())
                 .map_err(|e| format!("Error: failed to create file: {e}"))?;
             let line_count = content.lines().count();
             ReportOp::Create { line_count }
         }
         WriteOperation::AppendToFile { content } => {
             let appended = format!("\n{}", content);
-            o8v_fs::safe_append(path, &root, appended.as_bytes())
+            o8v_fs::safe_append(&path, root,appended.as_bytes())
                 .map_err(|e| format!("Error: failed to append to file: {e}"))?;
             ReportOp::Append
         }
         WriteOperation::FindReplace { find, replace, all } => {
-            let file = o8v_fs::safe_read(path, &root, &config)
+            let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
             let new_content = if *all {
@@ -506,7 +501,7 @@ pub(crate) fn write_to_report(
             } else {
                 1
             };
-            o8v_fs::safe_write(path, &root, new_content.as_bytes())
+            o8v_fs::safe_write(&path, root,new_content.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::FindReplace { count }
@@ -595,11 +590,8 @@ impl Command for WriteCommand {
 
     async fn execute(
         &self,
-        _ctx: &CommandContext,
+        ctx: &CommandContext,
     ) -> Result<Self::Report, CommandError> {
-        match write_to_report(&self.args) {
-            Ok(report) => Ok(report),
-            Err(e) => Err(CommandError::Execution(e)),
-        }
+        write_to_report(&self.args, ctx).map_err(CommandError::Execution)
     }
 }

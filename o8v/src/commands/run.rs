@@ -75,13 +75,12 @@ impl Command for RunCommand {
         let program = &parts[0];
         let cmd_args = &parts[1..];
 
-        let cwd = std::env::current_dir().map_err(|e| {
-            CommandError::Execution(format!("8v: cannot determine working directory: {e}"))
-        })?;
+        let workspace = ctx.extensions.get::<o8v_workspace::WorkspaceRoot>()
+            .ok_or_else(|| CommandError::Execution("8v: no workspace — run 8v init first".to_string()))?;
 
         let mut cmd = std::process::Command::new(program);
         cmd.args(cmd_args);
-        cmd.current_dir(&cwd);
+        cmd.current_dir(workspace.as_path());
 
         let config = o8v_process::ProcessConfig {
             timeout: std::time::Duration::from_secs(self.args.timeout),

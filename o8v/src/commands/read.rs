@@ -65,19 +65,22 @@ fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
 /// Contains the same file reading, validation, and parsing logic as
 /// `read_to_string` but populates a structured `ReadReport` instead of
 /// formatting to a String. Called by `ReadCommand::execute()`.
-pub fn read_to_report(args: &Args) -> Result<o8v_core::render::read_report::ReadReport, String> {
+pub fn read_to_report(
+    args: &Args,
+    ctx: &o8v_core::command::CommandContext,
+) -> Result<o8v_core::render::read_report::ReadReport, String> {
     use o8v_core::render::read_report::{LineEntry, ReadReport, SymbolEntry};
+
+    let workspace = ctx
+        .extensions
+        .get::<o8v_workspace::WorkspaceRoot>()
+        .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
     let (file_path, range) = parse_path_range(&args.path);
 
-    let abs_path = crate::util::resolve_path(&file_path).map_err(|e| format!("8v: {e}"))?;
+    let abs_path = workspace.resolve(&file_path);
 
-    let root = match std::env::current_dir().and_then(|cwd| {
-        o8v_fs::ContainmentRoot::new(&cwd).map_err(|e| std::io::Error::other(e.to_string()))
-    }) {
-        Ok(r) => r,
-        Err(e) => return Err(format!("8v: cannot create containment root: {e}")),
-    };
+    let root = workspace.containment();
 
     let config = o8v_fs::FsConfig::default();
     let file = match o8v_fs::safe_read(&abs_path, &root, &config) {
@@ -194,13 +197,7 @@ pub struct ReadCommand {
 impl Command for ReadCommand {
     type Report = ReadReport;
 
-    async fn execute(
-        &self,
-        _ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
-        match read_to_report(&self.args) {
-            Ok(report) => Ok(report),
-            Err(e) => Err(CommandError::Execution(e)),
-        }
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
+        read_to_report(&self.args, ctx).map_err(CommandError::Execution)
     }
 }

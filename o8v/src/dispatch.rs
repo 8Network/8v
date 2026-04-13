@@ -42,6 +42,13 @@ pub fn build_context(interrupted: &'static AtomicBool) -> CommandContext {
             ));
             bus.subscribe(sub);
 
+            // Insert WorkspaceRoot — the trust boundary for all file I/O in commands.
+            if let Ok(workspace_root) =
+                o8v_workspace::WorkspaceRoot::new(project_root.to_string())
+            {
+                extensions.insert(workspace_root);
+            }
+
             extensions.insert(project_root);
             extensions.insert(storage);
             extensions.insert(config);

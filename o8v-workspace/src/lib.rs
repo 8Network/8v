@@ -27,6 +27,9 @@ pub use context::{resolve_workspace, ContextError};
 pub mod storage;
 pub use storage::StorageDir;
 
+pub mod workspace_root;
+pub use workspace_root::WorkspaceRoot;
+
 // ─── Path constants ──────────────────────────────────────────────────────────
 
 /// The `.8v/` state directory name.

@@ -20,7 +20,7 @@ use o8v_core::render::search_report::{
 };
 use o8v_fs::{ContainmentRoot, FsConfig};
 use regex::{Regex, RegexBuilder};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 // ─── Args ────────────────────────────────────────────────────────────────────
 
@@ -133,26 +133,6 @@ fn build_regex(args: &Args) -> Result<Regex, String> {
         .map_err(|e| format!("error: invalid regex pattern: {e}"))
 }
 
-/// Resolve the search root from args.path, anchored to cwd.
-fn resolve_search_root(path_arg: Option<&str>) -> Result<PathBuf, String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("error: cannot determine working directory: {e}"))?;
-    let root = match path_arg {
-        Some(p) => {
-            let candidate = Path::new(p);
-            if candidate.is_absolute() {
-                candidate.to_path_buf()
-            } else {
-                cwd.join(candidate)
-            }
-        }
-        None => cwd,
-    };
-    // Canonicalize so we can compute relative paths later.
-    root.canonicalize()
-        .map_err(|e| format!("error: cannot access path '{}': {e}", root.display()))
-}
-
 /// Search file contents for regex matches.
 ///
 /// Uses `o8v_fs::safe_read` for the full guard pipeline: canonicalize,
@@ -170,7 +150,7 @@ fn search_file_contents(
     let guarded = match o8v_fs::safe_read(path, containment, config) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("warning: cannot read {}: {e}", path.display());
+            tracing::debug!("cannot read {}: {e}", path.display());
             result.files_skipped += 1;
             return;
         }
@@ -273,18 +253,25 @@ fn search_file_names(path: &Path, root: &Path, regex: &Regex, result: &mut Searc
 }
 
 /// Run the full search and return a `SearchResult`.
-pub fn do_search(args: &Args) -> Result<SearchResult, String> {
+pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, String> {
     let regex = build_regex(args)?;
-    let root = resolve_search_root(args.path.as_deref())?;
 
-    // Build ContainmentRoot from the resolved search root.
-    let containment = ContainmentRoot::new(&root).map_err(|e| {
-        format!(
-            "error: cannot create containment root for '{}': {e}",
-            root.display()
-        )
-    })?;
+    let workspace = ctx
+        .extensions
+        .get::<o8v_workspace::WorkspaceRoot>()
+        .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
+    let root = match args.path.as_deref() {
+        Some(p) => workspace.resolve(p),
+        None => workspace.as_path().to_path_buf(),
+    };
+
+    // Canonicalize so we can compute relative paths later.
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("error: cannot access path '{}': {e}", root.display()))?;
+
+    let containment = workspace.containment();
     let config = FsConfig::default();
 
     let mut result = SearchResult {
@@ -305,7 +292,7 @@ pub fn do_search(args: &Args) -> Result<SearchResult, String> {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("warning: cannot walk directory entry: {e}");
+                tracing::debug!("cannot walk directory entry: {e}");
                 continue;
             }
         };
@@ -333,7 +320,7 @@ pub fn do_search(args: &Args) -> Result<SearchResult, String> {
             search_file_contents(
                 path,
                 &root,
-                &containment,
+                containment,
                 &config,
                 &regex,
                 args,
@@ -356,9 +343,9 @@ impl Command for SearchCommand {
 
     async fn execute(
         &self,
-        _ctx: &CommandContext,
+        ctx: &CommandContext,
     ) -> Result<Self::Report, CommandError> {
-        let result = do_search(&self.args).map_err(CommandError::Execution)?;
+        let result = do_search(&self.args, ctx).map_err(CommandError::Execution)?;
 
         let files: Vec<ReportFileMatches> = result
             .files
