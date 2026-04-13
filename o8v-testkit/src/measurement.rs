@@ -46,19 +46,19 @@ pub struct McpMeasurement {
 impl McpMeasurement {
     pub fn from_home() -> Result<Self, McpError> {
         let home = std::env::var("HOME").map_err(|_| McpError::ReadFailed {
-            path: PathBuf::from("~/.8v/command-events.ndjson"),
+            path: PathBuf::from("~/.8v/events.ndjson"),
             source: "HOME environment variable is not set".to_string(),
         })?;
         Self::from_home_dir(&PathBuf::from(home))
     }
 
-    /// Read command events from `<home_dir>/.8v/command-events.ndjson`.
+    /// Read command events from `<home_dir>/.8v/events.ndjson`.
     ///
     /// Used by benchmarks that set HOME to a per-arm temp dir so measurements
     /// are isolated. Pass the temp dir root (not the `.8v/` subdir).
     pub fn from_home_dir(home_dir: &Path) -> Result<Self, McpError> {
         let dot8v = home_dir.join(".8v");
-        let ndjson_path = dot8v.join("command-events.ndjson");
+        let ndjson_path = dot8v.join("events.ndjson");
         if !ndjson_path.exists() {
             return Err(McpError::FileNotFound(ndjson_path));
         }

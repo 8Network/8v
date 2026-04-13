@@ -2,13 +2,12 @@
 // Licensed under the Business Source License 1.1 (BSL-1.1).
 // See LICENSE file in the project root.
 
-//! Command lifecycle events — emitted by dispatch for every command.
+//! Lifecycle events — emitted by dispatch for every invocation.
 //!
-//! These replace the MCP-only McpInvoked/McpCompleted events. Both CLI and MCP
-//! get identical observability through the EventBus.
+//! Both CLI and MCP get identical observability through the EventBus.
 
 use crate::caller::Caller;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 /// The 8v version string embedded in every event.
@@ -28,16 +27,16 @@ fn unix_ms() -> i64 {
 }
 
 /// Emitted before a command executes.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandStarted {
     /// Event kind discriminator.
-    pub event: &'static str,
+    pub event: String,
     /// UUID scoped to this command invocation.
     pub run_id: String,
     /// Unix milliseconds.
     pub timestamp_ms: i64,
     /// 8v version.
-    pub version: &'static str,
+    pub version: String,
     /// Who invoked the command.
     pub caller: Caller,
     /// The command string (e.g. "check .").
@@ -55,10 +54,10 @@ impl CommandStarted {
         let command = command.into();
         let command_bytes = command.len() as u64;
         Self {
-            event: "CommandStarted",
+            event: "CommandStarted".to_string(),
             run_id,
             timestamp_ms: unix_ms(),
-            version: VERSION,
+            version: VERSION.to_string(),
             caller,
             command,
             command_bytes,
@@ -69,10 +68,10 @@ impl CommandStarted {
 }
 
 /// Emitted after a command completes (success or failure).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandCompleted {
     /// Event kind discriminator.
-    pub event: &'static str,
+    pub event: String,
     /// Matches the [`CommandStarted`] for this invocation.
     pub run_id: String,
     /// Unix milliseconds.
@@ -90,7 +89,7 @@ pub struct CommandCompleted {
 impl CommandCompleted {
     pub fn new(run_id: String, output_bytes: u64, duration_ms: u64, success: bool) -> Self {
         Self {
-            event: "CommandCompleted",
+            event: "CommandCompleted".to_string(),
             run_id,
             timestamp_ms: unix_ms(),
             output_bytes,

@@ -2,16 +2,16 @@
 // Licensed under the Business Source License 1.1 (BSL-1.1).
 // See LICENSE file in the project root.
 
-//! StorageSubscriber — writes command lifecycle events to NDJSON.
+//! StorageSubscriber — writes lifecycle events to NDJSON.
 //!
 //! Subscribes to the EventBus and writes CommandStarted/CommandCompleted
-//! events as NDJSON lines to `~/.8v/command-events.ndjson`. Best-effort:
+//! events as NDJSON lines to `~/.8v/events.ndjson`. Best-effort:
 //! serialization or I/O failures are logged, never propagated.
 
 use o8v_core::event_bus::Subscriber;
 use o8v_workspace::StorageDir;
 
-/// Writes command lifecycle events to `~/.8v/command-events.ndjson`.
+/// Writes lifecycle events to `~/.8v/events.ndjson`.
 ///
 /// Best-effort: failures are debug-logged, never propagated. A failed
 /// event write must never break command execution.
@@ -33,7 +33,7 @@ impl Subscriber for StorageSubscriber {
         }
         let mut line = message.to_vec();
         line.push(b'\n');
-        let path = self.storage.command_events();
+        let path = self.storage.events();
         let containment = self.storage.containment();
         match o8v_fs::safe_append(&path, containment, &line) {
             Ok(()) => {}
@@ -53,7 +53,7 @@ impl Subscriber for StorageSubscriber {
 mod tests {
     use super::*;
     use o8v_core::caller::Caller;
-    use o8v_core::command_events::{CommandCompleted, CommandStarted};
+    use o8v_core::events::{CommandCompleted, CommandStarted};
     use std::fs;
     use tempfile::TempDir;
 
@@ -62,7 +62,7 @@ mod tests {
     }
 
     fn read_events(storage: &StorageDir) -> Vec<serde_json::Value> {
-        let path = storage.command_events();
+        let path = storage.events();
         if !path.exists() {
             return Vec::new();
         }
@@ -136,7 +136,7 @@ mod tests {
         sub.on_event(unknown_bytes);
 
         // File must not exist: no valid JSON was written.
-        let path = storage.command_events();
+        let path = storage.events();
         assert!(!path.exists(), "non-JSON bytes must not be written to the NDJSON file");
     }
 

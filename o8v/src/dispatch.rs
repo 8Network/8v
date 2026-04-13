@@ -12,7 +12,7 @@ pub use o8v_workspace::{resolve_workspace, ContextError};
 
 use o8v_core::caller::Caller;
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::command_events::{CommandCompleted, CommandStarted};
+use o8v_core::events::{CommandCompleted, CommandStarted};
 use o8v_core::event_bus::EventBus;
 use o8v_core::extensions::Extensions;
 use o8v_core::render::{Audience, Renderable};

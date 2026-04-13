@@ -13,7 +13,7 @@ use crate::DIR_NAME;
 
 /// The home-level 8v storage directory.
 ///
-/// Always at `~/.8v/`. Contains all user-level state: command events, last
+/// Always at `~/.8v/`. Contains all user-level state: lifecycle events, last
 /// check results, workspace registry, and config. Never project-relative.
 ///
 /// This is the single source of truth for the `~/.8v/` path. No other code
@@ -24,7 +24,7 @@ pub struct StorageDir {
 }
 
 impl StorageDir {
-    const COMMAND_EVENTS: &'static str = "command-events.ndjson";
+    const EVENTS: &'static str = "events.ndjson";
     const LAST_CHECK: &'static str = "last-check.json";
     const WORKSPACES_TOML: &'static str = "workspaces.toml";
     const CONFIG_TOML: &'static str = "config.toml";
@@ -82,9 +82,9 @@ impl StorageDir {
 
     // ─── Named path methods ──────────────────────────────────────────────────
 
-    /// `~/.8v/command-events.ndjson` — unified lifecycle events for all callers.
-    pub fn command_events(&self) -> PathBuf {
-        self.containment.as_path().join(Self::COMMAND_EVENTS)
+    /// `~/.8v/events.ndjson` — unified lifecycle events for all callers.
+    pub fn events(&self) -> PathBuf {
+        self.containment.as_path().join(Self::EVENTS)
     }
 
     /// `~/.8v/workspaces.toml`
@@ -125,7 +125,7 @@ mod tests {
         let storage = StorageDir::at(tmp.path()).unwrap();
         let base = std::fs::canonicalize(tmp.path()).unwrap();
 
-        assert_eq!(storage.command_events(), base.join("command-events.ndjson"));
+        assert_eq!(storage.events(), base.join("events.ndjson"));
         assert_eq!(storage.workspaces_toml(), base.join("workspaces.toml"));
         assert_eq!(storage.config_toml(), base.join("config.toml"));
         assert_eq!(storage.last_check(), base.join("last-check.json"));

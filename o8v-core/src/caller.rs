@@ -4,10 +4,10 @@
 
 //! Caller identity — who invoked the command.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Who invoked the command. Determines default audience and is recorded in events.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Caller {
     /// Command-line interface.

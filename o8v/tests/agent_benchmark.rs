@@ -751,7 +751,7 @@ fn v4_token_efficiency() {
         std::env::var("HOME").expect("HOME must be set"),
     )
     .join(".8v")
-    .join("command-events.ndjson");
+    .join("events.ndjson");
     let _ = std::fs::remove_file(&mcp_events_path);
 
     let mcp_config = with_8v_dir.path().join(".mcp.json");
@@ -924,7 +924,7 @@ fn v4_token_efficiency() {
 // Value 4b — Command Events: verify cost measurements are written correctly
 //
 // Claim: When an agent uses 8v via MCP, every invocation records cost signals
-//        in `.8v/command-events.ndjson` with accurate byte/token measurements.
+//        in `.8v/events.ndjson` with accurate byte/token measurements.
 //
 // Setup: Run 8v init to create .8v/ directory, then run agent with prompt.
 // Verify: Parse NDJSON events, check CommandStarted and CommandCompleted records.
@@ -932,7 +932,7 @@ fn v4_token_efficiency() {
 
 #[test]
 #[ignore = "requires: `claude` in PATH (~10s, costs tokens)"]
-fn v4_command_events_written() {
+fn v4_events_written() {
     let binary = env!("CARGO_BIN_EXE_8v");
     let fixture = o8v_testkit::fixture_path("o8v", "agent-benchmark/violated-rust");
     let tmpdir = TempProject::from_fixture(&fixture);
@@ -948,13 +948,13 @@ fn v4_command_events_written() {
     )
     .expect("run claude");
 
-    // 3. Read the command events file (written to ~/.8v/command-events.ndjson)
+    // 3. Read the command events file (written to ~/.8v/events.ndjson)
     let home = std::env::var("HOME").expect("HOME env var");
     let events_path = std::path::Path::new(&home)
         .join(".8v")
-        .join("command-events.ndjson");
+        .join("events.ndjson");
 
-    let events_content = fs::read_to_string(&events_path).expect("read command-events.ndjson");
+    let events_content = fs::read_to_string(&events_path).expect("read events.ndjson");
     let lines: Vec<&str> = events_content.lines().collect();
 
     eprintln!(
@@ -993,13 +993,13 @@ fn v4_command_events_written() {
     // 5. Assert: at least one CommandStarted event exists
     assert!(
         !started_events.is_empty(),
-        "No CommandStarted events found in command-events.ndjson"
+        "No CommandStarted events found in events.ndjson"
     );
 
     // 6. Assert: at least one CommandCompleted event exists
     assert!(
         !completed_events.is_empty(),
-        "No CommandCompleted events found in command-events.ndjson"
+        "No CommandCompleted events found in events.ndjson"
     );
 
     // 7. Assert: every CommandStarted has command_bytes > 0
@@ -1590,7 +1590,7 @@ fn v7_read_write_token_efficiency() {
         eprintln!("  used {tool} (hook-blocked): {used}");
     }
 
-    eprintln!("\n--- Command Events (.8v/command-events.ndjson) ---");
+    eprintln!("\n--- Command Events (.8v/events.ndjson) ---");
     eprintln!("  calls:               {}", mcp.call_count);
     eprintln!("  output_bytes:        {}", mcp.output_bytes);
     eprintln!("  output_tokens (est): {}", mcp.output_token_estimate());

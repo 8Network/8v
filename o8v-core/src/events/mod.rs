@@ -10,6 +10,9 @@
 pub mod build;
 pub mod check;
 pub mod fmt;
+pub mod lifecycle;
 pub mod run;
 pub mod test;
 pub mod upgrade;
+
+pub use lifecycle::{CommandCompleted, CommandStarted};

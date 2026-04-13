@@ -22,10 +22,9 @@
 
 pub mod caller;
 pub mod command;
-pub mod command_events;
 pub mod event_bus;
-pub mod extensions;
 pub mod events;
+pub mod extensions;
 pub mod process_report;
 pub mod render;
 pub mod symbols;
