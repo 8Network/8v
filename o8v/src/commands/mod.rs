@@ -110,13 +110,15 @@ pub(crate) async fn dispatch_command(
     caller: Caller,
     interrupted: &'static AtomicBool,
 ) -> Result<(String, ExitCode, bool), CommandError> {
+    interrupted.store(false, std::sync::atomic::Ordering::Release);
     let ctx = o8v::dispatch::build_context(interrupted);
     let audience = match caller {
         Caller::Mcp => Audience::Agent,
         Caller::Cli => command.cli_audience(),
     };
     let command_name = command.name();
-
+    // Exit codes are CLI-specific — reports describe what happened,
+    // this layer decides how to signal it to the shell.
     match command {
         Command::Build(args) => {
             let cmd = build::BuildCommand { args };

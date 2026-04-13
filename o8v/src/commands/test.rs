@@ -61,8 +61,12 @@ impl Command for TestCommand {
     ) -> Result<Self::Report, CommandError> {
         validate_timeout(self.args.timeout).map_err(CommandError::Execution)?;
 
-        let abs_path = crate::util::resolve_path(&self.args.path)
-            .map_err(|e| CommandError::Execution(format!("8v: {e}")))?;
+        let workspace = ctx
+            .extensions
+            .get::<o8v_workspace::WorkspaceRoot>()
+            .ok_or_else(|| CommandError::Execution("8v: no workspace — run 8v init first".to_string()))?;
+
+        let abs_path = workspace.resolve(&self.args.path);
 
         let root = o8v_project::ProjectRoot::new(&abs_path)
             .map_err(|e| CommandError::Execution(format!("8v: invalid path: {e}")))?;

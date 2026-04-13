@@ -106,12 +106,23 @@ where
         .unwrap_or(0);
     let duration_ms = end_ms.saturating_sub(start_ms);
 
-    let report = result?;
+    // On failure: emit CommandCompleted with success=false, then propagate the error.
+    // On success: render first (to get output_len), then emit CommandCompleted.
+    let report = match result {
+        Err(e) => {
+            if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
+                let ev = CommandCompleted::new(run_id, 0, duration_ms, false);
+                bus.emit(&ev);
+            }
+            return Err(e);
+        }
+        Ok(report) => report,
+    };
 
     // Render the final report.
     let output = o8v_core::render::render(&report, audience).into_string();
 
-    // Emit CommandCompleted.
+    // Emit CommandCompleted with the real output length.
     if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
         let ev = CommandCompleted::new(run_id, output.len() as u64, duration_ms, success);
         bus.emit(&ev);
@@ -187,6 +198,35 @@ mod tests {
 
         let events = recorder.events.lock().unwrap();
         assert_eq!(events.len(), 2);
+        assert_eq!(events[0], "CommandStarted");
+        assert_eq!(events[1], "CommandCompleted");
+    }
+
+    /// A command that always fails — used to verify CommandCompleted is emitted on error.
+    struct FailCommand;
+    impl o8v_core::command::Command for FailCommand {
+        type Report = ();
+        async fn execute(
+            &self,
+            _ctx: &CommandContext,
+        ) -> Result<(), CommandError> {
+            Err(CommandError::Execution("intentional test failure".to_string()))
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_emits_completed_on_failure() {
+        let ctx = build_context(&TEST_INTERRUPTED);
+        let bus = ctx.extensions.get::<Arc<EventBus>>().unwrap().clone();
+        let recorder = Arc::new(RecordingSubscriber::new());
+        bus.subscribe(recorder.clone());
+
+        let cmd = FailCommand;
+        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "fail").await;
+        assert!(result.is_err(), "command must return an error");
+
+        let events = recorder.events.lock().unwrap();
+        assert_eq!(events.len(), 2, "must emit CommandStarted and CommandCompleted even on failure");
         assert_eq!(events[0], "CommandStarted");
         assert_eq!(events[1], "CommandCompleted");
     }

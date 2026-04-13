@@ -27,6 +27,10 @@ impl StorageSubscriber {
 
 impl Subscriber for StorageSubscriber {
     fn on_event(&self, message: &[u8]) {
+        if serde_json::from_slice::<serde_json::Value>(message).is_err() {
+            tracing::warn!("StorageSubscriber: dropping non-JSON event");
+            return;
+        }
         let mut line = message.to_vec();
         line.push(b'\n');
         let path = self.storage.command_events();
@@ -127,19 +131,13 @@ mod tests {
         let storage = make_storage(&dir);
         let sub = StorageSubscriber::new(storage.clone());
 
-        // Write arbitrary bytes that aren't valid JSON — subscriber writes them as-is.
-        // The point: storage subscriber doesn't crash on unknown bytes.
+        // Non-JSON bytes must be dropped — the file must not be written at all.
         let unknown_bytes = b"not valid json";
         sub.on_event(unknown_bytes);
 
-        // The file will exist but contain non-JSON content; read_events will panic
-        // if it tries to parse it, so we read raw instead.
+        // File must not exist: no valid JSON was written.
         let path = storage.command_events();
-        if path.exists() {
-            let content = fs::read_to_string(&path).unwrap();
-            // There should be one line written (best-effort, no filtering)
-            assert_eq!(content.trim(), "not valid json");
-        }
+        assert!(!path.exists(), "non-JSON bytes must not be written to the NDJSON file");
     }
 
     #[test]

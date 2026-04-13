@@ -40,7 +40,10 @@ impl EventBus {
 
     /// Register a subscriber. It will receive all future events.
     pub fn subscribe(&self, subscriber: Arc<dyn Subscriber>) {
-        self.subscribers.lock().unwrap().push(subscriber);
+        match self.subscribers.lock() {
+            Ok(mut guard) => guard.push(subscriber),
+            Err(e) => tracing::debug!("event_bus: mutex poisoned, subscriber not registered: {e}"),
+        }
     }
 
     /// Emit an event to all subscribers.
@@ -56,8 +59,14 @@ impl EventBus {
                 return;
             }
         };
-        let subs = self.subscribers.lock().unwrap();
-        for sub in subs.iter() {
+        let subs = match self.subscribers.lock() {
+            Ok(guard) => guard.clone(),
+            Err(e) => {
+                tracing::debug!("event_bus: mutex poisoned, dropping event: {e}");
+                return;
+            }
+        };
+        for sub in &subs {
             sub.on_event(&bytes);
         }
     }

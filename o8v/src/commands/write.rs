@@ -474,8 +474,17 @@ pub(crate) fn write_to_report(
             ReportOp::Create { line_count }
         }
         WriteOperation::AppendToFile { content } => {
-            let appended = format!("\n{}", content);
-            o8v_fs::safe_append(&path, root,appended.as_bytes())
+            let existing = o8v_fs::safe_read(&path, root, &config)
+                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+            let existing_content = existing.content();
+            let needs_separator = !existing_content.is_empty()
+                && !existing_content.ends_with('\n');
+            let appended = if needs_separator {
+                format!("\n{}", content)
+            } else {
+                content.clone()
+            };
+            o8v_fs::safe_append(&path, root, appended.as_bytes())
                 .map_err(|e| format!("Error: failed to append to file: {e}"))?;
             ReportOp::Append
         }

@@ -8,16 +8,6 @@ use std::sync::atomic::AtomicBool;
 use crate::extensions::Extensions;
 use crate::render::{Renderable};
 
-/// Exit code when no projects or checks were detected.
-pub const EXIT_NOTHING: u8 = 2;
-
-/// Where rendered output should be written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputTarget {
-    Stdout,
-    Stderr,
-}
-
 /// Typed errors for the command pipeline.
 #[derive(Debug)]
 pub enum CommandError {
@@ -46,15 +36,6 @@ impl std::fmt::Display for CommandError {
 }
 
 impl std::error::Error for CommandError {}
-
-/// Framework-level cancellation mode. Commands don't see this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CancelMode {
-    /// Set interrupted flag, let command finish, drain events.
-    Graceful,
-    /// Abort the task immediately. Events in transit may be lost.
-    Force,
-}
 
 /// The contract every command fulfills.
 ///
