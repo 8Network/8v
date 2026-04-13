@@ -4,7 +4,7 @@
 //! and verifies it detects the formatting needs correctly.
 
 use o8v_core::{FmtConfig, FmtOutcome};
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use o8v_stacks::fmt;
 use std::fs;
 use std::sync::atomic::AtomicBool;
@@ -88,7 +88,7 @@ fn fmt_report_is_not_ok_when_entries_have_errors() {
 
     let report = o8v_core::FmtReport {
         entries: vec![o8v_core::FmtEntry {
-            stack: o8v_project::Stack::Rust,
+            stack: o8v_core::project::Stack::Rust,
             project_root: root,
             tool: "cargo fmt".to_string(),
             outcome: FmtOutcome::Error {

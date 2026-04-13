@@ -3,7 +3,7 @@
 // See LICENSE file in the project root.
 
 use o8v_fs::FsConfig;
-use o8v_workspace::to_io;
+use o8v::workspace::to_io;
 
 pub(super) fn setup_mcp_json(
     mcp_path: &std::path::Path,

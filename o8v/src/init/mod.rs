@@ -14,8 +14,9 @@ use ai_docs::{append_section_if_missing, AI_SECTION};
 use claude_settings::setup_claude_settings;
 use dialoguer::{Confirm, Select};
 use mcp_setup::setup_mcp_json;
-use o8v_project::{detect_all, ProjectRoot};
-use o8v_workspace::{register_workspace, WorkspaceDir};
+use o8v_core::project::{ProjectKind, ProjectRoot};
+use o8v_stacks::detect_all;
+use o8v::workspace::{register_workspace, WorkspaceDir};
 use std::fs;
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -113,8 +114,8 @@ pub fn run(args: &Args) -> ExitCode {
     } else {
         for p in projects {
             let kind = match p.kind() {
-                o8v_project::ProjectKind::Standalone => "",
-                o8v_project::ProjectKind::Compound { .. } => " (compound)",
+                ProjectKind::Standalone => "",
+                ProjectKind::Compound { .. } => " (compound)",
                 _ => "",
             };
             // sanitize: project name comes from manifest files (package.json, Cargo.toml, …)
@@ -315,7 +316,7 @@ fn confirm(prompt: &str, yes: bool) -> bool {
 /// establishes the initial snapshot so subsequent checks compute a valid delta.
 fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<(), String> {
     let project_root =
-        o8v_project::ProjectRoot::new(containment_root.as_path()).map_err(|e| e.to_string())?;
+        ProjectRoot::new(containment_root.as_path()).map_err(|e| e.to_string())?;
 
     let interrupted = Box::leak(Box::new(std::sync::atomic::AtomicBool::new(false)));
     let check_config = o8v_core::CheckConfig {

@@ -98,9 +98,9 @@ pub(crate) fn truncate_error(error: &str, hint: &str) -> String {
 
 pub use detectors::DetectResult;
 pub use error::{DetectError, PathError, ProjectError};
-pub use path::ProjectRoot;
+pub use o8v_core::project::ProjectRoot;
 pub use project::{Project, ProjectKind};
-pub use stack::Stack;
+pub use o8v_core::project::Stack;
 
 use o8v_fs::{FileKind, FileSystem, FsConfig, SafeFs};
 

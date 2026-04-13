@@ -36,7 +36,7 @@ pub use measurement::McpMeasurement;
 // Re-export commonly used types so test modules don't need extra imports.
 pub use diagnostic::DiagnosticBuilder;
 pub use o8v_core::diagnostic::{ParseStatus, Severity};
-pub use o8v_project::Stack;
+pub use o8v_core::project::Stack;
 pub use query::{all_check_names, collect_diagnostics, find_entry, find_result, has_check};
 pub use run::{run_check, run_check_interrupted, run_check_path};
 pub use sanitize::assert_sanitized;

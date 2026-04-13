@@ -55,7 +55,7 @@ fn corrupt_manifest_surfaces_detection_error() {
 #[test]
 fn events_fire_in_order_for_rust_project() {
     use o8v_core::{CheckConfig, CheckEvent};
-    use o8v_project::ProjectRoot;
+    use o8v_core::project::ProjectRoot;
     use std::sync::atomic::AtomicBool;
 
     let project = TempProject::rust_passing();
@@ -103,7 +103,7 @@ fn events_fire_in_order_for_rust_project() {
 #[test]
 fn noop_callback_produces_same_report() {
     use o8v_core::{CheckConfig, CheckEvent};
-    use o8v_project::ProjectRoot;
+    use o8v_core::project::ProjectRoot;
     use std::sync::atomic::AtomicBool;
 
     let project = TempProject::rust_passing();
@@ -138,7 +138,7 @@ fn noop_callback_produces_same_report() {
 #[test]
 fn detection_errors_fire_before_projects() {
     use o8v_core::{CheckConfig, CheckEvent};
-    use o8v_project::ProjectRoot;
+    use o8v_core::project::ProjectRoot;
     use std::sync::atomic::AtomicBool;
 
     let dir = tempfile::tempdir().unwrap();
@@ -173,7 +173,7 @@ fn detection_errors_fire_before_projects() {
 #[test]
 fn interrupt_preserves_checkstart_checkdone_pairing() {
     use o8v_core::{CheckConfig, CheckEvent};
-    use o8v_project::ProjectRoot;
+    use o8v_core::project::ProjectRoot;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let project = TempProject::rust_passing();

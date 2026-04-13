@@ -78,7 +78,7 @@ pub(crate) fn run(
     // Resolve ProjectRoot from the path argument — the user may pass a path
     // different from CWD, so we always resolve from args.path here.
     let project_root = if let Some(path_str) = args.path.as_deref() {
-        match o8v_workspace::resolve_workspace(path_str) {
+        match o8v::workspace::resolve_workspace(path_str) {
             Ok((root, _, _)) => root,
             Err(e) => {
                 let msg = o8v_core::render::sanitize_for_display(&e.to_string());
@@ -91,7 +91,7 @@ pub(crate) fn run(
             Some(root) => root.clone(),
             None => {
                 // Last resort: resolve from CWD.
-                match o8v_workspace::resolve_workspace(".") {
+                match o8v::workspace::resolve_workspace(".") {
                     Ok((root, _, _)) => root,
                     Err(e) => {
                         let msg = o8v_core::render::sanitize_for_display(&e.to_string());
@@ -107,11 +107,11 @@ pub(crate) fn run(
     // build_context() uses this same instance. Falling back to open() only
     // when context has no storage (e.g. in unit tests that skip build_context).
     let storage_owned;
-    let storage: &o8v_workspace::StorageDir =
-        if let Some(s) = ctx.extensions.get::<o8v_workspace::StorageDir>() {
+    let storage: &o8v::workspace::StorageDir =
+        if let Some(s) = ctx.extensions.get::<o8v::workspace::StorageDir>() {
             s
         } else {
-            storage_owned = o8v_workspace::StorageDir::open().map_err(|e| {
+            storage_owned = o8v::workspace::StorageDir::open().map_err(|e| {
                 o8v_core::render::sanitize_for_display(&format!("storage unavailable: {e}"))
             })?;
             &storage_owned
@@ -181,7 +181,7 @@ fn diagnostic_ids(report: &o8v_core::CheckReport) -> std::collections::HashSet<S
 }
 
 /// Read previous diagnostic IDs from last-check.json.
-fn read_last_check(storage: &o8v_workspace::StorageDir) -> std::collections::HashSet<String> {
+fn read_last_check(storage: &o8v::workspace::StorageDir) -> std::collections::HashSet<String> {
     let path = storage.last_check();
     let config = o8v_fs::FsConfig::default();
     match o8v_fs::safe_read(&path, storage.containment(), &config) {
@@ -192,7 +192,7 @@ fn read_last_check(storage: &o8v_workspace::StorageDir) -> std::collections::Has
 
 /// Write current diagnostic IDs to last-check.json (best-effort).
 fn write_last_check(
-    storage: &o8v_workspace::StorageDir,
+    storage: &o8v::workspace::StorageDir,
     ids: &std::collections::HashSet<String>,
 ) {
     let bytes = match serde_json::to_vec(ids) {

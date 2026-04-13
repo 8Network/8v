@@ -10,8 +10,8 @@ readme = "../README.md"
 description = "Workspace management for 8v — .8v/ layout, registry, config discovery"
 
 [dependencies]
+o8v-core = { path = "../o8v-core", version = "0.1.0" }
 o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
-o8v-project = { path = "../o8v-project", version = "0.1.0" }
 tracing = "0.1"
 
 [dev-dependencies]

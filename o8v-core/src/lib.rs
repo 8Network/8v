@@ -20,6 +20,8 @@
 //! - `o8v-stacks` defines: per-language tool configurations, parsers, fmt
 //! - `o8v-check` orchestrates: detect → plan → run → report
 
+pub mod project;
+
 pub mod caller;
 pub mod command;
 pub mod event_bus;

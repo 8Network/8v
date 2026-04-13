@@ -113,7 +113,7 @@ fn color(enabled: bool, code: &str) -> &str {
 mod tests {
     use super::*;
     use crate::FmtEntry;
-    use o8v_project::{ProjectRoot, Stack};
+    use crate::project::{ProjectRoot, Stack};
     use std::time::Duration;
 
     fn dummy_root() -> ProjectRoot {
@@ -215,7 +215,7 @@ mod tests {
     fn human_detection_errors() {
         let report = FmtReport {
             entries: vec![],
-            detection_errors: vec![o8v_project::DetectError::ManifestInvalid {
+            detection_errors: vec![crate::project::DetectError::ManifestInvalid {
                 path: std::path::PathBuf::from("/some/path"),
                 cause: "malformed JSON".into(),
             }],

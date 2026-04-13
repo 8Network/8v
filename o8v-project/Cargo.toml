@@ -10,6 +10,7 @@ readme = "../README.md"
 description = "Project detection for 8v — identifies stacks from manifest files"
 
 [dependencies]
+o8v-core = { path = "../o8v-core", version = "0.1.0" }
 o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

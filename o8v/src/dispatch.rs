@@ -8,7 +8,7 @@
 //! who they are (Caller), and the interrupted flag. Dispatch does everything
 //! else: context, bus, subscribers, execute, render, return.
 
-pub use o8v_workspace::{resolve_workspace, ContextError};
+pub use crate::workspace::{resolve_workspace, ContextError};
 
 use o8v_core::caller::Caller;
 use o8v_core::command::{Command, CommandContext, CommandError};
@@ -44,7 +44,7 @@ pub fn build_context(interrupted: &'static AtomicBool) -> CommandContext {
 
             // Insert WorkspaceRoot — the trust boundary for all file I/O in commands.
             if let Ok(workspace_root) =
-                o8v_workspace::WorkspaceRoot::new(project_root.to_string())
+                crate::workspace::WorkspaceRoot::new(project_root.to_string())
             {
                 extensions.insert(workspace_root);
             }

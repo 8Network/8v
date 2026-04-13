@@ -10,7 +10,8 @@
 use crate::stack_tools::FormatTool;
 use o8v_core::diagnostic::sanitize;
 use o8v_core::{FmtConfig, FmtEntry, FmtOutcome, FmtReport};
-use o8v_project::{detect_all, ProjectRoot, Stack};
+use crate::detect_all;
+use o8v_core::project::{ProjectRoot, Stack};
 use std::process::Command;
 use std::sync::atomic::Ordering;
 

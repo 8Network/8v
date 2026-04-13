@@ -40,7 +40,7 @@ pub fn render_fmt_plain(report: &FmtReport) -> Output {
 mod tests {
     use super::*;
     use crate::FmtEntry;
-    use o8v_project::{ProjectRoot, Stack};
+    use crate::project::{ProjectRoot, Stack};
     use std::time::Duration;
 
     fn dummy_root() -> ProjectRoot {

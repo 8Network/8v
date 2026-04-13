@@ -24,7 +24,7 @@ impl Human {
     /// Render one detection error.
     pub fn render_detection_error(
         &self,
-        error: &o8v_project::DetectError,
+        error: &crate::project::DetectError,
         config: &RenderConfig,
         w: &mut dyn Write,
     ) -> io::Result<()> {
@@ -41,8 +41,8 @@ impl Human {
     pub fn render_project_header(
         &self,
         name: &str,
-        stack: o8v_project::Stack,
-        path: &o8v_project::ProjectRoot,
+        stack: crate::project::Stack,
+        path: &crate::project::ProjectRoot,
         config: &RenderConfig,
         w: &mut dyn Write,
     ) -> io::Result<()> {

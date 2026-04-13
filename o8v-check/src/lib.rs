@@ -14,7 +14,8 @@
 use o8v_core::{
     CheckConfig, CheckContext, CheckEntry, CheckEvent, CheckOutcome, CheckReport, CheckResult,
 };
-use o8v_project::{detect_all, ProjectRoot};
+use o8v_core::project::ProjectRoot;
+use o8v_stacks::detect_all;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 

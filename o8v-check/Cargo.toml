@@ -13,7 +13,6 @@ description = "Check orchestration for 8v — detect projects, plan checks, run 
 o8v-core = { path = "../o8v-core", version = "0.1.0" }
 o8v-stacks = { path = "../o8v-stacks", version = "0.1.0" }
 o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
-o8v-project = { path = "../o8v-project", version = "0.1.0" }
 tracing = "0.1"
 
 [dev-dependencies]

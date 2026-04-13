@@ -24,7 +24,7 @@ mod typescript;
 
 use crate::stack_tools::StackTools;
 use o8v_core::Check;
-use o8v_project::Stack;
+use o8v_core::project::Stack;
 
 /// Returns all tools for a given stack.
 ///

@@ -3,7 +3,7 @@
 
 use o8v_core::{Check, CheckContext, CheckOutcome};
 use o8v_fs::ContainmentRoot;
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 

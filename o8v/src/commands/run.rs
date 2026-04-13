@@ -75,7 +75,7 @@ impl Command for RunCommand {
         let program = &parts[0];
         let cmd_args = &parts[1..];
 
-        let workspace = ctx.extensions.get::<o8v_workspace::WorkspaceRoot>()
+        let workspace = ctx.extensions.get::<o8v::workspace::WorkspaceRoot>()
             .ok_or_else(|| CommandError::Execution("8v: no workspace — run 8v init first".to_string()))?;
 
         let mut cmd = std::process::Command::new(program);

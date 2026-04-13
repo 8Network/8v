@@ -5,7 +5,7 @@
 //! `ConfigDir` — project-local `.8v/` configuration directory.
 
 use o8v_fs::ContainmentRoot;
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use std::path::PathBuf;
 
 use crate::DIR_NAME;

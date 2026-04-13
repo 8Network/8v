@@ -7,7 +7,7 @@
 //! These types live here because render depends on them. The fmt()
 //! orchestration function lives in o8v-stacks.
 
-use o8v_project::{ProjectRoot, Stack};
+use crate::project::{ProjectRoot, Stack};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
@@ -62,7 +62,7 @@ pub struct FmtReport {
     /// One entry per formatted project.
     pub entries: Vec<FmtEntry>,
     /// Errors encountered during project detection.
-    pub detection_errors: Vec<o8v_project::DetectError>,
+    pub detection_errors: Vec<crate::project::DetectError>,
 }
 
 impl FmtReport {
@@ -165,7 +165,7 @@ mod tests {
                     duration: Duration::from_secs(1),
                 },
             }],
-            detection_errors: vec![o8v_project::DetectError::ManifestInvalid {
+            detection_errors: vec![crate::project::DetectError::ManifestInvalid {
                 path: std::path::PathBuf::from("/fake"),
                 cause: "test".into(),
             }],

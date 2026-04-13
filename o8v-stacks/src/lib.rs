@@ -10,6 +10,8 @@
 //!
 //! Shared by `8v check`, `8v fmt`, `8v test`, and `8v build`.
 
+pub mod detect;
+pub mod detectors;
 pub mod enrich;
 pub mod fmt;
 pub mod parse;
@@ -19,6 +21,8 @@ pub mod stacks;
 mod tool;
 pub(crate) mod tool_resolution;
 
+pub use detect::detect_all;
+pub use detectors::DetectResult;
 pub use enrich::{enrich, ParseFn};
 pub use fmt::fmt;
 pub use runner::run_tool;

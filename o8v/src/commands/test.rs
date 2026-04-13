@@ -63,7 +63,7 @@ impl Command for TestCommand {
 
         let workspace = ctx
             .extensions
-            .get::<o8v_workspace::WorkspaceRoot>()
+            .get::<o8v::workspace::WorkspaceRoot>()
             .ok_or_else(|| CommandError::Execution("8v: no workspace — run 8v init first".to_string()))?;
 
         let abs_path = workspace.resolve(&self.args.path);

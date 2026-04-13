@@ -13,9 +13,10 @@ description = "Stack toolchain infrastructure for 8v — per-language checks, pa
 o8v-core = { path = "../o8v-core", version = "0.1.0" }
 o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
 o8v-process = { path = "../o8v-process", version = "0.1.0" }
-o8v-project = { path = "../o8v-project", version = "0.1.0" }
+quick-xml = { version = "0.37", features = ["serialize"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 tracing = "0.1"
 
 [dev-dependencies]

@@ -313,7 +313,7 @@ pub(crate) fn write_to_report(
 
     let workspace = ctx
         .extensions
-        .get::<o8v_workspace::WorkspaceRoot>()
+        .get::<o8v::workspace::WorkspaceRoot>()
         .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
     let op = validate_args(args)?;

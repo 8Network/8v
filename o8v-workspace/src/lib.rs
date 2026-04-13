@@ -15,7 +15,7 @@
 //! - [`local_8v_dir`] — construct `.8v/` path relative to any project root
 
 use o8v_fs::{ContainmentRoot, FsConfig};
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use std::path::PathBuf;
 
 pub mod config;

@@ -1,8 +1,7 @@
 //! Project — a detected project with validated fields.
 
 use crate::error::ProjectError;
-use crate::path::ProjectRoot;
-use crate::stack::Stack;
+use o8v_core::project::{ProjectRoot, Stack};
 
 /// Whether the project is standalone or a compound project with members.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

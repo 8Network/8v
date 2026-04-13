@@ -10,7 +10,7 @@ use o8v_core::diagnostic::{Diagnostic, Location, ParseResult, ParseStatus, Sever
 use o8v_core::CheckOutcome;
 use o8v_core::DisplayStr;
 use o8v_fs::ContainmentRoot;
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use o8v_stacks::{enrich, ParseFn};
 
 /// A parser that always returns empty diagnostics (tool passed clean).

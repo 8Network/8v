@@ -945,7 +945,6 @@ dependencies = [
  "o8v-project",
  "o8v-stacks",
  "o8v-testkit",
- "o8v-workspace",
  "regex",
  "rmcp",
  "schemars",
@@ -970,7 +969,6 @@ version = "0.1.0"
 dependencies = [
  "o8v-core",
  "o8v-fs",
- "o8v-project",
  "o8v-stacks",
  "o8v-testkit",
  "tempfile",
@@ -983,12 +981,14 @@ version = "0.1.0"
 dependencies = [
  "o8v-fs",
  "o8v-process",
- "o8v-project",
  "o8v-testkit",
+ "quick-xml",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
+ "toml",
  "tracing",
 ]
 
@@ -1013,6 +1013,7 @@ dependencies = [
 name = "o8v-project"
 version = "0.1.0"
 dependencies = [
+ "o8v-core",
  "o8v-fs",
  "quick-xml",
  "serde",
@@ -1030,11 +1031,12 @@ dependencies = [
  "o8v-core",
  "o8v-fs",
  "o8v-process",
- "o8v-project",
  "o8v-testkit",
+ "quick-xml",
  "serde",
  "serde_json",
  "tempfile",
+ "toml",
  "tracing",
 ]
 
@@ -1045,7 +1047,6 @@ dependencies = [
  "o8v-check",
  "o8v-core",
  "o8v-fs",
- "o8v-project",
  "serde",
  "serde_json",
  "sha2",
@@ -1054,16 +1055,6 @@ dependencies = [
  "toml",
  "tracing",
  "ureq",
-]
-
-[[package]]
-name = "o8v-workspace"
-version = "0.1.0"
-dependencies = [
- "o8v-fs",
- "o8v-project",
- "tempfile",
- "tracing",
 ]
 
 [[package]]

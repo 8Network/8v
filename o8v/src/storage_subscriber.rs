@@ -9,7 +9,7 @@
 //! serialization or I/O failures are logged, never propagated.
 
 use o8v_core::event_bus::Subscriber;
-use o8v_workspace::StorageDir;
+use crate::workspace::StorageDir;
 
 /// Writes lifecycle events to `~/.8v/events.ndjson`.
 ///

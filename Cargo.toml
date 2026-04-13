@@ -7,7 +7,6 @@ members = [
     "o8v-stacks",
     "o8v-check",
     "o8v-testkit",
-    "o8v-workspace",
     "o8v",
 ]
 exclude = [

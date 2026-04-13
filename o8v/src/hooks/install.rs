@@ -6,7 +6,7 @@
 
 use dialoguer::Select;
 use o8v_fs::FsConfig;
-use o8v_workspace::to_io;
+use o8v::workspace::to_io;
 use serde::{Deserialize, Serialize};
 
 // ─── Git hook constants ───────────────────────────────────────────────────────

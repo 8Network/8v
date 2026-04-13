@@ -2,7 +2,7 @@
 
 use crate::diagnostic::{sanitize, Diagnostic, ParseStatus};
 use o8v_fs::ContainmentRoot;
-use o8v_project::{ProjectRoot, Stack};
+use crate::project::{ProjectRoot, Stack};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
@@ -17,7 +17,7 @@ pub struct CheckConfig {
 /// Events emitted during check execution for streaming progress.
 pub enum CheckEvent<'a> {
     /// Detection error found. Emitted before any checks.
-    DetectionError { error: &'a o8v_project::DetectError },
+    DetectionError { error: &'a crate::project::DetectError },
     /// Project detected, checks about to start.
     ProjectStart {
         name: &'a str,
@@ -212,7 +212,7 @@ impl CheckEntry {
 pub struct CheckResult {
     pub project_name: String,
     pub project_path: ProjectRoot,
-    pub stack: o8v_project::Stack,
+    pub stack: crate::project::Stack,
     pub entries: Vec<CheckEntry>,
 }
 
@@ -231,7 +231,7 @@ impl CheckResult {
 
     /// Stack that was detected.
     #[must_use]
-    pub const fn stack(&self) -> o8v_project::Stack {
+    pub const fn stack(&self) -> crate::project::Stack {
         self.stack
     }
 
@@ -274,7 +274,7 @@ pub struct DeltaSummary {
 #[derive(Debug)]
 pub struct CheckReport {
     pub results: Vec<CheckResult>,
-    pub detection_errors: Vec<o8v_project::DetectError>,
+    pub detection_errors: Vec<crate::project::DetectError>,
     /// Delta compared to previous run. None if no previous data available.
     pub delta: Option<DeltaSummary>,
     /// Render configuration — set by the command from CLI args before returning.
@@ -290,7 +290,7 @@ impl CheckReport {
 
     /// Errors from project detection itself — structured, not stringified.
     #[must_use]
-    pub fn detection_errors(&self) -> &[o8v_project::DetectError] {
+    pub fn detection_errors(&self) -> &[crate::project::DetectError] {
         &self.detection_errors
     }
 
@@ -314,7 +314,7 @@ mod tests {
         CheckResult {
             project_name: "test".to_string(),
             project_path: path,
-            stack: o8v_project::Stack::Rust,
+            stack: crate::project::Stack::Rust,
             entries: outcomes
                 .into_iter()
                 .enumerate()
@@ -375,7 +375,7 @@ mod tests {
     fn result_accessors() {
         let r = make_result(vec![passed()]);
         assert_eq!(r.project_name(), "test");
-        assert_eq!(r.stack(), o8v_project::Stack::Rust);
+        assert_eq!(r.stack(), crate::project::Stack::Rust);
         assert_eq!(r.entries().len(), 1);
         assert!(!r.project_path().to_string().is_empty());
     }
@@ -395,7 +395,7 @@ mod tests {
     fn report_not_ok_with_detection_errors() {
         let report = CheckReport {
             results: vec![make_result(vec![passed()])],
-            detection_errors: vec![o8v_project::DetectError::ManifestInvalid {
+            detection_errors: vec![crate::project::DetectError::ManifestInvalid {
                 path: std::path::PathBuf::from("/fake"),
                 cause: "test".into(),
             }],

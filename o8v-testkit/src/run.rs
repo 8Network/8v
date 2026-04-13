@@ -2,7 +2,7 @@
 
 use crate::fixture::Fixture;
 use o8v_core::{CheckConfig, CheckReport};
-use o8v_project::ProjectRoot;
+use o8v_core::project::ProjectRoot;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 

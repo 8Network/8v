@@ -9,7 +9,7 @@
 //! and permissions.deny for the native tools it replaces.
 
 use o8v_fs::FsConfig;
-use o8v_workspace::to_io;
+use o8v::workspace::to_io;
 use serde::{Deserialize, Serialize};
 
 const MCP_TOOL_PERMISSION: &str = "mcp__8v__8v";
