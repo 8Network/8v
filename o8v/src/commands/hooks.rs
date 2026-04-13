@@ -22,7 +22,6 @@ impl Command for HooksCommand {
         let success = exit_code == 0;
 
         Ok(HooksReport {
-            hooks: vec![],
             exit_code,
             success,
         })
