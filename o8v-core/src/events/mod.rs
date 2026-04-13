@@ -16,3 +16,12 @@ pub mod test;
 pub mod upgrade;
 
 pub use lifecycle::{CommandCompleted, CommandStarted};
+
+/// A typed event read back from the event store.
+#[derive(Debug, Clone)]
+pub enum Event {
+    CommandStarted(lifecycle::CommandStarted),
+    CommandCompleted(lifecycle::CommandCompleted),
+    /// Event type not recognized — forward compatibility with newer 8v versions.
+    Unknown(String),
+}

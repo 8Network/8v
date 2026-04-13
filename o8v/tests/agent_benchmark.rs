@@ -767,10 +767,10 @@ fn v4_token_efficiency() {
     .expect("run claude (with 8v)");
 
     // Read MCP event measurements from real HOME after arm 2.
-    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
-        eprintln!("  MCP measurement: {e}");
-        o8v_testkit::McpMeasurement::zero()
-    });
+    // TODO(event-reader): let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
+            // TODO(event-reader): eprintln!("  MCP measurement: {e}");
+    // TODO(event-reader): o8v_testkit::McpMeasurement::zero()
+        // TODO(event-reader): });
 
     // ── Report ───────────────────────────────────────────────────────────────
     eprintln!(
@@ -811,23 +811,14 @@ fn v4_token_efficiency() {
         "\n[v4] EFFICIENCY SUMMARY\n\
          [v4]   without 8v: {} tool calls, {} tokens, ${:.4}\n\
          [v4]   with 8v:    {} tool calls, {} tokens, ${:.4}\n\
-         [v4]   8v exact bytes sent to agent: {} output_bytes (~{} token estimate)\n\
-         [v4]   8v exact bytes from agent:    {} command_bytes (~{} token estimate)\n\
-         [v4]   8v calls made:                {}\n\
-         [v4]   bytes per 8v call (avg):      {}\n\
          [v4]   8v used: {}\n",
+        // TODO(event-reader): mcp fields removed (output_bytes, output_token_estimate, command_bytes, command_token_estimate, call_count, avg_bytes_per_call)
         baseline.tool_call_count(),
         baseline.total_tokens,
         baseline.cost_usd,
         with_8v.tool_call_count(),
         with_8v.total_tokens,
         with_8v.cost_usd,
-        mcp.output_bytes,
-        mcp.output_token_estimate(),
-        mcp.command_bytes,
-        mcp.command_token_estimate(),
-        mcp.call_count,
-        mcp.avg_bytes_per_call().unwrap_or(0),
         with_8v.used_8v(),
     );
 
@@ -878,11 +869,11 @@ fn v4_token_efficiency() {
     )
     .expect("run claude (paginated)");
 
-    let mcp_paginated =
-        o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
-            eprintln!("  MCP measurement (paginated): {e}");
-            o8v_testkit::McpMeasurement::zero()
-        });
+    // TODO(event-reader): let mcp_paginated =
+    // TODO(event-reader): o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
+                // TODO(event-reader): eprintln!("  MCP measurement (paginated): {e}");
+    // TODO(event-reader): o8v_testkit::McpMeasurement::zero()
+            // TODO(event-reader): });
 
     // ── Pagination comparison report ─────────────────────────────────────────
     #[allow(clippy::cast_possible_wrap)]
@@ -898,18 +889,18 @@ fn v4_token_efficiency() {
         "\n[v4] === PAGINATION COMPARISON ==="
     );
     eprintln!(
-        "[v4] Arm 2 (full output):  {} tokens, {} tool calls, ${:.4} cost, {} output bytes",
+        "[v4] Arm 2 (full output):  {} tokens, {} tool calls, ${:.4} cost",
+        // TODO(event-reader): output_bytes removed
         with_8v.total_tokens,
         with_8v.tool_call_count(),
         with_8v.cost_usd,
-        mcp.output_bytes,
     );
     eprintln!(
-        "[v4] Arm 3 (paginated):    {} tokens, {} tool calls, ${:.4} cost, {} output bytes",
+        "[v4] Arm 3 (paginated):    {} tokens, {} tool calls, ${:.4} cost",
+        // TODO(event-reader): output_bytes removed
         paginated.total_tokens,
         paginated.tool_call_count(),
         paginated.cost_usd,
-        mcp_paginated.output_bytes,
     );
     eprintln!(
         "[v4] Delta:                {:+} tokens ({:+.1}%), {:+} tool calls",
@@ -1329,10 +1320,10 @@ fn v4_polyglot_token_efficiency() {
     )
     .expect("run claude (with 8v)");
 
-    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
-        eprintln!("  MCP measurement: {e}");
-        o8v_testkit::McpMeasurement::zero()
-    });
+    // TODO(event-reader): let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
+            // TODO(event-reader): eprintln!("  MCP measurement: {e}");
+    // TODO(event-reader): o8v_testkit::McpMeasurement::zero()
+        // TODO(event-reader): });
 
     // ── Report ──────────────────────────────────────────────────────────
     eprintln!("\n── V4-poly: Polyglot Token Efficiency ──");
@@ -1353,17 +1344,14 @@ fn v4_polyglot_token_efficiency() {
     }
 
     eprintln!("  COMMAND EVENTS:");
-    eprintln!("    mcp_calls:      {}", mcp.call_count);
-    eprintln!("    output_bytes:   {}", mcp.output_bytes);
-    eprintln!("    output_tokens:  ~{}", mcp.output_token_estimate());
-    eprintln!("    command_bytes:  {}", mcp.command_bytes);
-    eprintln!("    command_tokens: ~{}", mcp.command_token_estimate());
-    if mcp.has_events() {
-        eprintln!(
-            "    avg_bytes/call: {}",
-            mcp.avg_bytes_per_call().unwrap_or(0)
-        );
-    }
+    // TODO(event-reader): eprintln!("    mcp_calls:      {}", mcp.call_count);
+    // TODO(event-reader): eprintln!("    output_bytes:   {}", mcp.output_bytes);
+    // TODO(event-reader): eprintln!("    output_tokens:  ~{}", mcp.output_token_estimate());
+    // TODO(event-reader): eprintln!("    command_bytes:  {}", mcp.command_bytes);
+    // TODO(event-reader): eprintln!("    command_tokens: ~{}", mcp.command_token_estimate());
+    // TODO(event-reader): if mcp.has_events() {
+    // TODO(event-reader):     eprintln!("    avg_bytes/call: {}", mcp.avg_bytes_per_call().unwrap_or(0));
+    // TODO(event-reader): }
 
     let tool_delta = baseline.tool_calls.len() as i64 - with_8v.tool_calls.len() as i64;
     let token_delta = baseline.total_tokens as i64 - with_8v.total_tokens as i64;
@@ -1531,10 +1519,10 @@ fn v7_read_write_token_efficiency() {
     )
     .expect("8v claude run");
 
-    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
-        eprintln!("  MCP measurement: {e}");
-        o8v_testkit::McpMeasurement::zero()
-    });
+    // TODO(event-reader): let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
+            // TODO(event-reader): eprintln!("  MCP measurement: {e}");
+    // TODO(event-reader): o8v_testkit::McpMeasurement::zero()
+        // TODO(event-reader): });
 
     eprintln!("\n============================================================");
     eprintln!("V7: READ/WRITE BENCHMARK");
@@ -1591,15 +1579,12 @@ fn v7_read_write_token_efficiency() {
     }
 
     eprintln!("\n--- Command Events (.8v/events.ndjson) ---");
-    eprintln!("  calls:               {}", mcp.call_count);
-    eprintln!("  output_bytes:        {}", mcp.output_bytes);
-    eprintln!("  output_tokens (est): {}", mcp.output_token_estimate());
-    eprintln!("  command_bytes:       {}", mcp.command_bytes);
-    eprintln!("  command_tokens (est):{}", mcp.command_token_estimate());
-    eprintln!(
-        "  avg bytes/call:      {}",
-        mcp.avg_bytes_per_call().unwrap_or(0)
-    );
+    // TODO(event-reader): eprintln!("  calls:               {}", mcp.call_count);
+    // TODO(event-reader): eprintln!("  output_bytes:        {}", mcp.output_bytes);
+    // TODO(event-reader): eprintln!("  output_tokens (est): {}", mcp.output_token_estimate());
+    // TODO(event-reader): eprintln!("  command_bytes:       {}", mcp.command_bytes);
+    // TODO(event-reader): eprintln!("  command_tokens (est):{}", mcp.command_token_estimate());
+    // TODO(event-reader): eprintln!("  avg bytes/call:      {}", mcp.avg_bytes_per_call().unwrap_or(0));
 
     eprintln!("\n--- Per-Turn Token Breakdown ---");
     eprintln!("  Baseline:");
@@ -1874,22 +1859,22 @@ fn v9_ls_discovery() {
     }
 
     // Read MCP event measurements
-    let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
-        eprintln!("  MCP measurement: {e}");
-        o8v_testkit::McpMeasurement::zero()
-    });
+    // TODO(event-reader): let mcp = o8v_testkit::McpMeasurement::from_home().unwrap_or_else(|e| {
+            // TODO(event-reader): eprintln!("  MCP measurement: {e}");
+    // TODO(event-reader): o8v_testkit::McpMeasurement::zero()
+        // TODO(event-reader): });
 
-    eprintln!(
-        "\n[v9] MCP MEASUREMENTS\n\
-         [v9]   8v calls made: {}\n\
-         [v9]   output_bytes (8v→agent): {}\n\
-         [v9]   command_bytes (agent→8v): {}\n\
-         [v9]   avg bytes per call: {}",
-        mcp.call_count,
-        mcp.output_bytes,
-        mcp.command_bytes,
-        mcp.avg_bytes_per_call().unwrap_or(0),
-    );
+    // TODO(event-reader): eprintln!(
+    //     "\n[v9] MCP MEASUREMENTS\n\
+    //      [v9]   8v calls made: {}\n\
+    //      [v9]   output_bytes (8v→agent): {}\n\
+    //      [v9]   command_bytes (agent→8v): {}\n\
+    //      [v9]   avg bytes per call: {}",
+    //     mcp.call_count,
+    //     mcp.output_bytes,
+    //     mcp.command_bytes,
+    //     mcp.avg_bytes_per_call().unwrap_or(0),
+    // );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

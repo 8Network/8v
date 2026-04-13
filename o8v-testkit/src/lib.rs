@@ -16,7 +16,6 @@ mod expected;
 mod fixture;
 mod integration;
 pub mod json;
-mod measurement;
 mod query;
 mod run;
 mod sanitize;
@@ -32,7 +31,6 @@ pub use integration::{
     assert_e2e, assert_expected, assert_no_detection_errors, assert_project_count,
 };
 pub use json::{JsonCheck, JsonDiagnostic, JsonLocation, JsonOutput, JsonResult, JsonSummary};
-pub use measurement::McpMeasurement;
 // Re-export commonly used types so test modules don't need extra imports.
 pub use diagnostic::DiagnosticBuilder;
 pub use o8v_core::diagnostic::{ParseStatus, Severity};

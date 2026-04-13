@@ -8,6 +8,7 @@
 //! and external tools.
 
 pub mod dispatch;
+pub mod event_reader;
 pub mod workspace;
 pub(crate) mod storage_subscriber;
 pub(crate) mod util;

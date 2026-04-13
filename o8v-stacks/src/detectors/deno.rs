@@ -443,7 +443,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deno.json"), r#"{"exports": "./mod.ts"}"#).unwrap();
         let project = detect_in(dir.path()).unwrap().unwrap();
-        assert_eq!(project.stack(), crate::Stack::Deno);
+        assert_eq!(project.stack(), Stack::Deno);
     }
 
     #[test]
