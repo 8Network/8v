@@ -20,6 +20,7 @@ mod query;
 mod run;
 mod sanitize;
 mod scaffold;
+pub mod benchmark;
 
 pub use assert::{
     assert_error, assert_failed, assert_parse_status, assert_parsed_diagnostics, assert_passed,

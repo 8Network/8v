@@ -21,3 +21,4 @@ sha2 = "0.10"
 toml = "0.8"
 tracing = "0.1"
 ureq = { version = "2", features = ["rustls"], default-features = false }
+comfy-table = "7.2"

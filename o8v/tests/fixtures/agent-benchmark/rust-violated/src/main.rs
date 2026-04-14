@@ -2,14 +2,12 @@ fn main() {
     let items = vec![10, 20, 30, 40, 50];
     let result = sum_range(&items, 1, 3);
     println!("Sum of items[1..3]: {result}");
-    // Expected: 20 + 30 + 40 = 90
-    // Bug: uses < instead of <=, so it only sums items[1] and items[2] = 50
 }
 
 /// Sum elements from index `start` to `end` (inclusive).
 fn sum_range(items: &[i32], start: usize, end: usize) -> i32 {
     let mut total = 0;
-    for i in start..end {  // BUG: should be start..=end
+    for i in start..end {
         total += items[i];
     }
     total

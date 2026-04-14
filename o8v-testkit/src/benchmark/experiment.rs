@@ -1,0 +1,391 @@
+// Copyright (c) 2026 Soheil Alizadeh / 8Network. All rights reserved.
+// Licensed under the Business Source License 1.1 (BSL-1.1).
+// See LICENSE file in the project root.
+
+//! Experiment runner — runs scenarios N times and produces structured comparisons.
+//!
+//! `run_experiment()` is the entry point. It:
+//! 1. Runs the control scenario N times
+//! 2. Runs each treatment scenario N times
+//! 3. Computes statistics per sample
+//! 4. Computes effects (treatment vs control)
+//! 5. Renders the comparison table
+//! 6. Persists the ExperimentResult
+//! 7. Returns the result for assertions
+
+use comfy_table::{Table, ContentArrangement, presets::UTF8_FULL};
+
+use super::pipeline::{run_scenario, unix_ms, current_git_commit};
+use super::store::BenchmarkStore;
+use super::types::*;
+
+/// Run an experiment: N observations per scenario, compare treatments against control.
+pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResult {
+    assert!(config.n >= 1, "experiment requires at least 1 observation per scenario");
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("EXPERIMENT: {} (N={})", config.name, config.n);
+    eprintln!("Task: {}", config.task.name);
+    eprintln!("Control: {}", config.control.description);
+    for t in config.treatments {
+        eprintln!("Treatment: {}", t.description);
+    }
+    eprintln!("{}\n", "=".repeat(70));
+
+    // ── Run control ─────────────────────────────────────────────────────
+    let control = run_sample(config.control, config.n, binary);
+
+    // ── Run treatments ──────────────────────────────────────────────────
+    let treatments: Vec<Sample> = config.treatments.iter()
+        .map(|scenario| run_sample(scenario, config.n, binary))
+        .collect();
+
+    // ── Compute effects ─────────────────────────────────────────────────
+    let effects = compute_effects(&control, &treatments, config.n);
+
+    // ── Build result ────────────────────────────────────────────────────
+    let result = ExperimentResult {
+        name: config.name.to_string(),
+        task: config.task.name.to_string(),
+        git_commit: current_git_commit(),
+        timestamp_ms: unix_ms(),
+        n: config.n,
+        control,
+        treatments,
+        effects,
+    };
+
+    // ── Render table ────────────────────────────────────────────────────
+    render_table(&result);
+
+    // ── Persist ─────────────────────────────────────────────────────────
+    persist_experiment(&result);
+
+    result
+}
+
+/// Run a scenario N times, collecting observations into a Sample.
+fn run_sample(scenario: &Scenario, n: usize, binary: &str) -> Sample {
+    let mut observations = Vec::with_capacity(n);
+
+    for i in 0..n {
+        eprintln!("\n--- {} ({}/{}) ---", scenario.description, i + 1, n);
+
+        // Clean events between observations for isolation
+        clean_events();
+
+        let observation = run_scenario(scenario, binary, false);
+        observations.push(observation);
+    }
+
+    Sample {
+        scenario: scenario.name.to_string(),
+        description: scenario.description.to_string(),
+        observations,
+    }
+}
+
+/// Compute effects: each treatment compared against the control.
+fn mean_cost(sample: &Sample) -> Option<f64> {
+    let costs: Vec<f64> = sample.observations.iter()
+        .filter_map(|o| o.cost_usd)
+        .collect();
+    if costs.is_empty() {
+        None
+    } else {
+        Some(costs.iter().sum::<f64>() / costs.len() as f64)
+    }
+}
+
+fn compute_effects(control: &Sample, treatments: &[Sample], n: usize) -> Vec<Effect> {
+    let control_tokens = control.mean(|o| o.total_tokens as f64);
+    let control_cost = mean_cost(control);
+    let control_tools = control.mean(|o| o.tool_names.len() as f64);
+
+    treatments.iter().map(|treatment| {
+        let t_tokens = treatment.mean(|o| o.total_tokens as f64);
+        let t_cost = mean_cost(treatment);
+        let t_tools = treatment.mean(|o| o.tool_names.len() as f64);
+
+        let token_delta_pct = if control_tokens > 0.0 {
+            ((t_tokens - control_tokens) / control_tokens) * 100.0
+        } else {
+            0.0
+        };
+
+        let cost_delta_pct = match (control_cost, t_cost) {
+            (Some(c), Some(t)) if c > 0.0 => Some(((t - c) / c) * 100.0),
+            _ => None,
+        };
+
+        let tool_call_delta_pct = if control_tools > 0.0 {
+            ((t_tools - control_tools) / control_tools) * 100.0
+        } else {
+            0.0
+        };
+
+        Effect {
+            name: format!("{} vs {}", treatment.description, control.description),
+            treatment: treatment.scenario.clone(),
+            control: control.scenario.clone(),
+            token_delta_pct,
+            cost_delta_pct,
+            tool_call_delta_pct,
+            sufficient_n: n >= 5,
+        }
+    }).collect()
+}
+
+/// Render the comparison table to stderr.
+fn render_table(result: &ExperimentResult) {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_content_arrangement(ContentArrangement::Dynamic);
+
+    // Header: metric name + one column per condition
+    let mut header = vec!["".to_string(), result.control.description.clone()];
+    for t in &result.treatments {
+        header.push(t.description.clone());
+    }
+    table.set_header(header);
+
+    // Tokens (mean)
+    let mut row = vec!["Tokens (mean)".to_string()];
+    row.push(format_tokens(result.control.mean(|o| o.total_tokens as f64)));
+    for t in &result.treatments {
+        row.push(format_tokens(t.mean(|o| o.total_tokens as f64)));
+    }
+    table.add_row(row);
+
+    // Tokens (stddev)
+    let mut row = vec!["Tokens (stddev)".to_string()];
+    row.push(format_tokens(result.control.stddev(|o| o.total_tokens as f64)));
+    for t in &result.treatments {
+        row.push(format_tokens(t.stddev(|o| o.total_tokens as f64)));
+    }
+    table.add_row(row);
+
+    // Cost (mean)
+    let mut row = vec!["Cost (mean)".to_string()];
+    row.push(match mean_cost(&result.control) {
+        Some(c) => format_cost(c),
+        None => "n/a".to_string(),
+    });
+    for t in &result.treatments {
+        row.push(match mean_cost(t) {
+            Some(c) => format_cost(c),
+            None => "n/a".to_string(),
+        });
+    }
+    table.add_row(row);
+
+    // Tool calls (mean)
+    let mut row = vec!["Tool calls (mean)".to_string()];
+    row.push(format!("{:.1}", result.control.mean(|o| o.tool_names.len() as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.1}", t.mean(|o| o.tool_names.len() as f64)));
+    }
+    table.add_row(row);
+
+    // 8v events (mean)
+    let mut row = vec!["8v events (mean)".to_string()];
+    row.push(format!("{:.1}", result.control.mean(|o| o.event_count as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.1}", t.mean(|o| o.event_count as f64)));
+    }
+    table.add_row(row);
+
+    // Input Tokens (mean)
+    let mut row = vec!["Input Tokens (mean)".to_string()];
+    row.push(format!("{:.0}", result.control.mean(|o| o.input_tokens as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.0}", t.mean(|o| o.input_tokens as f64)));
+    }
+    table.add_row(row);
+
+    // Output Tokens (mean)
+    let mut row = vec!["Output Tokens (mean)".to_string()];
+    row.push(format!("{:.0}", result.control.mean(|o| o.output_tokens as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.0}", t.mean(|o| o.output_tokens as f64)));
+    }
+    table.add_row(row);
+
+    // Cache Read (mean)
+    let mut row = vec!["Cache Read (mean)".to_string()];
+    row.push(format!("{:.0}", result.control.mean(|o| o.cache_read_tokens as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.0}", t.mean(|o| o.cache_read_tokens as f64)));
+    }
+    table.add_row(row);
+
+    // Cache Creation (mean)
+    let mut row = vec!["Cache Creation (mean)".to_string()];
+    row.push(format!("{:.0}", result.control.mean(|o| o.cache_creation_tokens as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.0}", t.mean(|o| o.cache_creation_tokens as f64)));
+    }
+    table.add_row(row);
+
+    // Turns (mean)
+    let mut row = vec!["Turns (mean)".to_string()];
+    row.push(format!("{:.1}", result.control.mean(|o| o.turn_count as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.1}", t.mean(|o| o.turn_count as f64)));
+    }
+    table.add_row(row);
+
+    // Init Bytes (mean)
+    let mut row = vec!["Init Bytes (mean)".to_string()];
+    row.push(format!("{:.0}", result.control.mean(|o| o.init_message_bytes as f64)));
+    for t in &result.treatments {
+        row.push(format!("{:.0}", t.mean(|o| o.init_message_bytes as f64)));
+    }
+    table.add_row(row);
+
+    // Success rate
+    let mut row = vec!["Tests Pass".to_string()];
+    row.push(format!("{}/{}", result.control.tests_pass_count(), result.control.n()));
+    for t in &result.treatments {
+        row.push(format!("{}/{}", t.tests_pass_count(), t.n()));
+    }
+    table.add_row(row);
+
+    // Check Pass
+    let mut row = vec!["Check Pass".to_string()];
+    row.push(format!("{}/{}", result.control.check_pass_count(), result.control.n()));
+    for t in &result.treatments {
+        row.push(format!("{}/{}", t.check_pass_count(), t.n()));
+    }
+    table.add_row(row);
+
+    // Build Pass
+    let mut row = vec!["Build Pass".to_string()];
+    row.push(format!("{}/{}", result.control.build_pass_count(), result.control.n()));
+    for t in &result.treatments {
+        row.push(format!("{}/{}", t.build_pass_count(), t.n()));
+    }
+    table.add_row(row);
+
+    // Separator row
+    let col_count = 2 + result.treatments.len();
+    let mut sep = vec!["─ Δ vs control ─".to_string(), "—".to_string()];
+    for _ in &result.treatments {
+        sep.push(String::new());
+    }
+    // Trim to exact column count
+    sep.truncate(col_count);
+    table.add_row(sep);
+
+    // Delta rows — one effect per treatment, each effect occupies its own column
+    // Build rows that span all treatment columns
+    let n_treatments = result.treatments.len();
+
+    // Δ Tokens row
+    let mut row = vec!["Δ Tokens".to_string(), "—".to_string()];
+    for effect in &result.effects {
+        row.push(format_delta_pct(effect.token_delta_pct));
+    }
+    // Pad if fewer effects than treatments (shouldn't happen, but be safe)
+    while row.len() < col_count {
+        row.push(String::new());
+    }
+    row.truncate(col_count);
+    table.add_row(row);
+
+    // Δ Cost row
+    let mut row = vec!["Δ Cost".to_string(), "—".to_string()];
+    for effect in &result.effects {
+        row.push(match effect.cost_delta_pct {
+            Some(pct) => format_delta_pct(pct),
+            None => "n/a".to_string(),
+        });
+    }
+    while row.len() < col_count {
+        row.push(String::new());
+    }
+    row.truncate(col_count);
+    table.add_row(row);
+
+    // Δ Tool calls row
+    let mut row = vec!["Δ Tool calls".to_string(), "—".to_string()];
+    for effect in &result.effects {
+        row.push(format_delta_pct(effect.tool_call_delta_pct));
+    }
+    while row.len() < col_count {
+        row.push(String::new());
+    }
+    row.truncate(col_count);
+    table.add_row(row);
+
+    // Confidence row
+    let mut row = vec!["Confidence".to_string(), "—".to_string()];
+    for effect in &result.effects {
+        row.push(if effect.sufficient_n { "N≥5".to_string() } else { "N<5".to_string() });
+    }
+    while row.len() < col_count {
+        row.push(String::new());
+    }
+    row.truncate(col_count);
+    table.add_row(row);
+
+    // Suppress unused variable warning for n_treatments
+    let _ = n_treatments;
+
+    eprintln!("\n{table}\n");
+}
+
+fn format_tokens(v: f64) -> String {
+    if v >= 1_000_000.0 {
+        format!("{:.1}M", v / 1_000_000.0)
+    } else if v >= 1_000.0 {
+        format!("{:.0}", v)
+    } else {
+        format!("{:.1}", v)
+    }
+}
+
+fn format_cost(v: f64) -> String {
+    format!("${:.4}", v)
+}
+
+fn format_delta_pct(pct: f64) -> String {
+    format!("{:+.1}%", pct)
+}
+
+fn clean_events() {
+    let home = std::env::var("HOME").expect("HOME must be set for benchmarks");
+    let path = std::path::PathBuf::from(home).join(".8v").join("events.ndjson");
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!("  [benchmark] warning: failed to clean events: {e}"),
+    }
+}
+
+fn persist_experiment(result: &ExperimentResult) {
+    match BenchmarkStore::open() {
+        Ok(store) => {
+            // Persist each observation individually
+            for obs in &result.control.observations {
+                if let Err(e) = store.append(obs) {
+                    eprintln!("  [benchmark] warning: failed to persist observation: {e}");
+                }
+            }
+            for sample in &result.treatments {
+                for obs in &sample.observations {
+                    if let Err(e) = store.append(obs) {
+                        eprintln!("  [benchmark] warning: failed to persist observation: {e}");
+                    }
+                }
+            }
+            // Persist the ExperimentResult to experiments.ndjson
+            if let Err(e) = store.append_experiment(result) {
+                eprintln!("  [benchmark] warning: failed to persist experiment result: {e}");
+            }
+        }
+        Err(e) => {
+            eprintln!("  [benchmark] warning: failed to open benchmark store: {e}");
+        }
+    }
+}
+
