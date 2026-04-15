@@ -6,7 +6,7 @@
 
 mod handler;
 mod parse;
-mod path;
+pub(crate) mod path;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;

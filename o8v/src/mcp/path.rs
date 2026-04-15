@@ -7,19 +7,19 @@
 use rmcp::{Peer, RoleServer};
 use url::Url;
 
-/// Resolve and validate the path argument in `args[1]` against the containment root.
+/// Resolve and validate a path string against the containment root.
 ///
 /// Produces an absolute path anchored to the MCP root. Relative paths ("src", ".")
 /// are joined with the containment root so the caller never receives a path that
 /// could be silently resolved against the process CWD.
 ///
-/// Mutates `args[1]` in-place on success. Returns `Err(String)` on containment
+/// Mutates the string in-place on success. Returns `Err(String)` on containment
 /// violation or symlink escape.
-pub(super) fn resolve_command_path(
-    args: &mut [String],
+pub(crate) fn resolve_path(
+    path: &mut String,
     containment_root: &o8v_fs::ContainmentRoot,
 ) -> Result<(), String> {
-    let resolved = containment_root.resolve(&args[1]);
+    let resolved = containment_root.resolve(path);
     let absolute = if resolved.is_absolute() {
         resolved
     } else {
@@ -27,10 +27,21 @@ pub(super) fn resolve_command_path(
     };
     match containment_root.contains(&absolute) {
         Ok(_exists) => {
-            args[1] = absolute.to_string_lossy().into_owned();
+            *path = absolute.to_string_lossy().into_owned();
             Ok(())
         }
         Err(e) => Err(path_validation_error(e)),
+    }
+}
+
+/// Resolve an optional path. No-op when `None`.
+pub(crate) fn resolve_optional_path(
+    path: &mut Option<String>,
+    containment_root: &o8v_fs::ContainmentRoot,
+) -> Result<(), String> {
+    match path {
+        Some(p) => resolve_path(p, containment_root),
+        None => Ok(()),
     }
 }
 

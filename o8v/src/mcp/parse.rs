@@ -45,11 +45,9 @@ pub(super) fn parse_mcp_command(
             ))
         }
     };
-    let mut args: Vec<String> = Vec::new();
-
     // Strip leading "8v" token if the agent included the binary name.
     // Tool description shows `8v check .` so agents often include "8v".
-    let parts = if parts.first().map(|s| s.as_str()) == Some("8v") {
+    let parts: &[String] = if parts.first().map(|s| s.as_str()) == Some("8v") {
         &parts[1..]
     } else {
         &parts[..]
@@ -59,52 +57,22 @@ pub(super) fn parse_mcp_command(
         return Err("error: empty command".to_string());
     }
 
-    args.push(parts[0].clone()); // subcommand (check, fmt, etc.)
-
-    if parts.len() > 1 {
-        // Find the index where flags begin (first arg starting with '-')
-        let flag_start = parts[1..]
-            .iter()
-            .position(|p| p.starts_with('-'))
-            .map(|i| i + 1);
-
-        match flag_start {
-            Some(idx) => {
-                // Everything before flags is the path (join with spaces)
-                let path = parts[1..idx].join(" ");
-                args.push(path);
-                // Add all flags
-                for flag in &parts[idx..] {
-                    args.push(flag.clone());
-                }
-            }
-            None => {
-                // No flags found — everything after subcommand is the path
-                let path = parts[1..].join(" ");
-                args.push(path);
-            }
-        }
-    }
-
-    // Resolve and validate path argument using the already-built ContainmentRoot.
-    // For 8v, the path is the second argument (after the command like "check" or "fmt").
-    // Exception: "search" — args[1] is the regex pattern, not a path.
-    // SearchCommand handles its own path resolution internally.
-    let subcommand = args[0].as_str();
-    if args.len() > 1 && subcommand != "search" && subcommand != "ls" && subcommand != "run" {
-        super::path::resolve_command_path(&mut args, containment_root)?;
-    }
-
-    // Convert to &str for clap parsing.
-    // try_parse_from requires the binary name as the first element.
-    let args_refs: Vec<&str> = std::iter::once("8v")
-        .chain(args.iter().map(|s| s.as_str()))
+    // Hand shlex tokens directly to clap. One parser owns argv → Command mapping
+    // for both CLI and MCP (no entry-point-specific parsing). Path resolution
+    // against the MCP containment root happens after parsing, per-variant, on
+    // the typed Command — never by matching subcommand name strings.
+    let argv: Vec<&str> = std::iter::once("8v")
+        .chain(parts.iter().map(String::as_str))
         .collect();
 
-    match crate::cli::Cli::try_parse_from(args_refs) {
-        Ok(cli) => Ok(cli.command),
-        Err(e) => Err(parse_error(e)),
-    }
+    let mut command = match crate::cli::Cli::try_parse_from(argv) {
+        Ok(cli) => cli.command,
+        Err(e) => return Err(parse_error(e)),
+    };
+
+    command.resolve_mcp_paths(containment_root)?;
+
+    Ok(command)
 }
 
 /// Return error for command parsing failures.
@@ -169,5 +137,142 @@ mod tests {
         assert_eq!(parts.len(), 6);
         assert_eq!(parts[3], "start..end");
         assert_eq!(parts[5], "start..=end");
+    }
+
+    // --- B-MCP-3 regression tests: multi-positional args without flags ---
+
+    #[test]
+    fn b_mcp_3_write_path_and_content_without_flags() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        // Before the fix, the pre-clap heuristic joined path and content into a
+        // single argv element — clap would then reject or mis-parse it.
+        let result = parse_mcp_command(
+            r#"write src/main.rs:10 "    for i in start..=end {""#,
+            &root,
+        );
+        assert!(result.is_ok(), "expected success, got {:?}", result.err());
+        match result.unwrap() {
+            crate::commands::Command::Write(args) => {
+                assert!(args.path.ends_with("src/main.rs:10"));
+                assert_eq!(args.content.as_deref(), Some("    for i in start..=end {"));
+            }
+            other => panic!("expected Write, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b_mcp_3_write_content_with_leading_dashes() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        // allow_hyphen_values on content lets literal `--foo` through as content
+        // rather than being treated as an unknown flag.
+        let result = parse_mcp_command(
+            r#"write src/main.rs:10 "-- a literal comment""#,
+            &root,
+        );
+        assert!(result.is_ok(), "expected success, got {:?}", result.err());
+        match result.unwrap() {
+            crate::commands::Command::Write(args) => {
+                assert_eq!(args.content.as_deref(), Some("-- a literal comment"));
+            }
+            other => panic!("expected Write, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b_mcp_3_write_empty_content_allowed() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        let result = parse_mcp_command(r#"write src/main.rs:10 """#, &root);
+        assert!(result.is_ok(), "expected success, got {:?}", result.err());
+        match result.unwrap() {
+            crate::commands::Command::Write(args) => {
+                assert_eq!(args.content.as_deref(), Some(""));
+            }
+            other => panic!("expected Write, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b_mcp_3_search_pattern_and_path_without_flags() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        // Before the fix, `search` was string-name-gated out of path resolution
+        // AND path was joined into the pattern. Now search's optional path is
+        // resolved per-variant via the typed Command enum.
+        let result = parse_mcp_command(r#"search "foo bar" src"#, &root);
+        assert!(result.is_ok(), "expected success, got {:?}", result.err());
+        match result.unwrap() {
+            crate::commands::Command::Search(args) => {
+                assert_eq!(args.pattern, "foo bar");
+                assert!(args.path.as_deref().unwrap().ends_with("src"));
+            }
+            other => panic!("expected Search, got {other:?}"),
+        }
+    }
+
+    /// Class-of-bug coverage: for every command string, MCP parsing must
+    /// produce the same `Command` variant that CLI parsing produces. If it
+    /// doesn't, the MCP entry point is doing something CLI isn't — that's
+    /// always a bug. This catches the whole family B-MCP-3 belongs to.
+    #[test]
+    fn mcp_and_cli_parse_identically_for_all_canonical_forms() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        // Write a fixture so path resolution has something to anchor to.
+        std::fs::write(dir.path().join("a.rs"), "x").unwrap();
+
+        let cases = [
+            // (string, expected Command variant discriminant as &str)
+            (r#"write a.rs:10 "hello world""#, "Write"),
+            (r#"write a.rs:10 "    indented content""#, "Write"),
+            (r#"write a.rs:10 "-- literal dashes""#, "Write"),
+            (r#"write a.rs:10 """#, "Write"),
+            (r#"write a.rs --find "old" --replace "new""#, "Write"),
+            (r#"read a.rs"#, "Read"),
+            (r#"read a.rs:1-10"#, "Read"),
+            (r#"search "foo bar""#, "Search"),
+            (r#"search "foo bar" ."#, "Search"),
+            (r#"check ."#, "Check"),
+            (r#"fmt ."#, "Fmt"),
+            (r#"ls"#, "Ls"),
+            (r#"ls --tree"#, "Ls"),
+        ];
+
+        for (cmd, want) in cases {
+            let mcp = parse_mcp_command(cmd, &root);
+            assert!(
+                mcp.is_ok(),
+                "MCP parse failed for `{cmd}`: {:?}",
+                mcp.err()
+            );
+            let got = match mcp.unwrap() {
+                crate::commands::Command::Write(_) => "Write",
+                crate::commands::Command::Read(_) => "Read",
+                crate::commands::Command::Search(_) => "Search",
+                crate::commands::Command::Check(_) => "Check",
+                crate::commands::Command::Fmt(_) => "Fmt",
+                crate::commands::Command::Ls(_) => "Ls",
+                crate::commands::Command::Build(_) => "Build",
+                crate::commands::Command::Test(_) => "Test",
+                crate::commands::Command::Init(_) => "Init",
+                crate::commands::Command::Hooks(_) => "Hooks",
+                crate::commands::Command::Upgrade(_) => "Upgrade",
+                crate::commands::Command::Mcp => "Mcp",
+            };
+            assert_eq!(got, want, "wrong Command variant for `{cmd}`");
+        }
+    }
+
+    #[test]
+    fn write_with_flag_still_works() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        // Regression: the flag-present case worked before the fix; verify no
+        // regression.
+        let result =
+            parse_mcp_command(r#"write src/main.rs --find "foo" --replace "bar""#, &root);
+        assert!(result.is_ok(), "expected success, got {:?}", result.err());
     }
 }

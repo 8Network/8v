@@ -21,6 +21,7 @@ pub struct Args {
     pub path: String,
 
     /// Content to write (or old text for --find mode)
+    #[arg(allow_hyphen_values = true)]
     pub content: Option<String>,
 
     /// Insert before line instead of replacing

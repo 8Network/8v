@@ -74,6 +74,30 @@ impl Command {
         }
     }
 
+    /// Resolve each variant's path field(s) against an MCP containment root.
+    /// Each variant declares its own path semantics via its `Args` fields — the
+    /// entry-point layer walks the typed enum, never matches on string names.
+    pub(crate) fn resolve_mcp_paths(
+        &mut self,
+        root: &o8v_fs::ContainmentRoot,
+    ) -> Result<(), String> {
+        use crate::mcp::path::{resolve_optional_path, resolve_path};
+        match self {
+            Command::Build(a) => resolve_path(&mut a.path, root),
+            Command::Check(a) => resolve_optional_path(&mut a.path, root),
+            Command::Fmt(a) => resolve_optional_path(&mut a.path, root),
+            Command::Test(a) => resolve_path(&mut a.path, root),
+            Command::Read(a) => resolve_path(&mut a.path, root),
+            Command::Write(a) => resolve_path(&mut a.path, root),
+            Command::Search(a) => resolve_optional_path(&mut a.path, root),
+            Command::Ls(a) => resolve_optional_path(&mut a.path, root),
+            Command::Init(_)
+            | Command::Hooks(_)
+            | Command::Upgrade(_)
+            | Command::Mcp => Ok(()),
+        }
+    }
+
     /// Human-readable command name for events.
     fn name(&self) -> &'static str {
         match self {
