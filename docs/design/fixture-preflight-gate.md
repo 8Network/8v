@@ -101,3 +101,15 @@ One extra verification run per experiment. For rust projects, ~3-5 s. Negligible
 ---
 
 When Soheil approves, implement as described and land behind the same gate as the structured-report pipeline (both pending review).
+
+---
+
+## Review findings (2026-04-15)
+
+Adversarial agent review surfaced gaps. Address before implementation:
+
+1. **"Any gate fails" is necessary but not sufficient.** A diagnose fixture with a broken doctest and zero clippy violations passes the gate but still measures noise. Mitigation: log *which* gate(s) failed in the eprintln; tighten the panic message to name the task shape ("diagnose/targeted-fix fixtures") rather than implying universality.
+2. **Promote Open Question 3 to v1.** Add `Task.expected_initial: FailingGates` (bitset of which of tests/check/build must fail) as a data-only change. Even if implementation defers the per-gate enforcement, declaring intent per fixture prevents the next coincidental-pass bug.
+3. **Restrict preflight to deterministic gates.** `cargo test` can flake on timing/network. Run preflight against `cargo check` and `cargo build` only, or run the test gate twice and require both to fail.
+4. **Toolchain pinning is a prerequisite, not optional.** Clippy lints change across rustc versions. A fixture that fails clippy today may pass on a newer rustc, silently flipping to green. Document `rust-toolchain.toml` per fixture as a hard requirement in the gate's panic message.
+5. **Report-shape false positive.** A future report task ("summarize this codebase") with a clean fixture would trip the gate incorrectly. Acceptable for the current three tasks; document the constraint.

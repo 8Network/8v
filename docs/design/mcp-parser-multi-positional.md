@@ -181,3 +181,18 @@ Low. The change *removes* heuristics in favor of letting clap — which already 
 ---
 
 When Soheil approves, implement. Until then, B-MCP-3 is live and costs ~$0.03-0.05 per affected run (single-digit percent of fix-test variance).
+
+---
+
+## Review findings (2026-04-15)
+
+Adversarial agent review surfaced gaps. Address before implementation:
+
+1. **`resolve_single_path` does not exist.** Read `o8v/src/mcp/path.rs` to either extract a single-string helper from `resolve_command_path`, or adapt the existing function to mutate `args[1]` in place. Pick one before writing the fix.
+2. **Leading-dash content trips clap's `--` terminator.** `8v write foo.rs:10 "-- comment"` will fail. Add `.allow_hyphen_values(true)` to the `content` field of `WriteCommand` (and any other command whose trailing positional may begin with `-`).
+3. **Edge-case tests required, not optional:**
+   - empty content: `8v write foo.rs:10 ""`
+   - content equal to a known flag: `8v write foo.rs:10 "--insert"`
+   - `path:line:col`: `8v read foo.rs:10:5`
+   - subcommand whose first positional is missing entirely
+4. **CV-drop is a prediction, not a gate.** The "CV drops to ~10%" claim in test #4 cannot be the success criterion. Define an explicit acceptance criterion for the parser fix that does not depend on benchmark variance.

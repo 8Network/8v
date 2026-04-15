@@ -210,3 +210,16 @@ Nothing is shipped until acceptance tests pass AND Soheil reviews the first real
 ---
 
 When Soheil approves this, we write Increment 1 with unit tests and stop there for a review gate before writing anything else.
+
+---
+
+## Review findings (2026-04-15)
+
+Adversarial agent review surfaced schema and sequencing gaps. Address before Increment 1 freezes the schema:
+
+1. **Schema must include pricing model.** Without `pricing: {model, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_creation_per_mtok}`, `cost_usd` cannot be recomputed by a reader. The doc says "reader computes cost" but omits the inputs.
+2. **Schema must include model id, Claude Code version, harness version.** `version_8v` alone does not pin behavior. Add `model_id`, `claude_code_version`, `harness_version`.
+3. **Per-run records must live in `report.json`, not just markdown.** Today's design references runs by index inside `cache_split` and `landmines`. Without the per-run array (tokens, categories, turns, tool sequence, duration, exit reason), readers cannot re-bucket cold/warm or recompute stddev without re-parsing NDJSON. Promote the markdown's "Per-run raw data" table into JSON.
+4. **Increment ordering bug.** Increment 1 freezes a schema with `landmines` fields, but landmine detectors don't land until Increment 3. Either move landmine detection into Increment 1, or commit to nullable/versioned landmine fields from day 1 and document the schema-bump policy.
+5. **N≥6 is the wrong gate.** At CV=18%, 95% CI half-width is ±14.4% at N=6 — fine for a −41.8% headline, useless for an 8% delta. Replace the hard-coded N=6 with `N_required(observed_CV, target_delta_resolution)`. Hard-coding 6 will mint false-confident "publishable" stamps on small-delta tasks.
+6. **One renderer, not two.** Increment 4 says "keep ASCII table." The dev-loop ASCII print should also derive from `ReportJson` so there is a single source of truth.
