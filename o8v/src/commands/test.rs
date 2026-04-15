@@ -90,16 +90,32 @@ impl Command for TestCommand {
         let test_tool = match tools.test_runner {
             Some(t) => t,
             None => {
+                // Config-language stacks (helm, kustomize, terraform, dockerfile)
+                // have no native test concept — don't imply a gap we'll later fill.
                 return Err(CommandError::Execution(format!(
-                    "8v: no test runner for {} projects",
+                    "8v test: the {} stack has no test concept. \
+                     If this project has tests, run them with the stack's native \
+                     test tool directly.",
                     project.stack()
                 )))
             }
         };
 
-        let mut cmd = std::process::Command::new(test_tool.program);
-        cmd.args(test_tool.args);
-        cmd.current_dir(std::path::Path::new(&project.path().to_string()));
+        // Refine the default at runtime for projects that deviate from the
+        // stack's stock tool (pnpm/yarn/bun lockfile, gradlew wrapper, RSpec,
+        // etc.). Without this the agent hits a native-runner error from the
+        // stock default and thrashes since Bash is denied.
+        let project_path = std::path::PathBuf::from(project.path().to_string());
+        let resolved = o8v_stacks::resolve_test_tool(
+            project.stack(),
+            &project_path,
+            test_tool.program,
+            test_tool.args,
+        );
+
+        let mut cmd = std::process::Command::new(&resolved.program);
+        cmd.args(&resolved.args);
+        cmd.current_dir(&project_path);
 
         let config = o8v_process::ProcessConfig {
             timeout: std::time::Duration::from_secs(self.args.timeout),
@@ -109,7 +125,7 @@ impl Command for TestCommand {
         };
 
         let proc_result = o8v_process::run(cmd, &config);
-        let cmd_str = format!("{} {}", test_tool.program, test_tool.args.join(" "));
+        let cmd_str = format!("{} {}", resolved.program, resolved.args.join(" "));
 
         Ok(TestReport {
             process: o8v_core::process_report::ProcessReport {

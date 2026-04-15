@@ -91,7 +91,8 @@ impl Command for BuildCommand {
             Some(t) => t,
             None => {
                 return Err(CommandError::Execution(format!(
-                    "8v: no build tool for {} projects",
+                    "8v build: the {} stack has no build step. \
+                     Run the stack's native build tool directly if needed.",
                     project.stack()
                 )))
             }

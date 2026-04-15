@@ -210,7 +210,7 @@ pub static EXPERIMENT_FIX_PYTHON: ExperimentConfig = ExperimentConfig {
     task: &FIX_PYTHON_TRAVERSAL,
     control: &FIX_PYTHON_BASELINE,
     treatments: &[&FIX_PYTHON_8V],
-    n: 3,
+    n: 6,
 };
 
 pub static EXPERIMENT_CHECK_POLYGLOT: ExperimentConfig = ExperimentConfig {
