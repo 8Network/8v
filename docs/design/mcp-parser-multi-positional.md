@@ -1,6 +1,6 @@
 # MCP Parser — Multi-Positional Arg Bug (B-MCP-3) — Design Note
 
-**Status:** draft, pre-review. Do NOT implement until reviewed.
+**Status:** FROZEN 2026-04-15, pending implementation. Adversarial review complete — see "Review findings" at bottom. Do NOT edit further without explicit approval.
 **Author:** Claude, at Soheil's direction (autonomous loop, 2026-04-15).
 **Scope:** `o8v/src/mcp/parse.rs`. No behavior change at the CLI layer.
 

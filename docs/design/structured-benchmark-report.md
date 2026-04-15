@@ -1,6 +1,6 @@
 # Structured Benchmark Report — Design Note
 
-**Status:** draft, pre-review. Do NOT implement until reviewed.
+**Status:** FROZEN 2026-04-15, pending implementation. Adversarial review complete — see "Review findings" at bottom. Do NOT edit further without explicit approval.
 **Author:** Claude, at Soheil's direction (lab mode, 2026-04-14).
 **Scope:** benchmark harness output. No CLI changes. No feature work.
 

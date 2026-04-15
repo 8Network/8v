@@ -1,6 +1,6 @@
 # Fixture Pre-flight Gate — Design Note
 
-**Status:** draft, pre-review. Do NOT implement until reviewed.
+**Status:** FROZEN 2026-04-15, pending implementation. Adversarial review complete — see "Review findings" at bottom. Do NOT edit further without explicit approval.
 **Author:** Claude, at Soheil's direction (autonomous loop, 2026-04-15).
 **Scope:** benchmark harness only. One new function + one call site in `run_experiment`.
 
