@@ -167,7 +167,7 @@ pub static EXPERIMENT_FIX_TEST: ExperimentConfig = ExperimentConfig {
     task: &FIX_FAILING_TEST,
     control: &FIX_TEST_BASELINE,
     treatments: &[&FIX_TEST_8V],
-    n: 3,
+    n: 6,
 };
 
 pub static EXPERIMENT_DIAGNOSE: ExperimentConfig = ExperimentConfig {
@@ -183,5 +183,5 @@ pub static EXPERIMENT_CHECK_POLYGLOT: ExperimentConfig = ExperimentConfig {
     task: &CHECK_POLYGLOT,
     control: &CHECK_POLYGLOT_BASELINE,
     treatments: &[&CHECK_POLYGLOT_8V],
-    n: 3,
+    n: 6,
 };
