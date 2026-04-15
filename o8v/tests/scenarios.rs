@@ -113,16 +113,6 @@ const WITH_8V_ENV: Environment = Environment {
     claude_md: None, // 8v init writes CLAUDE.md
 };
 
-/// 8v only: full `8v init --yes`, native tools blocked by settings.
-/// The agent MUST use 8v — there is no alternative.
-const EIGHTVEE_ONLY_ENV: Environment = Environment {
-    setup_8v: true,
-    permission_mode: "acceptEdits",
-    blocked_tools: &["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
-    extra_env: &[],
-    claude_md: None, // 8v init writes CLAUDE.md
-};
-
 // ── Scenarios ────────────────────────────────────────────────────────────────
 
 // Fix-failing-test scenarios
@@ -138,13 +128,6 @@ pub static FIX_TEST_8V: Scenario = Scenario {
     description: "With 8v",
     task: &FIX_FAILING_TEST,
     env: WITH_8V_ENV,
-};
-
-pub static FIX_TEST_8V_ONLY: Scenario = Scenario {
-    name: "fix-test-8v-only",
-    description: "8v Only",
-    task: &FIX_FAILING_TEST,
-    env: EIGHTVEE_ONLY_ENV,
 };
 
 // Diagnose-issues scenarios
@@ -177,20 +160,13 @@ pub static CHECK_POLYGLOT_8V: Scenario = Scenario {
     env: WITH_8V_ENV,
 };
 
-pub static CHECK_POLYGLOT_8V_ONLY: Scenario = Scenario {
-    name: "check-polyglot-8v-only",
-    description: "8v Only",
-    task: &CHECK_POLYGLOT,
-    env: EIGHTVEE_ONLY_ENV,
-};
-
 // ── Experiments ──────────────────────────────────────────────────────────────
 
 pub static EXPERIMENT_FIX_TEST: ExperimentConfig = ExperimentConfig {
     name: "fix-failing-test",
     task: &FIX_FAILING_TEST,
     control: &FIX_TEST_BASELINE,
-    treatments: &[&FIX_TEST_8V, &FIX_TEST_8V_ONLY],
+    treatments: &[&FIX_TEST_8V],
     n: 3,
 };
 
@@ -206,6 +182,6 @@ pub static EXPERIMENT_CHECK_POLYGLOT: ExperimentConfig = ExperimentConfig {
     name: "check-polyglot",
     task: &CHECK_POLYGLOT,
     control: &CHECK_POLYGLOT_BASELINE,
-    treatments: &[&CHECK_POLYGLOT_8V, &CHECK_POLYGLOT_8V_ONLY],
+    treatments: &[&CHECK_POLYGLOT_8V],
     n: 3,
 };

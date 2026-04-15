@@ -27,8 +27,6 @@ pub enum WriteOperation {
     Append,
     /// Find-and-replace was performed.
     FindReplace { count: usize },
-    /// Find-and-replace found no matches.
-    FindReplaceNoMatch { find: String },
 }
 
 /// Report of a completed write operation.
@@ -72,9 +70,6 @@ impl super::Renderable for WriteReport {
             WriteOperation::FindReplace { count } => {
                 let s = if *count == 1 { "" } else { "s" };
                 format!("{}  replaced ({count} occurrence{s})\n", self.path)
-            }
-            WriteOperation::FindReplaceNoMatch { find } => {
-                format!("{}  no matches found for: {find}\n", self.path)
             }
         };
         Output::new(text)
@@ -204,19 +199,6 @@ mod tests {
 
         let text = report.render_plain().to_string();
         assert_eq!(text, "data.txt  replaced (3 occurrences)\n");
-    }
-
-    #[test]
-    fn test_render_plain_find_replace_no_match() {
-        let report = WriteReport {
-            path: "data.txt".to_string(),
-            operation: WriteOperation::FindReplaceNoMatch {
-                find: "missing".to_string(),
-            },
-        };
-
-        let text = report.render_plain().to_string();
-        assert_eq!(text, "data.txt  no matches found for: missing\n");
     }
 
     #[test]

@@ -57,14 +57,6 @@ Compile the project using the detected stack's build tool:
 - `8v build . --json` — JSON output with exit code, stdout, stderr, duration, stack.
 - `8v build . --timeout 300` — Override default 300s timeout.
 
-## Running Commands
-
-Execute any command with containment, timeout, and structured output:
-
-- `8v run "<command>"` — Execute a command (e.g. `8v run "echo hello"`).
-- `8v run "<command>" --json` — JSON output.
-- `8v run "<command>" --timeout 120` — Override default 120s timeout.
-
 ## Testing and Verification
 
 Run tests and checks to verify your work:
@@ -85,7 +77,6 @@ Run tests and checks to verify your work:
 7. `8v test .` — Run tests to verify correctness.
 8. `8v build .` — Compile the project.
 9. `8v check .` — Run all checks (lint, type, format) before declaring done.
-10. `8v run "<command>"` — For any other command.
 
 If the `8v` MCP tool is available, use it directly — do not shell out to `8v` via Bash.
 Run `8v --help` to see all commands.

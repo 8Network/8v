@@ -20,6 +20,7 @@ use super::types::ToolCallDetail;
 enum ClaudeStreamMsg {
     System(ClaudeSystemMsg),
     Assistant(ClaudeAssistantMsg),
+    User(ClaudeUserMsg),
     Result(ClaudeResultMsg),
     #[serde(other)]
     Unknown,
@@ -35,6 +36,56 @@ struct ClaudeSystemMsg {
 #[derive(Debug, Deserialize)]
 struct ClaudeAssistantMsg {
     message: ClaudeMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeUserMsg {
+    message: ClaudeUserMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeUserMessage {
+    #[serde(default)]
+    content: Vec<ClaudeUserContentBlock>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ClaudeUserContentBlock {
+    ToolResult {
+        tool_use_id: String,
+        #[serde(default)]
+        content: ToolResultContent,
+        #[serde(default)]
+        is_error: bool,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(untagged)]
+enum ToolResultContent {
+    Text(String),
+    Blocks(Vec<ToolResultBlock>),
+    #[default]
+    None,
+}
+
+impl ToolResultContent {
+    fn byte_len(&self) -> usize {
+        match self {
+            ToolResultContent::Text(s) => s.len(),
+            ToolResultContent::Blocks(blocks) => blocks.iter().map(|b| b.text.len()).sum(),
+            ToolResultContent::None => 0,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolResultBlock {
+    #[serde(default)]
+    text: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +110,7 @@ struct ClaudeUsage {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClaudeContentBlock {
     ToolUse {
+        id: String,
         name: String,
         input: serde_json::Value,
     },
@@ -286,6 +338,7 @@ impl ClaudeDriver {
         let mut cache_creation_tokens: u64 = 0;
         let mut input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
+        let mut tool_use_index: HashMap<String, usize> = HashMap::new();
 
         for line in stdout.lines() {
             let Ok(msg) = serde_json::from_str::<ClaudeStreamMsg>(line) else {
@@ -306,16 +359,18 @@ impl ClaudeDriver {
 
                     for block in asst.message.content {
                         match block {
-                            ClaudeContentBlock::ToolUse { name, input } => {
+                            ClaudeContentBlock::ToolUse { id, name, input } => {
                                 let input_str = serde_json::to_string(&input)
                                     .map_err(|e| format!("failed to serialize tool input: {e}"))?;
                                 tool_calls.push(ToolCall { name: name.clone(), input: input_str.clone() });
+                                let idx = tool_calls_detail.len();
                                 tool_calls_detail.push(ToolCallDetail {
                                     name: name.clone(),
                                     input: input_str,
                                     output_bytes: 0,
                                     is_error: false,
                                 });
+                                tool_use_index.insert(id, idx);
                                 turn_usage.push(TurnUsage {
                                     role: name,
                                     input_tokens: turn_input,
@@ -335,6 +390,18 @@ impl ClaudeDriver {
                                 });
                             }
                             ClaudeContentBlock::Unknown => {}
+                        }
+                    }
+                }
+                ClaudeStreamMsg::User(user) => {
+                    for block in user.message.content {
+                        if let ClaudeUserContentBlock::ToolResult { tool_use_id, content, is_error: tr_err } = block {
+                            if let Some(&idx) = tool_use_index.get(&tool_use_id) {
+                                if let Some(detail) = tool_calls_detail.get_mut(idx) {
+                                    detail.output_bytes = content.byte_len() as u64;
+                                    detail.is_error = tr_err;
+                                }
+                            }
                         }
                     }
                 }
@@ -385,5 +452,39 @@ impl ClaudeDriver {
             input_tokens,
             output_tokens,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_output_captures_tool_result_bytes_string_form() {
+        let stream = concat!(
+            r#"{"type":"system","subtype":"init","session_id":"s1"}"#, "\n",
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file":"x"}}]}}"#, "\n",
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":"hello world","is_error":false}]}}"#, "\n",
+            r#"{"type":"result","result":"done","is_error":false}"#, "\n",
+        );
+        let res = ClaudeDriver::parse_output(stream.as_bytes(), 0).unwrap();
+        assert_eq!(res.tool_calls_detail.len(), 1);
+        assert_eq!(res.tool_calls_detail[0].name, "Read");
+        assert_eq!(res.tool_calls_detail[0].output_bytes, "hello world".len() as u64);
+        assert!(!res.tool_calls_detail[0].is_error);
+    }
+
+    #[test]
+    fn parse_output_captures_tool_result_bytes_block_form_and_error() {
+        let stream = concat!(
+            r#"{"type":"system","subtype":"init","session_id":"s1"}"#, "\n",
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"tu_a","name":"Bash","input":{"cmd":"x"}}]}}"#, "\n",
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_a","content":[{"type":"text","text":"abc"},{"type":"text","text":"def"}],"is_error":true}]}}"#, "\n",
+            r#"{"type":"result","result":"","is_error":false}"#, "\n",
+        );
+        let res = ClaudeDriver::parse_output(stream.as_bytes(), 0).unwrap();
+        assert_eq!(res.tool_calls_detail.len(), 1);
+        assert_eq!(res.tool_calls_detail[0].output_bytes, 6);
+        assert!(res.tool_calls_detail[0].is_error);
     }
 }

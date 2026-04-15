@@ -115,15 +115,25 @@ fn parse_path_line(input: &str) -> Result<(String, Option<(usize, usize)>), Stri
 
         // Try parsing as range (N-M)
         if let Some(dash_pos) = line_part.find('-') {
-            if let (Ok(start), Ok(end)) = (
-                line_part[..dash_pos].parse::<usize>(),
-                line_part[dash_pos + 1..].parse::<usize>(),
-            ) {
-                if start == 0 || end == 0 {
-                    return Err("Error: line numbers are 1-indexed, got 0".to_string());
+            let start_str = &line_part[..dash_pos];
+            let end_str = &line_part[dash_pos + 1..];
+            match (start_str.parse::<usize>(), end_str.parse::<usize>()) {
+                (Ok(start), Ok(end)) => {
+                    if start == 0 || end == 0 {
+                        return Err("Error: line numbers are 1-indexed, got 0".to_string());
+                    }
+                    if start <= end {
+                        return Ok((input[..colon_pos].to_string(), Some((start, end))));
+                    } else {
+                        return Err(format!(
+                            "error: invalid line range :{line_part} — start must be <= end"
+                        ));
+                    }
                 }
-                if start <= end {
-                    return Ok((input[..colon_pos].to_string(), Some((start, end))));
+                _ => {
+                    return Err(format!(
+                        "error: invalid line range \":{line_part}\" — expected :N or :N-M where N,M are positive integers"
+                    ));
                 }
             }
         }
@@ -213,6 +223,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
             "Error: content required for --append\n\
              Usage: 8v write <path> --append \"content\"",
         )?;
+        if content.is_empty() {
+            return Err(
+                "error: content cannot be empty for --append — provide non-empty content or omit the command"
+                    .to_string(),
+            );
+        }
         return Ok(WriteOperation::AppendToFile { content });
     }
 
@@ -226,6 +242,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
             "Error: content required for --insert\n\
              Usage: 8v write <path>:<line> --insert \"content\"",
         )?;
+        if content.is_empty() {
+            return Err(
+                "error: content cannot be empty for replace/insert — use --delete to remove lines, or provide non-empty content"
+                    .to_string(),
+            );
+        }
         return Ok(WriteOperation::InsertBefore { line, content });
     }
 
@@ -239,6 +261,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
 
     match line_range {
         Some((start, end)) => {
+            if content.is_empty() {
+                return Err(
+                    "error: content cannot be empty for replace/insert — use --delete to remove lines, or provide non-empty content"
+                        .to_string(),
+                );
+            }
             if start == end {
                 Ok(WriteOperation::ReplaceLine {
                     line: start,
@@ -267,6 +295,86 @@ fn detect_line_ending(content: &str) -> &'static str {
     } else {
         "\n"
     }
+}
+
+/// Returns true if `content` contains any lone `\r` (i.e., `\r` not immediately followed by `\n`).
+fn has_lone_cr(content: &str) -> bool {
+    content.chars().zip(content.chars().skip(1).chain(std::iter::once('\0')))
+        .any(|(c, next)| c == '\r' && next != '\n')
+}
+
+/// Validate that the file's line endings are supported for line-based operations.
+///
+/// Returns Err for:
+/// - Lone `\r` (classic Mac, no `\n` at all) — CE6
+/// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`) — HIGH-6
+/// - Mixed `\r\n` and lone `\n` — CE19
+fn validate_line_endings(content: &str) -> Result<(), String> {
+    let has_crlf = content.contains("\r\n");
+    let lone_cr = has_lone_cr(content);
+    let has_lf = content.contains('\n');
+
+    if lone_cr && !has_lf {
+        return Err(
+            "error: file uses classic Mac line endings (\\r only) — 8v does not support this format. Convert to \\n or \\r\\n first."
+                .to_string(),
+        );
+    }
+    if lone_cr && has_lf {
+        return Err(
+            "error: file contains carriage return (\\r) characters outside of \\r\\n sequences — normalize line endings first"
+                .to_string(),
+        );
+    }
+    if has_crlf && has_lf {
+        // Check for standalone \n (not part of \r\n)
+        // We know has_lf is true; check if any \n is not preceded by \r
+        let has_standalone_lf = content
+            .char_indices()
+            .any(|(i, c)| c == '\n' && (i == 0 || content.as_bytes()[i - 1] != b'\r'));
+        if has_standalone_lf {
+            return Err(
+                "error: file has mixed line endings (LF and CRLF) — 8v requires consistent line endings. Normalize the file first."
+                    .to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Validate content provided by the user for line-based operations.
+///
+/// Rejects any content containing `\r`. The target file's line ending (LF or
+/// CRLF) is handled by `detect_line_ending` + `join_lines_with_ending` — the
+/// user never needs to put `\r` in content strings.
+///
+/// Returns Err for:
+/// - Lone `\r` (classic Mac) — HIGH-3
+/// - `\r\n` (CRLF) — was silently allowed, now rejected
+/// - Mixed `\r\n` and lone `\n` — HIGH-2
+fn validate_content_line_endings(content: &str) -> Result<(), String> {
+    if content.contains('\r') {
+        return Err(
+            "error: content must use \\n line endings only — do not include \\r".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Split `content` into lines for insertion, respecting trailing-newline-as-terminator semantics.
+///
+/// - `"new"` → `["new"]`
+/// - `"new\n"` → `["new"]` (trailing `\n` treated as terminator, not a blank line)
+/// - `"\n"` → `[""]` (one blank line)
+/// - `"\n\n"` → `["", ""]` (two blank lines)
+/// - `"a\nb"` → `["a", "b"]`
+/// - `"a\nb\n"` → `["a", "b"]`
+/// - `"a\n\nb"` → `["a", "", "b"]` (blank middle preserved)
+fn content_to_lines(content: &str) -> Vec<String> {
+    let stripped = content.strip_suffix("\r\n")
+        .or_else(|| content.strip_suffix('\n'))
+        .unwrap_or(content);
+    stripped.split('\n').map(String::from).collect()
 }
 
 fn has_trailing_newline(content: &str) -> bool {
@@ -328,6 +436,7 @@ pub(crate) fn write_to_report(
             let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
+            validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
             let trailing = has_trailing_newline(existing_content);
             let lines = split_lines(existing_content, line_ending, trailing);
@@ -341,9 +450,12 @@ pub(crate) fn write_to_report(
             let old_lines = vec![lines[line - 1].to_string()];
             let new_content_str = content.clone();
 
-            let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len());
+            validate_content_line_endings(content)?;
+            let content_lines = content_to_lines(content);
+            let content_line_refs: Vec<&str> = content_lines.iter().map(String::as_str).collect();
+            let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len() - 1 + content_line_refs.len());
             new_lines.extend_from_slice(&lines[..*line - 1]);
-            new_lines.push(content);
+            new_lines.extend_from_slice(&content_line_refs);
             new_lines.extend_from_slice(&lines[*line..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
@@ -362,6 +474,7 @@ pub(crate) fn write_to_report(
             let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
+            validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
             let trailing = has_trailing_newline(existing_content);
             let lines = split_lines(existing_content, line_ending, trailing);
@@ -385,9 +498,12 @@ pub(crate) fn write_to_report(
                 .collect();
             let new_content_str = content.clone();
 
-            let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len() - (end - start) + 1);
+            validate_content_line_endings(content)?;
+            let content_lines = content_to_lines(content);
+            let content_line_refs: Vec<&str> = content_lines.iter().map(String::as_str).collect();
+            let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len() - (end - start) + content_line_refs.len());
             new_lines.extend_from_slice(&lines[..*start - 1]);
-            new_lines.push(content);
+            new_lines.extend_from_slice(&content_line_refs);
             new_lines.extend_from_slice(&lines[*end..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
@@ -402,6 +518,7 @@ pub(crate) fn write_to_report(
             let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
+            validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
             let trailing = has_trailing_newline(existing_content);
             let lines = split_lines(existing_content, line_ending, trailing);
@@ -412,8 +529,13 @@ pub(crate) fn write_to_report(
                     lines.len()
                 ));
             }
+            validate_content_line_endings(content)?;
+            let content_lines = content_to_lines(content);
+            let content_line_refs: Vec<&str> = content_lines.iter().map(String::as_str).collect();
             let mut new_lines: Vec<&str> = lines.clone();
-            new_lines.insert(line - 1, content);
+            for (i, cl) in content_line_refs.iter().enumerate() {
+                new_lines.insert(line - 1 + i, cl);
+            }
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
@@ -426,6 +548,7 @@ pub(crate) fn write_to_report(
             let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
+            validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
             let trailing = has_trailing_newline(existing_content);
             let lines = split_lines(existing_content, line_ending, trailing);
@@ -455,12 +578,17 @@ pub(crate) fn write_to_report(
             ReportOp::Delete { deleted_lines }
         }
         WriteOperation::CreateFile { content, force } => {
+            if content.is_empty() {
+                return Err(
+                    "error: content cannot be empty when creating a file".to_string(),
+                );
+            }
             if !force {
                 match o8v_fs::safe_exists(&path, root) {
                     Ok(true) => {
-                        return Err(
-                            "Error: file already exists (use --force to overwrite)".to_string()
-                        );
+                        return Err(format!(
+                            "Error: file already exists: {}\n  to replace entire file: add --force\n  to replace a range: use {path_str}:<start>-<end> \"<content>\"\n  to find/replace: use --find \"<old>\" --replace \"<new>\"", path.display()
+                        ));
                     }
                     Ok(false) => {}
                     Err(e) => {
@@ -474,13 +602,23 @@ pub(crate) fn write_to_report(
             ReportOp::Create { line_count }
         }
         WriteOperation::AppendToFile { content } => {
-            let existing = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+            let existing = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
+                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
+                    format!(
+                        "error: file does not exist: {path_str}\n  to create a new file with content: 8v write {path_str} \"<content>\""
+                    )
+                } else {
+                    format!("Error: failed to read file: {e}")
+                }
+            })?;
             let existing_content = existing.content();
+            validate_line_endings(existing_content)?;
+            validate_content_line_endings(content)?;
             let needs_separator = !existing_content.is_empty()
                 && !existing_content.ends_with('\n');
             let appended = if needs_separator {
-                format!("\n{}", content)
+                let sep = detect_line_ending(existing_content);
+                format!("{sep}{content}")
             } else {
                 content.clone()
             };
@@ -489,9 +627,12 @@ pub(crate) fn write_to_report(
             ReportOp::Append
         }
         WriteOperation::FindReplace { find, replace, all } => {
+            validate_content_line_endings(find)?;
+            validate_content_line_endings(replace)?;
             let file = o8v_fs::safe_read(&path, root, &config)
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
+            validate_line_endings(existing_content)?;
             let new_content = if *all {
                 existing_content.replace(find.as_str(), replace.as_str())
             } else {
@@ -499,10 +640,11 @@ pub(crate) fn write_to_report(
             };
 
             if new_content == existing_content {
-                return Ok(WriteReport {
-                    path: path_str,
-                    operation: ReportOp::FindReplaceNoMatch { find: find.clone() },
-                });
+                return Err(format!(
+                    "Error: no matches found for {find:?} in {path_str}. \
+                     Read the file to find the exact text (whitespace and indentation must match), \
+                     then retry with the correct --find value."
+                ));
             }
 
             let count = if *all {

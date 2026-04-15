@@ -80,7 +80,7 @@ pub struct Environment {
 
 /// A scenario ties a task to an environment.
 pub struct Scenario {
-    /// Unique name, e.g. "fix-test-8v-only".
+    /// Unique name, e.g. "fix-test-8v".
     pub name: &'static str,
     /// Human-readable label for table columns, e.g. "Native", "With 8v".
     pub description: &'static str,

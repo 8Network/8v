@@ -14,7 +14,7 @@
 //! cargo test -p o8v --test agent_benchmark_v2 -- --ignored --nocapture
 //!
 //! # One scenario
-//! cargo test -p o8v --test agent_benchmark_v2 fix_test_8v_only -- --ignored --nocapture
+//! cargo test -p o8v --test agent_benchmark_v2 fix_test_8v -- --ignored --nocapture
 //! ```
 
 mod scenarios;
@@ -47,28 +47,6 @@ fn fix_test_8v() {
         record.verification.tests_pass.unwrap_or(false),
         "Agent did not fix the bug (cargo test failed)"
     );
-}
-
-#[test]
-#[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
-fn fix_test_8v_only() {
-    let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TEST_8V_ONLY, binary, true);
-
-    // 8v only: agent must fix the bug using only 8v tools
-    assert!(
-        record.verification.tests_pass.unwrap_or(false),
-        "Agent did not fix the bug using only 8v tools (cargo test failed)"
-    );
-
-    // No native tools should have been used
-    let native = ["Read", "Edit", "Write", "Bash", "Grep", "Glob"];
-    for tool in &native {
-        assert!(
-            !record.tool_names.iter().any(|t| t == tool),
-            "Agent used native tool '{tool}' which should have been blocked"
-        );
-    }
 }
 
 // ── Diagnose issues ──────────────────────────────────────────────────────────
@@ -121,27 +99,6 @@ fn check_polyglot_8v() {
         record.verification.check_pass.unwrap_or(false) || record.verification.build_pass.unwrap_or(false),
         "Agent did not fix the issues (cargo check/clippy failed)"
     );
-}
-
-#[test]
-#[ignore = "requires: `claude` in PATH, polyglot toolchains (~180s, costs tokens)"]
-fn check_polyglot_8v_only() {
-    let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::CHECK_POLYGLOT_8V_ONLY, binary, true);
-
-    assert!(
-        record.verification.check_pass.unwrap_or(false) || record.verification.build_pass.unwrap_or(false),
-        "Agent did not fix the issues using only 8v tools (cargo check/clippy failed)"
-    );
-
-    // No native tools should have been used
-    let native = ["Read", "Edit", "Write", "Bash", "Grep", "Glob"];
-    for tool in &native {
-        assert!(
-            !record.tool_names.iter().any(|t| t == tool),
-            "Agent used native tool '{tool}' which should have been blocked"
-        );
-    }
 }
 
 // ── Experiments (N=3 per condition) ──────────────────────────────────────────

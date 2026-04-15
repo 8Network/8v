@@ -16,7 +16,6 @@ pub mod fmt;
 pub mod hooks;
 pub mod ls;
 pub mod read;
-pub mod run;
 pub mod search;
 pub mod test;
 pub mod upgrade;
@@ -49,8 +48,6 @@ pub(crate) enum Command {
     Read(read::Args),
     /// Write to a file — line-based editing
     Write(write::Args),
-    /// Run a command with containment, timeout, and structured output
-    Run(run::Args),
     /// Search file contents or file names
     Search(search::Args),
     /// List project files and directory structure
@@ -69,7 +66,6 @@ impl Command {
             Command::Test(a) => a.audience(),
             Command::Read(a) => a.audience(),
             Command::Write(a) => a.audience(),
-            Command::Run(a) => a.audience(),
             Command::Search(a) => a.audience(),
             Command::Ls(a) => a.audience(),
             Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => {
@@ -90,7 +86,6 @@ impl Command {
             Command::Upgrade(_) => "upgrade",
             Command::Read(_) => "read",
             Command::Write(_) => "write",
-            Command::Run(_) => "run",
             Command::Search(_) => "search",
             Command::Ls(_) => "ls",
             Command::Mcp => "mcp",
@@ -128,12 +123,6 @@ pub(crate) async fn dispatch_command(
         }
         Command::Test(args) => {
             let cmd = test::TestCommand { args };
-            let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
-            let exit = if report.process.success { ExitCode::SUCCESS } else { ExitCode::FAILURE };
-            Ok((output, exit, false))
-        }
-        Command::Run(args) => {
-            let cmd = run::RunCommand { args };
             let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             let exit = if report.process.success { ExitCode::SUCCESS } else { ExitCode::FAILURE };
             Ok((output, exit, false))
