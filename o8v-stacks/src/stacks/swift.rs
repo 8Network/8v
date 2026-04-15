@@ -3,7 +3,7 @@
 //! For Swift projects, runs `swiftlint lint --reporter json` which outputs
 //! JSON-formatted diagnostics.
 
-use crate::stack_tools::{BuildTool, StackTools};
+use crate::stack_tools::{BuildTool, StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
 
 /// Returns all tools for the Swift stack.
@@ -18,7 +18,10 @@ pub fn tools() -> StackTools {
             env: &[],
         })],
         formatter: None,
-        test_runner: None,
+        test_runner: Some(TestTool {
+            program: "swift",
+            args: &["test"],
+        }),
         build_tool: Some(BuildTool {
             program: "swift",
             args: &["build"],

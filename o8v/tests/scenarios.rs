@@ -32,6 +32,18 @@ pub static DIAGNOSE_ISSUES: Task = Task {
     variables: &[],
 };
 
+/// Fix a failing Python test — safe_join has three real security bugs
+/// (parent-traversal via `..` components, absolute-path component escape,
+/// false-positive on filenames containing `..`). The agent must find and
+/// fix them so pytest passes.
+pub static FIX_PYTHON_TRAVERSAL: Task = Task {
+    name: "fix-python-traversal",
+    fixture: "agent-benchmark/python-path-sanitizer",
+    prompt: "Some tests in this Python project are failing. Find the bugs, fix them, \
+             and run pytest to verify all tests pass.",
+    variables: &[],
+};
+
 /// Check a polyglot project for issues across all stacks.
 /// The agent must discover multiple stacks and report all violations.
 pub static CHECK_POLYGLOT: Task = Task {
@@ -145,6 +157,21 @@ pub static DIAGNOSE_8V: Scenario = Scenario {
     env: WITH_8V_ENV,
 };
 
+// Fix-python-traversal scenarios
+pub static FIX_PYTHON_BASELINE: Scenario = Scenario {
+    name: "fix-python-baseline",
+    description: "Native",
+    task: &FIX_PYTHON_TRAVERSAL,
+    env: BASELINE_ENV,
+};
+
+pub static FIX_PYTHON_8V: Scenario = Scenario {
+    name: "fix-python-8v",
+    description: "With 8v",
+    task: &FIX_PYTHON_TRAVERSAL,
+    env: WITH_8V_ENV,
+};
+
 // Check-polyglot scenarios
 pub static CHECK_POLYGLOT_BASELINE: Scenario = Scenario {
     name: "check-polyglot-baseline",
@@ -175,6 +202,14 @@ pub static EXPERIMENT_DIAGNOSE: ExperimentConfig = ExperimentConfig {
     task: &DIAGNOSE_ISSUES,
     control: &DIAGNOSE_BASELINE,
     treatments: &[&DIAGNOSE_8V],
+    n: 3,
+};
+
+pub static EXPERIMENT_FIX_PYTHON: ExperimentConfig = ExperimentConfig {
+    name: "fix-python-traversal",
+    task: &FIX_PYTHON_TRAVERSAL,
+    control: &FIX_PYTHON_BASELINE,
+    treatments: &[&FIX_PYTHON_8V],
     n: 3,
 };
 

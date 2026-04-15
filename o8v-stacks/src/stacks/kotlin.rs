@@ -3,7 +3,7 @@
 //! For Kotlin projects, runs `ktlint --reporter=json` which outputs
 //! JSON-formatted diagnostics.
 
-use crate::stack_tools::{BuildTool, FormatTool, StackTools};
+use crate::stack_tools::{BuildTool, FormatTool, StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
 
 /// Returns all tools for the Kotlin stack.
@@ -24,7 +24,10 @@ pub fn tools() -> StackTools {
             check_dirty_on_stdout: false,
             needs_node_resolution: false,
         }),
-        test_runner: None,
+        test_runner: Some(TestTool {
+            program: "gradle",
+            args: &["test"],
+        }),
         build_tool: Some(BuildTool {
             program: "gradle",
             args: &["build"],

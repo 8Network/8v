@@ -274,6 +274,28 @@ fn collect_events(events_path: &Path) -> (usize, u64, u64, u64) {
 }
 
 fn run_verification(project: &Path, _binary: &str) -> Verification {
+    // Python-only fixtures: pyproject.toml present, no Cargo.toml. Verify with
+    // pytest. Build/check gates don't apply — leave as None so summaries treat
+    // them as N/A rather than failures.
+    let has_cargo = project.join("Cargo.toml").exists();
+    let has_pyproject = project.join("pyproject.toml").exists();
+    if has_pyproject && !has_cargo {
+        let test_result = Some(
+            Command::new("python3")
+                .args(["-m", "pytest", "-q"])
+                .current_dir(project)
+                .output()
+                .expect("[benchmark] failed to spawn `python3 -m pytest` — is python3 installed?")
+                .status
+                .success(),
+        );
+        return Verification {
+            tests_pass: test_result,
+            check_pass: None,
+            build_pass: None,
+        };
+    }
+
     let test_result = Some(
         Command::new("cargo")
             .args(["test"])

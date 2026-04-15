@@ -134,6 +134,21 @@ fn experiment_diagnose() {
 }
 
 #[test]
+#[ignore = "experiment: 2 conditions × 3 runs (~9 min, costs tokens)"]
+fn experiment_fix_python_traversal() {
+    let binary = env!("CARGO_BIN_EXE_8v");
+    let result = run_experiment(&scenarios::EXPERIMENT_FIX_PYTHON, binary);
+
+    // Every condition must actually fix the bugs — pytest must pass
+    assert!(result.control.tests_pass_count() == result.n,
+        "Control failed to fix bug in {}/{} runs", result.control.tests_pass_count(), result.n);
+    for sample in &result.treatments {
+        assert!(sample.tests_pass_count() == result.n,
+            "{} failed to fix bug in {}/{} runs", sample.description, sample.tests_pass_count(), result.n);
+    }
+}
+
+#[test]
 #[ignore = "experiment: 3 conditions × 3 runs (~27 min, costs tokens)"]
 fn experiment_check_polyglot() {
     let binary = env!("CARGO_BIN_EXE_8v");

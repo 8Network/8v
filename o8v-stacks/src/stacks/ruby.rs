@@ -1,6 +1,6 @@
 //! Ruby stack — rubocop.
 
-use crate::stack_tools::StackTools;
+use crate::stack_tools::{StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
 
 /// Returns all tools for the ruby stack.
@@ -15,7 +15,10 @@ pub fn tools() -> StackTools {
             env: &[],
         })],
         formatter: None,
-        test_runner: None,
+        test_runner: Some(TestTool {
+            program: "rake",
+            args: &["test"],
+        }),
         build_tool: None,
     }
 }

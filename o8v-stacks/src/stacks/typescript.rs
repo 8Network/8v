@@ -1,7 +1,7 @@
 //! TypeScript stack — tsc, eslint, biome, oxlint (via local node_modules/.bin).
 
 use super::node::{biome_check, oxlint_check, prettier_check, prettier_formatter, NodeToolCheck};
-use crate::stack_tools::{BuildTool, StackTools};
+use crate::stack_tools::{BuildTool, StackTools, TestTool};
 
 const STACK: &str = "typescript";
 
@@ -39,7 +39,10 @@ pub fn tools() -> StackTools {
             Box::new(oxlint_check(STACK)),
         ],
         formatter: Some(prettier_formatter()),
-        test_runner: None,
+        test_runner: Some(TestTool {
+            program: "npm",
+            args: &["test", "--silent"],
+        }),
         build_tool: Some(BuildTool {
             program: "tsc",
             args: &[],
