@@ -273,7 +273,7 @@ fn collect_events(events_path: &Path) -> (usize, u64, u64, u64) {
     (count, output_bytes, command_bytes, total_duration_ms)
 }
 
-fn run_verification(project: &Path, _binary: &str) -> Verification {
+pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
     // Python-only fixtures: pyproject.toml present, no Cargo.toml. Verify with
     // pytest. Build/check gates don't apply — leave as None so summaries treat
     // them as N/A rather than failures.

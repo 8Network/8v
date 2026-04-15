@@ -16,6 +16,7 @@
 use comfy_table::{Table, ContentArrangement, presets::UTF8_FULL};
 
 use super::pipeline::{run_scenario, unix_ms, current_git_commit};
+use super::preflight::preflight_fixture;
 use super::store::BenchmarkStore;
 use super::types::*;
 
@@ -30,6 +31,11 @@ pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResu
         eprintln!("Treatment: {}", t.description);
     }
     eprintln!("{}\n", "=".repeat(70));
+
+    // ── Preflight gate ──────────────────────────────────────────────────
+    // Reject fixtures that already pass every verifier gate — a benchmark on
+    // a green fixture measures noise. See docs/design/fixture-preflight-gate.md.
+    preflight_fixture(config.control);
 
     // ── Run control ─────────────────────────────────────────────────────
     let control = run_sample(config.control, config.n, binary);
