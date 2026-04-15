@@ -73,6 +73,52 @@ pub fn resolve_test_tool(
     }
 }
 
+/// Pick the build tool for this concrete project.
+///
+/// Mirror of `resolve_test_tool` for `8v build`. Same motivation: match the
+/// project's real tooling so agents don't hit a native-runner error and
+/// thrash under denied Bash.
+pub fn resolve_build_tool(
+    stack: Stack,
+    project_path: &Path,
+    default_program: &'static str,
+    default_args: &'static [&'static str],
+) -> ResolvedTool {
+    match stack {
+        Stack::JavaScript | Stack::TypeScript => {
+            resolve_node_build(project_path).unwrap_or_else(|| {
+                ResolvedTool::new(default_program, default_args)
+            })
+        }
+        Stack::Kotlin => {
+            if project_path.join("gradlew").is_file() {
+                return ResolvedTool::new("./gradlew", &["build"]);
+            }
+            if project_path.join("pom.xml").is_file() {
+                return ResolvedTool::new("mvn", &["package"]);
+            }
+            ResolvedTool::new(default_program, default_args)
+        }
+        _ => ResolvedTool::new(default_program, default_args),
+    }
+}
+
+fn resolve_node_build(project_path: &Path) -> Option<ResolvedTool> {
+    if project_path.join("pnpm-lock.yaml").is_file() {
+        return Some(ResolvedTool::new("pnpm", &["run", "build", "--silent"]));
+    }
+    if project_path.join("yarn.lock").is_file() {
+        return Some(ResolvedTool::new("yarn", &["run", "build", "--silent"]));
+    }
+    if project_path.join("bun.lockb").is_file() || project_path.join("bun.lock").is_file() {
+        return Some(ResolvedTool::new("bun", &["run", "build"]));
+    }
+    if project_path.join("package-lock.json").is_file() {
+        return Some(ResolvedTool::new("npm", &["run", "build", "--silent"]));
+    }
+    None
+}
+
 /// JS/TS: pick the package manager from the lockfile present in-tree.
 /// Returns None when no lockfile is found — the default (npm test) applies.
 fn resolve_node_test(project_path: &Path) -> Option<ResolvedTool> {
@@ -182,5 +228,39 @@ mod tests {
         let r = resolve_test_tool(Stack::Rust, tmp.path(), "cargo", &["test", "--workspace"]);
         assert_eq!(r.program, "cargo");
         assert_eq!(r.args, vec!["test", "--workspace"]);
+    }
+
+    #[test]
+    fn build_js_pnpm_lockfile_picks_pnpm_build() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "pnpm-lock.yaml");
+        let r = resolve_build_tool(Stack::JavaScript, tmp.path(), "npm", &["run", "build", "--silent"]);
+        assert_eq!(r.program, "pnpm");
+        assert_eq!(r.args, vec!["run", "build", "--silent"]);
+    }
+
+    #[test]
+    fn build_kotlin_gradlew_preferred() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "gradlew");
+        let r = resolve_build_tool(Stack::Kotlin, tmp.path(), "gradle", &["build"]);
+        assert_eq!(r.program, "./gradlew");
+    }
+
+    #[test]
+    fn build_kotlin_maven_pom_picks_mvn_package() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "pom.xml");
+        let r = resolve_build_tool(Stack::Kotlin, tmp.path(), "gradle", &["build"]);
+        assert_eq!(r.program, "mvn");
+        assert_eq!(r.args, vec!["package"]);
+    }
+
+    #[test]
+    fn build_rust_has_no_refinement() {
+        let tmp = TempDir::new().unwrap();
+        let r = resolve_build_tool(Stack::Rust, tmp.path(), "cargo", &["build"]);
+        assert_eq!(r.program, "cargo");
+        assert_eq!(r.args, vec!["build"]);
     }
 }

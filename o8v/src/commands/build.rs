@@ -98,9 +98,18 @@ impl Command for BuildCommand {
             }
         };
 
-        let mut cmd = std::process::Command::new(build_tool.program);
-        cmd.args(build_tool.args);
-        cmd.current_dir(std::path::Path::new(&project.path().to_string()));
+        // Per-project refinement (pnpm/yarn/bun, gradlew wrapper, maven).
+        let project_path = std::path::PathBuf::from(project.path().to_string());
+        let resolved = o8v_stacks::resolve_build_tool(
+            project.stack(),
+            &project_path,
+            build_tool.program,
+            build_tool.args,
+        );
+
+        let mut cmd = std::process::Command::new(&resolved.program);
+        cmd.args(&resolved.args);
+        cmd.current_dir(&project_path);
 
         let config = o8v_process::ProcessConfig {
             timeout: std::time::Duration::from_secs(self.args.timeout),
@@ -110,7 +119,7 @@ impl Command for BuildCommand {
         };
 
         let proc_result = o8v_process::run(cmd, &config);
-        let cmd_str = format!("{} {}", build_tool.program, build_tool.args.join(" "));
+        let cmd_str = format!("{} {}", resolved.program, resolved.args.join(" "));
 
         Ok(BuildReport {
             process: o8v_core::process_report::ProcessReport {

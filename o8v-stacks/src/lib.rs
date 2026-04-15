@@ -26,7 +26,7 @@ pub use detect::detect_all;
 pub use detectors::DetectResult;
 pub use enrich::{enrich, ParseFn};
 pub use fmt::fmt;
-pub use resolve_tool::{resolve_test_tool, ResolvedTool};
+pub use resolve_tool::{resolve_build_tool, resolve_test_tool, ResolvedTool};
 pub use runner::run_tool;
 pub use stack_tools::{BuildTool, FormatTool, StackTools, TestTool};
 pub use stacks::{checks_for, tools_for};

@@ -1,7 +1,7 @@
 //! JavaScript stack — eslint, biome, oxlint (via local node_modules/.bin).
 
 use super::node::{biome_check, oxlint_check, prettier_check, prettier_formatter, NodeToolCheck};
-use crate::stack_tools::{StackTools, TestTool};
+use crate::stack_tools::{BuildTool, StackTools, TestTool};
 
 const STACK: &str = "javascript";
 
@@ -27,6 +27,9 @@ pub fn tools() -> StackTools {
             program: "npm",
             args: &["test", "--silent"],
         }),
-        build_tool: None,
+        build_tool: Some(BuildTool {
+            program: "npm",
+            args: &["run", "build", "--silent"],
+        }),
     }
 }
