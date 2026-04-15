@@ -49,9 +49,14 @@ pub fn resolve_test_tool(
                 ResolvedTool::new(default_program, default_args)
             })
         }
-        Stack::Kotlin => {
+        Stack::Kotlin | Stack::Java => {
             if project_path.join("gradlew").is_file() {
                 return ResolvedTool::new("./gradlew", &["test"]);
+            }
+            if project_path.join("build.gradle").is_file()
+                || project_path.join("build.gradle.kts").is_file()
+            {
+                return ResolvedTool::new("gradle", &["test"]);
             }
             if project_path.join("pom.xml").is_file() {
                 return ResolvedTool::new("mvn", &["test"]);
@@ -90,9 +95,14 @@ pub fn resolve_build_tool(
                 ResolvedTool::new(default_program, default_args)
             })
         }
-        Stack::Kotlin => {
+        Stack::Kotlin | Stack::Java => {
             if project_path.join("gradlew").is_file() {
                 return ResolvedTool::new("./gradlew", &["build"]);
+            }
+            if project_path.join("build.gradle").is_file()
+                || project_path.join("build.gradle.kts").is_file()
+            {
+                return ResolvedTool::new("gradle", &["build"]);
             }
             if project_path.join("pom.xml").is_file() {
                 return ResolvedTool::new("mvn", &["package"]);
@@ -254,6 +264,31 @@ mod tests {
         let r = resolve_build_tool(Stack::Kotlin, tmp.path(), "gradle", &["build"]);
         assert_eq!(r.program, "mvn");
         assert_eq!(r.args, vec!["package"]);
+    }
+
+    #[test]
+    fn java_gradlew_preferred_over_mvn_default() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "gradlew");
+        touch(tmp.path(), "pom.xml");
+        let r = resolve_test_tool(Stack::Java, tmp.path(), "mvn", &["test"]);
+        assert_eq!(r.program, "./gradlew");
+    }
+
+    #[test]
+    fn java_build_gradle_kts_picks_gradle() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "build.gradle.kts");
+        let r = resolve_test_tool(Stack::Java, tmp.path(), "mvn", &["test"]);
+        assert_eq!(r.program, "gradle");
+    }
+
+    #[test]
+    fn java_maven_pom_keeps_mvn() {
+        let tmp = TempDir::new().unwrap();
+        touch(tmp.path(), "pom.xml");
+        let r = resolve_test_tool(Stack::Java, tmp.path(), "mvn", &["test"]);
+        assert_eq!(r.program, "mvn");
     }
 
     #[test]
