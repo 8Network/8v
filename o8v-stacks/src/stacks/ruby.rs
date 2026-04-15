@@ -1,6 +1,6 @@
 //! Ruby stack — rubocop.
 
-use crate::stack_tools::{StackTools, TestTool};
+use crate::stack_tools::{FormatTool, StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
 
 /// Returns all tools for the ruby stack.
@@ -14,7 +14,13 @@ pub fn tools() -> StackTools {
             parse_fn: crate::parse::rubocop::parse,
             env: &[],
         })],
-        formatter: None,
+        formatter: Some(FormatTool {
+            program: "rubocop",
+            format_args: &["-a"],
+            check_args: &["--format", "json"],
+            check_dirty_on_stdout: false,
+            needs_node_resolution: false,
+        }),
         test_runner: Some(TestTool {
             program: "rake",
             args: &["test"],

@@ -350,21 +350,25 @@ mod tests {
 
     // Stacks without formatters
     #[test]
-    fn ruby_no_formatter() {
+    fn ruby_formatter_config() {
         let tools = crate::stacks::tools_for(Stack::Ruby);
-        assert!(tools.formatter.is_none());
+        let f = tools.formatter.expect("ruby has a formatter");
+        assert_eq!(f.program, "rubocop");
+        assert_eq!(f.format_args, &["-a"]);
     }
 
     #[test]
-    fn swift_no_formatter() {
+    fn swift_formatter_config() {
         let tools = crate::stacks::tools_for(Stack::Swift);
-        assert!(tools.formatter.is_none());
+        let f = tools.formatter.expect("swift has a formatter");
+        assert_eq!(f.program, "swiftformat");
     }
 
     #[test]
-    fn java_no_formatter() {
+    fn java_formatter_config() {
         let tools = crate::stacks::tools_for(Stack::Java);
-        assert!(tools.formatter.is_none());
+        let f = tools.formatter.expect("java has a formatter");
+        assert_eq!(f.program, "google-java-format");
     }
 
     #[test]

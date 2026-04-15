@@ -155,8 +155,8 @@ fn build_python_project_errors_no_build_tool() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("no build tool"),
-        "should say no build tool: {stderr}"
+        stderr.contains("no build step"),
+        "should say the stack has no build step: {stderr}"
     );
 }
 

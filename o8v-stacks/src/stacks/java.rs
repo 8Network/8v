@@ -4,7 +4,7 @@
 //! javac-style diagnostics to stdout (in Maven's wrapped format).
 //! The javac parser handles both stdout (Maven) and stderr (javac/Gradle).
 
-use crate::stack_tools::{BuildTool, StackTools, TestTool};
+use crate::stack_tools::{BuildTool, FormatTool, StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
 
 /// Returns all tools for the Java stack.
@@ -18,7 +18,13 @@ pub fn tools() -> StackTools {
             parse_fn: crate::parse::javac::parse,
             env: &[],
         })],
-        formatter: None,
+        formatter: Some(FormatTool {
+            program: "google-java-format",
+            format_args: &["-i", "-r", "."],
+            check_args: &["--dry-run", "--set-exit-if-changed", "-r", "."],
+            check_dirty_on_stdout: false,
+            needs_node_resolution: false,
+        }),
         test_runner: Some(TestTool {
             program: "mvn",
             args: &["test"],
