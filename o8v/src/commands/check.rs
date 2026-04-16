@@ -30,12 +30,6 @@ pub struct Args {
     pub format: super::output_format::OutputFormat,
 }
 
-impl Args {
-    pub fn audience(&self) -> o8v_core::render::Audience {
-        self.format.audience()
-    }
-}
-
 fn parse_limit(s: &str) -> Result<usize, String> {
     if s.starts_with('-') {
         return Err("must be non-negative".to_string());

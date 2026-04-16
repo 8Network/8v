@@ -58,20 +58,23 @@ pub(crate) enum Command {
 }
 
 impl Command {
-    /// Audience from CLI flags. MCP overrides this — caller determines default.
-    fn cli_audience(&self) -> Audience {
+    /// Resolve audience with a caller-specific default.
+    ///
+    /// Explicit flags (`--json`, `--plain`) always win, regardless of caller.
+    /// When no flag is passed, `default` is used — callers set their own default:
+    /// - CLI → `Audience::Human`
+    /// - MCP → `Audience::Agent`
+    fn audience_with_default(&self, default: Audience) -> Audience {
         match self {
-            Command::Build(a) => a.audience(),
-            Command::Check(a) => a.audience(),
-            Command::Fmt(a) => a.audience(),
-            Command::Test(a) => a.audience(),
-            Command::Read(a) => a.audience(),
-            Command::Write(a) => a.audience(),
-            Command::Search(a) => a.audience(),
-            Command::Ls(a) => a.audience(),
-            Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => {
-                Audience::Human
-            }
+            Command::Build(a) => a.format.audience_with_default(default),
+            Command::Check(a) => a.format.audience_with_default(default),
+            Command::Fmt(a) => a.format.audience_with_default(default),
+            Command::Test(a) => a.format.audience_with_default(default),
+            Command::Read(a) => a.format.audience_with_default(default),
+            Command::Write(a) => a.format.audience_with_default(default),
+            Command::Search(a) => a.format.audience_with_default(default),
+            Command::Ls(a) => a.format.audience_with_default(default),
+            Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => default,
         }
     }
 
@@ -145,8 +148,8 @@ pub(crate) async fn dispatch_command_with_agent(
         ctx.extensions.insert(info);
     }
     let audience = match caller {
-        Caller::Mcp => Audience::Agent,
-        Caller::Cli => command.cli_audience(),
+        Caller::Mcp => command.audience_with_default(Audience::Agent),
+        Caller::Cli => command.audience_with_default(Audience::Human),
     };
     let command_name = command.name();
     // Exit codes are CLI-specific — reports describe what happened,

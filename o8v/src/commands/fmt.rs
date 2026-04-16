@@ -28,12 +28,6 @@ pub struct Args {
     pub format: super::output_format::OutputFormat,
 }
 
-impl Args {
-    pub fn audience(&self) -> o8v_core::render::Audience {
-        self.format.audience()
-    }
-}
-
 // ─── Run ────────────────────────────────────────────────────────────────────
 
 /// Run `8v fmt`.
