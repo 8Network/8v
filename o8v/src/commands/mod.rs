@@ -129,8 +129,20 @@ pub(crate) async fn dispatch_command(
     caller: Caller,
     interrupted: &'static AtomicBool,
 ) -> Result<(String, ExitCode, bool), CommandError> {
+    dispatch_command_with_agent(command, caller, interrupted, None).await
+}
+
+pub(crate) async fn dispatch_command_with_agent(
+    command: Command,
+    caller: Caller,
+    interrupted: &'static AtomicBool,
+    agent_info: Option<o8v_core::caller::AgentInfo>,
+) -> Result<(String, ExitCode, bool), CommandError> {
     interrupted.store(false, std::sync::atomic::Ordering::Release);
-    let ctx = o8v::dispatch::build_context(interrupted);
+    let mut ctx = o8v::dispatch::build_context(interrupted);
+    if let Some(info) = agent_info {
+        ctx.extensions.insert(info);
+    }
     let audience = match caller {
         Caller::Mcp => Audience::Agent,
         Caller::Cli => command.cli_audience(),

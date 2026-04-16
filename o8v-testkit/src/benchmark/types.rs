@@ -138,6 +138,16 @@ pub struct Observation {
     pub event_command_bytes: u64,
     pub event_total_duration_ms: u64,
 
+    // ── Agent identity (from MCP handshake, extracted via events) ────────
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_protocol_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_capabilities: Vec<String>,
+
     // ── Verification ────────────────────────────────────────────────────
     pub verification: Verification,
 

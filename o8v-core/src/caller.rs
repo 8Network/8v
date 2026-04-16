@@ -6,6 +6,20 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Identity of the MCP client (AI agent) extracted from the MCP initialize handshake.
+///
+/// The MCP protocol sends `InitializeRequestParams` during connection setup.
+/// We capture everything the client declares: implementation name+version,
+/// MCP protocol version, and declared capabilities.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentInfo {
+    pub name: String,
+    pub version: String,
+    pub protocol_version: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub capabilities: Vec<String>,
+}
+
 /// Who invoked the command. Determines default audience and is recorded in events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -95,8 +95,7 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
     .expect("claude driver failed");
 
     // ── 3. Collect internal events ──────────────────────────────────────────
-    let (event_count, event_output_bytes, event_command_bytes, event_total_duration_ms) =
-        collect_events(&events_path);
+    let events = collect_events(&events_path);
 
 
     // ── 4. Verify ───────────────────────────────────────────────────────────
@@ -132,10 +131,14 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         input_tokens: agent_result.input_tokens,
         output_tokens: agent_result.output_tokens,
         turn_count: agent_result.turn_usage.len() as u32,
-        event_count,
-        event_output_bytes,
-        event_command_bytes,
-        event_total_duration_ms,
+        event_count: events.count,
+        event_output_bytes: events.output_bytes,
+        event_command_bytes: events.command_bytes,
+        event_total_duration_ms: events.total_duration_ms,
+        agent_name: events.agent.name,
+        agent_version: events.agent.version,
+        mcp_protocol_version: events.agent.protocol_version,
+        agent_capabilities: events.agent.capabilities,
         verification,
         feedback: None, // TODO: agent feedback in a later increment
         tool_calls_detail: agent_result.tool_calls_detail.clone(),
@@ -230,10 +233,30 @@ fn events_ndjson_path() -> std::path::PathBuf {
     std::path::PathBuf::from(home).join(".8v").join("events.ndjson")
 }
 
-fn collect_events(events_path: &Path) -> (usize, u64, u64, u64) {
+/// Agent identity extracted from MCP handshake events.
+#[derive(Default)]
+struct EventAgentInfo {
+    name: Option<String>,
+    version: Option<String>,
+    protocol_version: Option<String>,
+    capabilities: Vec<String>,
+}
+
+struct CollectedEvents {
+    count: usize,
+    output_bytes: u64,
+    command_bytes: u64,
+    total_duration_ms: u64,
+    agent: EventAgentInfo,
+}
+
+fn collect_events(events_path: &Path) -> CollectedEvents {
     let content = match std::fs::read_to_string(events_path) {
         Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (0, 0, 0, 0),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return CollectedEvents {
+            count: 0, output_bytes: 0, command_bytes: 0, total_duration_ms: 0,
+            agent: EventAgentInfo::default(),
+        },
         Err(e) => panic!("[benchmark] failed to read events file {}: {}", events_path.display(), e),
     };
 
@@ -241,6 +264,7 @@ fn collect_events(events_path: &Path) -> (usize, u64, u64, u64) {
     let mut output_bytes = 0u64;
     let mut command_bytes = 0u64;
     let mut total_duration_ms = 0u64;
+    let mut agent = EventAgentInfo::default();
 
     for (i, line) in content.lines().enumerate() {
         if line.trim().is_empty() {
@@ -257,6 +281,18 @@ fn collect_events(events_path: &Path) -> (usize, u64, u64, u64) {
                 if let Some(b) = raw.get("command_bytes").and_then(|v| v.as_u64()) {
                     command_bytes += b;
                 }
+                if agent.name.is_none() {
+                    if let Some(info) = raw.get("agent_info") {
+                        agent.name = info.get("name").and_then(|v| v.as_str()).map(String::from);
+                        agent.version = info.get("version").and_then(|v| v.as_str()).map(String::from);
+                        agent.protocol_version = info.get("protocol_version").and_then(|v| v.as_str()).map(String::from);
+                        if let Some(caps) = info.get("capabilities").and_then(|v| v.as_array()) {
+                            agent.capabilities = caps.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect();
+                        }
+                    }
+                }
             }
             "CommandCompleted" => {
                 if let Some(b) = raw.get("output_bytes").and_then(|v| v.as_u64()) {
@@ -270,7 +306,7 @@ fn collect_events(events_path: &Path) -> (usize, u64, u64, u64) {
         }
     }
 
-    (count, output_bytes, command_bytes, total_duration_ms)
+    CollectedEvents { count, output_bytes, command_bytes, total_duration_ms, agent }
 }
 
 pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
@@ -366,4 +402,12 @@ fn print_summary(name: &str, agent: &AgentResult, record: &Observation) {
     eprintln!("  check_pass:      {:?}", record.verification.check_pass);
     eprintln!("  build_pass:      {:?}", record.verification.build_pass);
     eprintln!("  tool names:      {:?}", record.tool_names);
+    if let Some(name) = &record.agent_name {
+        let ver = record.agent_version.as_deref().unwrap_or("?");
+        let proto = record.mcp_protocol_version.as_deref().unwrap_or("?");
+        eprintln!("  agent:           {name} v{ver} (MCP {proto})");
+        if !record.agent_capabilities.is_empty() {
+            eprintln!("  capabilities:    {:?}", record.agent_capabilities);
+        }
+    }
 }

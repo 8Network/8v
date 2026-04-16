@@ -171,6 +171,10 @@ mod tests {
             output_tokens: 0,
             turn_count: 0,
             tool_calls_detail: vec![],
+            agent_name: None,
+            agent_version: None,
+            mcp_protocol_version: None,
+            agent_capabilities: vec![],
         }
     }
 

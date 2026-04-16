@@ -6,7 +6,7 @@
 //!
 //! Both CLI and MCP get identical observability through the EventBus.
 
-use crate::caller::Caller;
+use crate::caller::{AgentInfo, Caller};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -47,6 +47,9 @@ pub struct CommandStarted {
     pub command_token_estimate: u64,
     /// Absolute path of the project root, if known.
     pub project_path: Option<String>,
+    /// MCP client identity from the initialize handshake, if available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_info: Option<AgentInfo>,
 }
 
 impl CommandStarted {
@@ -63,7 +66,13 @@ impl CommandStarted {
             command_bytes,
             command_token_estimate: estimate_tokens(command_bytes),
             project_path,
+            agent_info: None,
         }
+    }
+
+    pub fn with_agent_info(mut self, info: Option<AgentInfo>) -> Self {
+        self.agent_info = info;
+        self
     }
 }
 
@@ -148,6 +157,32 @@ mod tests {
         assert!(json.contains("CommandStarted"));
         assert!(json.contains("cli"));
         assert!(json.contains("timestamp_ms"));
+        assert!(!json.contains("agent_info"), "agent_info should be skipped when None");
+    }
+
+    #[test]
+    fn command_started_with_agent_info_serializes() {
+        let info = AgentInfo {
+            name: "claude-code".into(),
+            version: "1.0.23".into(),
+            protocol_version: "2025-03-26".into(),
+            capabilities: vec!["roots".into(), "sampling".into()],
+        };
+        let ev = CommandStarted::new("r5".into(), Caller::Mcp, "check .", None)
+            .with_agent_info(Some(info));
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains("agent_info"));
+        assert!(json.contains("claude-code"));
+        assert!(json.contains("1.0.23"));
+        assert!(json.contains("2025-03-26"));
+        assert!(json.contains("roots"));
+        assert!(json.contains("sampling"));
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let ai = parsed.get("agent_info").unwrap();
+        assert_eq!(ai["name"], "claude-code");
+        assert_eq!(ai["version"], "1.0.23");
+        assert_eq!(ai["protocol_version"], "2025-03-26");
     }
 
     #[test]

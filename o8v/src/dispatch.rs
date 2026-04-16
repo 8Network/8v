@@ -89,9 +89,11 @@ where
         .get::<o8v_core::project::ProjectRoot>()
         .map(|r| r.to_string());
 
-    // Emit CommandStarted.
+    // Emit CommandStarted (with agent identity if available from MCP handshake).
     if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
-        let ev = CommandStarted::new(run_id.clone(), caller, command_str, project_path);
+        let agent_info = ctx.extensions.get::<o8v_core::caller::AgentInfo>().cloned();
+        let ev = CommandStarted::new(run_id.clone(), caller, command_str, project_path)
+            .with_agent_info(agent_info);
         bus.emit(&ev);
     }
 
