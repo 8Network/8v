@@ -20,14 +20,7 @@ pub(super) static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Deserialize, JsonSchema)]
 struct CommandParams {
-    /// The 8v command to run. Examples:
-    /// - `8v read src/main.rs` (symbol map)
-    /// - `8v read src/main.rs:10-20` (line range)
-    /// - `8v write src/main.rs:15 "new content"` (replace line)
-    /// - `8v write src/main.rs --find "old" --replace "new"`
-    /// - `8v check .` (run all checks)
-    /// - `8v fmt .` (format all files)
-    /// - `8v test .` (run tests)
+    /// The 8v command to run, e.g. `8v read src/main.rs` or `8v check .`.
     command: String,
 }
 
