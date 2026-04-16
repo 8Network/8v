@@ -4,7 +4,7 @@
 
 //! Streaming plain text renderer — per-event token-efficient output.
 
-use super::{Render, RenderConfig, Summary};
+use super::{RenderConfig, Summary};
 use crate::diagnostic::{Diagnostic, Location, ParseStatus};
 use crate::{CheckOutcome, CheckReport};
 use std::io::{self, Write};
@@ -144,32 +144,6 @@ impl Plain {
             write!(w, " {} detection_errors", s.detection_errors)?;
         }
         writeln!(w, " {}ms", s.total_duration.as_millis())
-    }
-}
-
-impl Render for Plain {
-    fn render(
-        &self,
-        report: &CheckReport,
-        config: &RenderConfig,
-        w: &mut dyn Write,
-    ) -> io::Result<()> {
-        for err in report.detection_errors() {
-            self.render_detection_error(err, config, w)?;
-        }
-        for result in report.results() {
-            self.render_project_header(
-                result.project_name(),
-                result.stack(),
-                result.project_path(),
-                config,
-                w,
-            )?;
-            for entry in result.entries() {
-                self.render_entry(entry, config, w)?;
-            }
-        }
-        self.render_summary(report, config, w)
     }
 }
 

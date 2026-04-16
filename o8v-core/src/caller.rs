@@ -31,17 +31,6 @@ pub enum Caller {
 }
 
 impl Caller {
-    /// The default audience for this caller.
-    ///
-    /// CLI defaults to Human (overridable by --json/--plain flags).
-    /// MCP is always Agent.
-    pub fn default_audience(self) -> crate::render::Audience {
-        match self {
-            Caller::Cli => crate::render::Audience::Human,
-            Caller::Mcp => crate::render::Audience::Agent,
-        }
-    }
-
     /// String representation for event serialization.
     pub fn as_str(self) -> &'static str {
         match self {

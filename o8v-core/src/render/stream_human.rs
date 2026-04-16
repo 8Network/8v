@@ -4,7 +4,7 @@
 
 //! Streaming human renderer — per-event colored output for terminals.
 
-use super::{Render, RenderConfig, Summary};
+use super::{RenderConfig, Summary};
 use crate::diagnostic::{Diagnostic, Location, ParseStatus, Severity};
 use crate::{CheckOutcome, CheckReport};
 use std::io::{self, Write};
@@ -98,47 +98,6 @@ impl Human {
     ) -> io::Result<()> {
         writeln!(w)?;
         write_summary(w, report, config.color)
-    }
-}
-
-impl Render for Human {
-    fn render(
-        &self,
-        report: &CheckReport,
-        config: &RenderConfig,
-        w: &mut dyn Write,
-    ) -> io::Result<()> {
-        let c = config.color;
-
-        for err in report.detection_errors() {
-            self.render_detection_error(err, config, w)?;
-        }
-
-        for result in report.results() {
-            self.render_project_header(
-                result.project_name(),
-                result.stack(),
-                result.project_path(),
-                config,
-                w,
-            )?;
-
-            let max_name = result
-                .entries()
-                .iter()
-                .map(|e| e.name().len())
-                .max()
-                .unwrap_or(0);
-
-            for entry in result.entries() {
-                write_check_line(w, entry, max_name, c)?;
-            }
-            for entry in result.entries() {
-                write_entry_detail(w, entry, config, c)?;
-            }
-        }
-
-        self.render_summary(report, config, w)
     }
 }
 

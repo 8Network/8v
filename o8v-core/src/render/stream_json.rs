@@ -4,10 +4,8 @@
 
 //! JSON check renderer — structured output for tools, CI, and storage.
 
-use super::{Render, RenderConfig, Summary};
 use crate::{CheckOutcome, CheckReport};
 use serde::Serialize;
-use std::io::{self, Write};
 use std::time::Duration;
 
 pub struct Json;
@@ -61,39 +59,6 @@ struct JsonSummary {
     errors: u32,
     detection_errors: usize,
     ms: u64,
-}
-
-impl Render for Json {
-    fn render(
-        &self,
-        report: &CheckReport,
-        _config: &RenderConfig,
-        w: &mut dyn Write,
-    ) -> io::Result<()> {
-        let s = Summary::from_report(report);
-        let summary = JsonSummary {
-            success: s.success,
-            passed: s.passed,
-            failed: s.failed,
-            errors: s.errors,
-            detection_errors: s.detection_errors,
-            ms: duration_ms(s.total_duration),
-        };
-
-        let results = build_results(report);
-        let detection_errors = build_detection_errors(report);
-
-        let output = JsonOutput {
-            results,
-            detection_errors,
-            summary,
-        };
-
-        serde_json::to_writer_pretty(&mut *w, &output)?;
-        writeln!(w)?;
-
-        Ok(())
-    }
 }
 
 fn build_results(report: &CheckReport) -> Vec<JsonResult> {

@@ -45,10 +45,6 @@ pub struct Args {
     #[arg(long)]
     pub files: bool,
 
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
-
     /// Filter by file extension (e.g. rs, py, ts)
     #[arg(short = 'e', long = "ext")]
     pub extension: Option<String>,
@@ -76,15 +72,14 @@ pub struct Args {
     /// Max files to list (default: 500)
     #[arg(long, default_value = "500")]
     pub limit: usize,
+
+    #[command(flatten)]
+    pub format: super::output_format::OutputFormat,
 }
 
 impl Args {
     pub fn audience(&self) -> o8v_core::render::Audience {
-        if self.json {
-            o8v_core::render::Audience::Machine
-        } else {
-            o8v_core::render::Audience::Human
-        }
+        self.format.audience()
     }
 }
 

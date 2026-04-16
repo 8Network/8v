@@ -52,18 +52,13 @@ pub struct Args {
     #[arg(long)]
     pub force: bool,
 
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
+    #[command(flatten)]
+    pub format: super::output_format::OutputFormat,
 }
 
 impl Args {
     pub fn audience(&self) -> o8v_core::render::Audience {
-        if self.json {
-            o8v_core::render::Audience::Machine
-        } else {
-            o8v_core::render::Audience::Human
-        }
+        self.format.audience()
     }
 }
 
@@ -686,7 +681,7 @@ mod tests {
             replace: Some("X".to_string()),
             all: false,
             force: false,
-            json: false,
+            format: crate::commands::output_format::OutputFormat::default(),
         };
         let result = validate_args(&args);
         assert!(result.is_err());

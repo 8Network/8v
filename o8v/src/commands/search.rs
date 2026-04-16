@@ -57,22 +57,17 @@ pub struct Args {
     #[arg(long)]
     pub files: bool,
 
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
-
     /// Page number for paginated output (default: 1)
     #[arg(long, default_value = "1")]
     pub page: usize,
+
+    #[command(flatten)]
+    pub format: super::output_format::OutputFormat,
 }
 
 impl Args {
     pub fn audience(&self) -> o8v_core::render::Audience {
-        if self.json {
-            o8v_core::render::Audience::Machine
-        } else {
-            o8v_core::render::Audience::Human
-        }
+        self.format.audience()
     }
 }
 

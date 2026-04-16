@@ -22,18 +22,13 @@ pub struct Args {
     #[arg(long)]
     pub full: bool,
 
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
+    #[command(flatten)]
+    pub format: super::output_format::OutputFormat,
 }
 
 impl Args {
     pub fn audience(&self) -> o8v_core::render::Audience {
-        if self.json {
-            o8v_core::render::Audience::Machine
-        } else {
-            o8v_core::render::Audience::Human
-        }
+        self.format.audience()
     }
 }
 

@@ -15,6 +15,7 @@ pub mod check;
 pub mod fmt;
 pub mod hooks;
 pub mod ls;
+pub mod output_format;
 pub mod read;
 pub mod search;
 pub mod test;

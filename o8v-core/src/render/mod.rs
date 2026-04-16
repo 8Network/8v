@@ -28,57 +28,6 @@ pub use output::Output;
 
 // ─── Render types (rendering lives in o8v-core) ─────────────────────────────
 
-/// Present a `CheckReport` to a writer in a specific format.
-///
-/// Temporary: will be replaced by Renderable trait usage.
-pub trait Render {
-    fn render(
-        &self,
-        report: &crate::CheckReport,
-        config: &RenderConfig,
-        writer: &mut dyn std::io::Write,
-    ) -> std::io::Result<()>;
-}
-
-/// The three output formats.
-///
-/// Temporary: use Audience enum for new code.
-#[derive(Clone, Copy)]
-pub enum Format {
-    /// Colored, aligned, symbols — for terminals.
-    Human,
-    /// Minimal text, token-efficient — for AI agents and pipes.
-    Plain,
-    /// Structured JSON — for tools, CI, storage.
-    Json,
-}
-
-impl std::fmt::Display for Format {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Human => f.write_str("human"),
-            Self::Plain => f.write_str("plain"),
-            Self::Json => f.write_str("json"),
-        }
-    }
-}
-
-/// Pick a renderer by format.
-///
-/// Temporary: new code uses Renderable trait directly.
-#[must_use]
-pub fn check_renderer(format: &Format) -> Box<dyn Render> {
-    match format {
-        Format::Human => Box::new(stream_human::Human),
-        Format::Plain => Box::new(stream_plain::Plain),
-        Format::Json => Box::new(stream_json::Json),
-    }
-}
-
-/// Re-export streaming renderer types for convenience.
-pub use stream_human::Human;
-pub use stream_plain::Plain;
-
 /// Anything that flows to a consumer must be renderable.
 /// Events, reports, and errors all implement this.
 pub trait Renderable {
