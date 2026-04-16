@@ -40,7 +40,7 @@ pub static FIX_PYTHON_TRAVERSAL: Task = Task {
 pub static CHECK_POLYGLOT: Task = Task {
     name: "check-polyglot",
     fixture: "agent-benchmark/check-polyglot",
-    prompt: "Check this project for issues and fix everything you find.",
+    prompt: "The CI pipeline is failing across multiple components. The Rust backend has compiler warnings, the Go service has a type mismatch in a format call, the TypeScript frontend won't compile, the Python automation script fails the linter, the Dockerfile has a pinning warning, and the Terraform config is not properly formatted. Fix all of it so every check passes.",
     variables: &[],
 };
 
