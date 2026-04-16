@@ -56,13 +56,12 @@ const BASELINE_ENV: Environment = Environment {
     claude_md: None,
 };
 
-/// 8v available: full `8v init --yes`, native tools also available.
-/// Measures whether the agent chooses 8v when both options exist.
+/// 8v replaces native file tools. Bash remains for running commands.
 const WITH_8V_ENV: Environment = Environment {
     agent: Agent::Claude,
     setup_8v: true,
     permission_mode: Some(PermissionMode::AcceptEdits),
-    blocked_tools: &[],
+    blocked_tools: &["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"],
     extra_env: &[],
     claude_md: None, // 8v init writes CLAUDE.md
 };
