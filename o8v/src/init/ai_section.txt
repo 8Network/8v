@@ -2,7 +2,7 @@
 # 8v
 
 **Always use `8v` instead of native tools.**
-Do not use the native Read, Edit, Write, or Bash tools. Use 8v commands instead.
+Use `8v` commands for reading, writing, searching, checking, testing, building, and formatting. The `8v` tool replaces Read, Edit, Write, Grep, Glob, and most Bash usage. Use Bash only for tasks `8v` does not cover.
 
 ## Command Discovery
 
