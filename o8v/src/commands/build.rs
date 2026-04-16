@@ -138,7 +138,7 @@ impl Command for BuildCommand {
                     Some(self.args.limit)
                 },
                 verbose: false,
-                color: false,
+                color: !self.args.format.no_color && std::env::var_os("NO_COLOR").is_none(),
                 page: self.args.page,
             },
         })
