@@ -17,7 +17,7 @@ use o8v_testkit::benchmark::{Environment, ExperimentConfig, Scenario, Task};
 /// The agent must find the bug, fix it, and verify with cargo test.
 pub static FIX_FAILING_TEST: Task = Task {
     name: "fix-failing-test",
-    fixture: "agent-benchmark/rust-violated",
+    fixture: "agent-benchmark/fix-test-rust",
     prompt: "The test test_sum_range_inclusive is failing. Find the bug and fix it. \
              Run the tests to verify your fix works.",
     variables: &[],
@@ -27,7 +27,7 @@ pub static FIX_FAILING_TEST: Task = Task {
 /// The agent must identify the issue without being told what's wrong.
 pub static DIAGNOSE_ISSUES: Task = Task {
     name: "diagnose-issues",
-    fixture: "agent-benchmark/violated-rust",
+    fixture: "agent-benchmark/diagnose-rust",
     prompt: "There's something wrong with my code. Find the issues and fix them.",
     variables: &[],
 };
@@ -38,7 +38,7 @@ pub static DIAGNOSE_ISSUES: Task = Task {
 /// fix them so pytest passes.
 pub static FIX_PYTHON_TRAVERSAL: Task = Task {
     name: "fix-python-traversal",
-    fixture: "agent-benchmark/python-path-sanitizer",
+    fixture: "agent-benchmark/fix-test-python",
     prompt: "Some tests in this Python project are failing. Find the bugs, fix them, \
              and run pytest to verify all tests pass.",
     variables: &[],
@@ -48,7 +48,7 @@ pub static FIX_PYTHON_TRAVERSAL: Task = Task {
 /// The agent must discover multiple stacks and report all violations.
 pub static CHECK_POLYGLOT: Task = Task {
     name: "check-polyglot",
-    fixture: "agent-benchmark/polyglot-violated",
+    fixture: "agent-benchmark/check-polyglot",
     prompt: "Check this entire project for issues across all stacks. \
              Report everything that needs to be fixed — code quality, \
              formatting, type errors, lint warnings.",

@@ -77,7 +77,7 @@ mod tests {
     // must accept it.
     static HAPPY_TASK: Task = Task {
         name: "preflight-happy",
-        fixture: "agent-benchmark/rust-violated",
+        fixture: "agent-benchmark/fix-test-rust",
         prompt: "",
         variables: &[],
     };
