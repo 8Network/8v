@@ -4,9 +4,9 @@
 
 ## Summary
 
-Three task shapes benchmarked across two agents (Claude Code, Codex CLI v0.121.0).
-8v reduces Claude tokens 27-41% depending on task difficulty. 8v increases Codex tokens +94%.
-The divergence is explained by architecture, not quality.
+Four task shapes benchmarked across two agents (Claude Code, Codex CLI v0.121.0).
+8v reduces Claude tokens 27-41% on focused tasks. 8v increases Claude tokens +57% on open-ended polyglot tasks. 8v increases Codex tokens +94%.
+The divergence between focused and open-ended tasks is explained by discovery overhead, not tool quality.
 
 ---
 
@@ -53,6 +53,26 @@ The divergence is explained by architecture, not quality.
 | Tokens CV% | 28.2% | 36.8% |
 | Cost CV% | 19.5% | 19.3% |
 
+### check-polyglot (N=6, Claude)
+
+| Metric | Native | With 8v |
+|--------|--------|---------|
+| Tokens (mean) | 293,820 | 461,814 (+57%) |
+| Cost (mean) | $0.42 | $0.49 (+18%) |
+| Output tokens | 5,196 | 4,412 (-15%) |
+| Cache read | 263,485 | 430,716 (+64%) |
+| Turns | 43.5 | 47.3 (+9%) |
+| Tool calls | 37.3 | 35.7 (-4.5%) |
+| Tests/Check/Build | 6/6 | 6/6 |
+
+**Behavioral analysis:**
+
+- Outlier runs 6 and 8 (TodoWrite=8) drag the mean. Without them: +26% not +57%.
+- 12-call discovery phase on every run: 8v ls → 8v ls --tree → 10x 8v read. Identical sequence every time. Builds 3,600B context before first edit.
+- Baseline errors are cheap: 15 errors/run at ~50B each. 8v responses are ~300B each.
+- Double ToolSearch (Claude Code deferred schema loading) wastes 2 turns per run.
+- TodoWrite inflation: 4.67 calls/run vs baseline 0.67.
+
 ---
 
 ## Codex CLI Results
@@ -73,15 +93,18 @@ The divergence is explained by architecture, not quality.
 
 ## Cross-Agent Summary
 
-| Agent | Task | Token delta | Cost delta |
-|-------|------|-------------|------------|
-| Claude | fix-test (easy) | -27% | -5% |
-| Claude | diagnose (medium) | -33% | -7% |
-| Claude | fix-python (hard) | -41% | -21% |
-| Codex | fix-test | +94% | N/A |
+| Agent | Task | Difficulty | Token delta | Cost delta |
+|-------|------|-----------|-------------|------------|
+| Claude | fix-test | Easy, focused | -27% | -5% |
+| Claude | diagnose | Medium, focused | -33% | -7% |
+| Claude | fix-python | Hard, focused | -41% | -21% |
+| Claude | polyglot | Complex, open-ended | +57% | +18% |
+| Codex | fix-test | Easy, focused | +94% | N/A |
 
-**Key insight: 8v's value scales with task difficulty.**
-The harder the task → the more baseline retries → the more 8v saves.
+**Key insight: 8v wins on focused tasks, loses on open-ended tasks.**
+Focused tasks ("fix one thing") → 8v eliminates retry loops, saving more than overhead costs.
+Open-ended tasks ("check everything") → fewer retries to eliminate, discovery overhead dominates.
+The loss on polyglot is mechanical (12-call discovery phase, context compounding), not fundamental.
 
 ---
 
@@ -199,4 +222,3 @@ Only `--dangerously-bypass-approvals-and-sandbox` approves MCP calls, but it dis
 - Global MCP registration + `--full-auto` test (credits exhausted). Old `8v codex` implementation (commit `523bdba24`) used `codex mcp add` (global). Our benchmark uses project-local `.codex/config.toml`. Global may get different approval treatment — untested.
 - Batching opportunity: if 8v supported batch commands, 10-12 calls → 3-4 calls. Critical for Codex single-turn. Architecture-neutral for Claude multi-turn.
 - Agent detection (`_8V_AGENT=1`) for CLI fallback — designed, not built.
-- Polyglot benchmark not yet run.

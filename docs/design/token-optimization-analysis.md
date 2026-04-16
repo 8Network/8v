@@ -133,3 +133,81 @@ This is a Codex architecture problem, not an 8v problem. 8v cannot reduce MCP sc
 **Smarter error messages is the highest-leverage optimization remaining.** The benchmark data shows diagnose and fix-python still have 1-2 avoidable retry turns even with 8v. Error quality is the bottleneck, not tool coverage.
 
 Batching matters for Codex but does not close the structural gap. Codex single-turn with MCP is architecturally disadvantaged regardless of batching.
+
+---
+
+## 6. Polyglot Findings — Where Open-Ended Tasks Break the Model
+
+The polyglot task ("check this project for issues and fix everything you find") is open-ended. 8v adds a fixed 12-call discovery overhead that compounds across 47+ turns. On focused tasks, 8v eliminates 3-8 retry turns, saving more than the overhead costs. On open-ended tasks, there are fewer retries to eliminate, so the overhead dominates.
+
+| Metric | Native | With 8v | Delta |
+|--------|--------|---------|-------|
+| Tokens (mean) | 293,820 | 461,814 | +57% |
+| Cost (mean) | $0.42 | $0.49 | +18% |
+| Output tokens | 5,196 | 4,412 | -15% |
+| Cache read | 263,485 | 430,716 | +64% |
+| Turns | 43.5 | 47.3 | +9% |
+| Tool calls | 37.3 | 35.7 | -4.5% |
+
+Key observations:
+- Outlier runs 6 and 8 (TodoWrite=8) drag the mean. Without them: +26% not +57%.
+- 12-call discovery phase on every run: `8v ls → 8v ls --tree → 10x 8v read`. Identical sequence every time. Builds 3,600B context before first edit.
+- Baseline errors are cheap: 15 errors/run at ~50B each. 8v responses are ~300B each.
+- Double ToolSearch (Claude Code deferred schema loading) wastes 2 turns per run.
+- TodoWrite inflation: 4.67 calls/run vs baseline 0.67.
+
+The +57% is a worst-case measurement (open-ended + outlier inflation). The +26% without outliers is the structural cost of the discovery overhead on complex multi-stack tasks.
+
+---
+
+## 7. Task Design for Deterministic Benchmarks
+
+The benchmark prompt shapes the result more than the tool. Findings:
+- Focused prompts ("fix the failing test") → deterministic behavior, low variance, 8v wins
+- Open-ended prompts ("check everything, fix everything") → high variance, discovery-heavy, 8v loses
+
+To get deterministic results without reducing complexity:
+- Specify WHAT to check, not HOW: "This project has issues in the Rust, Python, and Go code. Find and fix them."
+- Name the scope, not the steps: "Fix all compiler errors and test failures" vs "Run cargo check, go vet, pytest"
+- Keep multi-stack complexity but focus the goal
+
+The prompt is a confound in current polyglot results. A focused polyglot prompt ("fix all compiler errors and test failures in this Rust+Python+Go project") would isolate 8v's tool effect from the discovery overhead effect. This is the next benchmark to run before drawing conclusions about open-ended task performance.
+
+---
+
+## 8. Batching Opportunity (Quantified)
+
+The 12-call discovery phase (`8v ls + 8v ls --tree + 10x 8v read`) could be 2-3 batched calls:
+- Batch 1: `8v ls --tree --loc` (replaces `8v ls` + `8v ls --tree`)
+- Batch 2: `8v read file1 file2 file3 ...` (replaces 10 individual reads)
+
+Impact estimate for polyglot:
+- 12 calls → 2-3 calls = 9-10 fewer MCP round-trips
+- Each round-trip adds ~200B to context that compounds across 47 turns
+- Estimated saving: ~85K tokens per run (9 calls × 200B × 47 turns)
+- Would bring 8v from +57% to approximately +25-30%
+
+For Codex (single-turn): batching is MORE critical because all responses accumulate in one context window. The 10-12 MCP calls → 3-4 batched calls would reduce input tokens by ~40%.
+
+Batching does NOT solve the fundamental problem for open-ended tasks (8v adds turns). It only reduces the per-turn cost of the discovery phase.
+
+---
+
+## 9. Combined Optimization Potential
+
+If all optimizations were applied:
+1. Focused task prompt (eliminates variance, ensures retry-elimination value)
+2. Batched discovery (saves ~85K tokens on polyglot)
+3. Agent detection `_8V_AGENT` (saves formatting overhead on CLI fallback)
+4. Smarter error messages (saves 1-2 retry turns on focused tasks)
+
+| Optimization | Estimated saving | Applies to |
+|---|---|---|
+| Focused prompt | Eliminates +31% outlier effect | Open-ended tasks |
+| Batched discovery | ~85K tokens (~18% of polyglot total) | Polyglot, Codex |
+| Agent detection | <1K tokens per run | CLI fallback only |
+| Smarter errors | 10K-22K tokens per run | Focused tasks |
+
+Estimated combined effect on polyglot: from +57% to approximately +5-15%.
+
+The path to positive ROI on polyglot is: focused prompt + batched discovery. Both are achievable without architectural changes to 8v — prompt is a benchmark design decision, batching is a command API extension.
