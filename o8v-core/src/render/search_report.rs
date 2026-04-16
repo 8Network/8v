@@ -251,10 +251,6 @@ impl super::Renderable for SearchReport {
         };
         Output::new(format!("{}\n", s))
     }
-
-    fn render_human(&self) -> Output {
-        self.render_plain()
-    }
 }
 
 #[cfg(test)]

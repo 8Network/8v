@@ -31,12 +31,16 @@ pub use output::Output;
 /// Anything that flows to a consumer must be renderable.
 /// Events, reports, and errors all implement this.
 pub trait Renderable {
-    /// Token-efficient text for AI agents.
+    /// Token-efficient text for AI agents. Default audience for MCP.
     fn render_plain(&self) -> Output;
     /// Structured JSON for machines, CI, programmatic use.
     fn render_json(&self) -> Output;
     /// Colored, aligned, symbol-rich for terminal users.
-    fn render_human(&self) -> Output;
+    /// Defaults to `render_plain`; override only when terminal output
+    /// meaningfully differs (colors, alignment).
+    fn render_human(&self) -> Output {
+        self.render_plain()
+    }
 }
 
 /// Who consumes the output. Determines which render method is called.
@@ -65,9 +69,6 @@ impl Renderable for () {
         Output::new(String::new())
     }
     fn render_json(&self) -> Output {
-        Output::new(String::new())
-    }
-    fn render_human(&self) -> Output {
         Output::new(String::new())
     }
 }
@@ -141,9 +142,6 @@ impl Renderable for events::check::StreamCheckEvent {
             Err(e) => format!("{{\"error\":\"{}\"}}", e),
         })
     }
-    fn render_human(&self) -> Output {
-        self.render_plain()
-    }
 }
 
 impl Renderable for events::fmt::FmtEvent {
@@ -173,9 +171,6 @@ impl Renderable for events::fmt::FmtEvent {
             }
         }
     }
-    fn render_human(&self) -> Output {
-        self.render_plain()
-    }
 }
 
 impl Renderable for events::test::TestEvent {
@@ -201,9 +196,6 @@ impl Renderable for events::test::TestEvent {
                 )
             }
         }
-    }
-    fn render_human(&self) -> Output {
-        self.render_plain()
     }
 }
 
@@ -231,9 +223,6 @@ impl Renderable for events::build::BuildEvent {
             }
         }
     }
-    fn render_human(&self) -> Output {
-        self.render_plain()
-    }
 }
 
 impl Renderable for events::run::RunEvent {
@@ -259,9 +248,6 @@ impl Renderable for events::run::RunEvent {
                 )
             }
         }
-    }
-    fn render_human(&self) -> Output {
-        self.render_plain()
     }
 }
 
@@ -299,9 +285,6 @@ impl Renderable for events::upgrade::UpgradeEvent {
             Ok(s) => s,
             Err(e) => format!("{{\"error\":\"{}\"}}", e),
         })
-    }
-    fn render_human(&self) -> Output {
-        self.render_plain()
     }
 }
 

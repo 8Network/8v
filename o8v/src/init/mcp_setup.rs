@@ -5,9 +5,17 @@
 use o8v_fs::FsConfig;
 use o8v::workspace::to_io;
 
+/// Write `.mcp.json` registering the 8v server, optionally with a custom
+/// command path.
+///
+/// `command` is the executable path written into the `"command"` field.
+/// In production this is `"8v"` (found on PATH). In tests it is the absolute
+/// path of the built test binary so the spawned MCP server is the same code
+/// under test.
 pub(super) fn setup_mcp_json(
     mcp_path: &std::path::Path,
     root: &o8v_fs::ContainmentRoot,
+    command: &str,
 ) -> std::io::Result<()> {
     match o8v_fs::safe_exists(mcp_path, root) {
         Err(e) => return Err(to_io(e)),
@@ -16,7 +24,8 @@ pub(super) fn setup_mcp_json(
                 o8v_fs::safe_read(mcp_path, root, &FsConfig::default()).map_err(to_io)?;
             let existing = existing.content();
             if existing.trim().is_empty() {
-                o8v_fs::safe_write(mcp_path, root, MCP_JSON_TEMPLATE.as_bytes()).map_err(to_io)?;
+                o8v_fs::safe_write(mcp_path, root, mcp_template(command).as_bytes())
+                    .map_err(to_io)?;
                 return Ok(());
             }
             match serde_json::from_str::<serde_json::Value>(existing) {
@@ -30,7 +39,7 @@ pub(super) fn setup_mcp_json(
                                 servers.insert(
                                     "8v".to_string(),
                                     serde_json::json!({
-                                        "command": "8v",
+                                        "command": command,
                                         "args": ["mcp"]
                                     }),
                                 );
@@ -56,22 +65,25 @@ pub(super) fn setup_mcp_json(
             }
         }
         Ok(false) => {
-            o8v_fs::safe_write(mcp_path, root, MCP_JSON_TEMPLATE.as_bytes()).map_err(to_io)?;
+            o8v_fs::safe_write(mcp_path, root, mcp_template(command).as_bytes())
+                .map_err(to_io)?;
         }
     }
 
     Ok(())
 }
 
-pub(super) const MCP_JSON_TEMPLATE: &str = r#"{
-  "mcpServers": {
-    "8v": {
-      "command": "8v",
-      "args": ["mcp"]
-    }
-  }
+fn mcp_template(command: &str) -> String {
+    let doc = serde_json::json!({
+        "mcpServers": {
+            "8v": {
+                "command": command,
+                "args": ["mcp"],
+            },
+        },
+    });
+    serde_json::to_string_pretty(&doc).expect("serialize .mcp.json") + "\n"
 }
-"#;
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -91,7 +103,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = canonical(&dir);
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        setup_mcp_json(&root.join(".mcp.json"), &containment_root).unwrap();
+        setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v").unwrap();
 
         let content = fs::read_to_string(root.join(".mcp.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -110,7 +122,7 @@ mod tests {
         .unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        setup_mcp_json(&root.join(".mcp.json"), &containment_root).unwrap();
+        setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v").unwrap();
 
         let content = fs::read_to_string(&mcp_path).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -133,7 +145,7 @@ mod tests {
         .unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        setup_mcp_json(&root.join(".mcp.json"), &containment_root).unwrap();
+        setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v").unwrap();
 
         let content = fs::read_to_string(&mcp_path).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -150,7 +162,7 @@ mod tests {
         fs::write(root.join(".mcp.json"), "").unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        setup_mcp_json(&root.join(".mcp.json"), &containment_root).unwrap();
+        setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v").unwrap();
 
         let content = fs::read_to_string(root.join(".mcp.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -164,7 +176,7 @@ mod tests {
         fs::write(root.join(".mcp.json"), "not json").unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        let result = setup_mcp_json(&root.join(".mcp.json"), &containment_root);
+        let result = setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
     }
@@ -176,7 +188,7 @@ mod tests {
         fs::write(root.join(".mcp.json"), r#"{"otherKey": true}"#).unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        setup_mcp_json(&root.join(".mcp.json"), &containment_root).unwrap();
+        setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v").unwrap();
 
         let content = fs::read_to_string(root.join(".mcp.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -191,7 +203,7 @@ mod tests {
         fs::write(root.join(".mcp.json"), "   \n\t  \n").unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        setup_mcp_json(&root.join(".mcp.json"), &containment_root).unwrap();
+        setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v").unwrap();
 
         let content = fs::read_to_string(root.join(".mcp.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -205,7 +217,7 @@ mod tests {
         fs::write(root.join(".mcp.json"), r#"{"mcpServers": null}"#).unwrap();
 
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
-        let result = setup_mcp_json(&root.join(".mcp.json"), &containment_root);
+        let result = setup_mcp_json(&root.join(".mcp.json"), &containment_root, "8v");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
     }

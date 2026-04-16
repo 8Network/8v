@@ -89,9 +89,6 @@ mod tests {
             agent: Agent::Claude,
             setup_8v: false,
             permission_mode: None,
-            blocked_tools: &[],
-            extra_env: &[],
-            claude_md: None,
         },
     };
 
@@ -110,9 +107,6 @@ mod tests {
             agent: Agent::Claude,
             setup_8v: false,
             permission_mode: None,
-            blocked_tools: &[],
-            extra_env: &[],
-            claude_md: None,
         },
     };
 

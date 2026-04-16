@@ -4,9 +4,10 @@
 
 //! Claude Code settings.json — permissions for 8v MCP tool.
 //!
-//! 8v replaces native tools (Read, Edit, Write, Bash, Grep, Glob) with a
-//! single MCP tool. This module sets up permissions.allow for the 8v tool
-//! and permissions.deny for the native tools it replaces.
+//! 8v replaces native file tools (Read, Edit, Write, Glob, Grep, NotebookEdit)
+//! with a single MCP tool. Bash stays available — agents need it to run
+//! commands 8v does not wrap. This module sets up permissions.allow for the
+//! 8v tool and permissions.deny for the native tools it replaces.
 
 use o8v_fs::FsConfig;
 use o8v::workspace::to_io;
@@ -14,9 +15,11 @@ use serde::{Deserialize, Serialize};
 
 const MCP_TOOL_PERMISSION: &str = "mcp__8v__8v";
 
-/// Native tools that 8v replaces. These are denied so the agent uses 8v instead.
-/// Without this, the agent will always prefer Bash over MCP — making 8v useless.
-const DENIED_NATIVE_TOOLS: &[&str] = &["Read", "Edit", "Write", "Bash", "Grep", "Glob"];
+/// Native file tools that 8v replaces. Denied so the agent uses 8v instead.
+/// Bash is intentionally omitted — agents need it to run commands 8v does
+/// not wrap.
+const DENIED_NATIVE_TOOLS: &[&str] =
+    &["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 
 /// Claude Code settings.json structure.
 ///

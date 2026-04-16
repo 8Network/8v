@@ -46,46 +46,35 @@ pub static CHECK_POLYGLOT: Task = Task {
 
 // ── Environments ─────────────────────────────────────────────────────────────
 
-/// Baseline: no 8v, no instructions. Raw agent with default tools.
+/// Baseline: no 8v. Raw agent with default tools.
 const BASELINE_ENV: Environment = Environment {
     agent: Agent::Claude,
     setup_8v: false,
     permission_mode: Some(PermissionMode::AcceptEdits),
-    blocked_tools: &[],
-    extra_env: &[],
-    claude_md: None,
 };
 
-/// 8v replaces native file tools. Bash remains for running commands.
+/// With 8v: `8v init` writes .claude/settings.json (deny list) and CLAUDE.md.
+/// The agent picks up the deny list from settings.json — same as a real user.
 const WITH_8V_ENV: Environment = Environment {
     agent: Agent::Claude,
     setup_8v: true,
     permission_mode: Some(PermissionMode::AcceptEdits),
-    blocked_tools: &["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"],
-    extra_env: &[],
-    claude_md: None, // 8v init writes CLAUDE.md
 };
 
 // ── Codex environments ──────────────────────────────────────────────────────
 
-/// Codex baseline: no 8v, no instructions. Raw agent with default tools.
+/// Codex baseline: no 8v. Raw agent with default tools.
 const CODEX_BASELINE_ENV: Environment = Environment {
     agent: Agent::Codex,
     setup_8v: false,
     permission_mode: None,
-    blocked_tools: &[],
-    extra_env: &[],
-    claude_md: None,
 };
 
-/// Codex with 8v: MCP server registered, AGENTS.md instructs to use 8v.
+/// Codex with 8v: `8v init` registers the MCP server and writes AGENTS.md.
 const CODEX_WITH_8V_ENV: Environment = Environment {
     agent: Agent::Codex,
     setup_8v: true,
     permission_mode: None,
-    blocked_tools: &[],
-    extra_env: &[],
-    claude_md: None, // 8v init writes AGENTS.md
 };
 
 // ── Scenarios ────────────────────────────────────────────────────────────────

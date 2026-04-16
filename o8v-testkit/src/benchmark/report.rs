@@ -275,7 +275,7 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
 }
 
 fn stat_block(sample: &Sample, f: impl Fn(&Observation) -> f64 + Copy) -> StatBlock {
-    let mean = sample.mean(f).unwrap_or(0.0);
+    let mean = sample.require_mean(f);
     let stddev = sample.stddev(f).unwrap_or(0.0);
     let cv = if mean.abs() > f64::EPSILON { stddev / mean } else { 0.0 };
     let values: Vec<f64> = sample.observations.iter().map(f).collect();
@@ -357,22 +357,22 @@ fn has_error_storm(details: &[super::types::ToolCallDetail]) -> bool {
 }
 
 fn build_deltas(control: &Sample, treatments: &[Sample]) -> Vec<DeltaReport> {
-    let ctrl_tokens = control.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
+    let ctrl_tokens = control.require_mean(|o| o.total_tokens as f64);
     let ctrl_cost = {
         let costs: Vec<f64> = control.observations.iter().filter_map(|o| o.cost_usd).collect();
         if costs.is_empty() { None } else { Some(costs.iter().sum::<f64>() / costs.len() as f64) }
     };
-    let ctrl_turns = control.mean(|o| o.turn_count as f64).unwrap_or(0.0);
-    let ctrl_calls = control.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
+    let ctrl_turns = control.require_mean(|o| o.turn_count as f64);
+    let ctrl_calls = control.require_mean(|o| o.tool_names.len() as f64);
 
     treatments.iter().map(|t| {
-        let t_tokens = t.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
+        let t_tokens = t.require_mean(|o| o.total_tokens as f64);
         let t_cost = {
             let costs: Vec<f64> = t.observations.iter().filter_map(|o| o.cost_usd).collect();
             if costs.is_empty() { None } else { Some(costs.iter().sum::<f64>() / costs.len() as f64) }
         };
-        let t_turns = t.mean(|o| o.turn_count as f64).unwrap_or(0.0);
-        let t_calls = t.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
+        let t_turns = t.require_mean(|o| o.turn_count as f64);
+        let t_calls = t.require_mean(|o| o.tool_names.len() as f64);
 
         let cost_delta_ratio = match (ctrl_cost, t_cost) {
             (Some(c), Some(t)) if c > 0.0 => Some(pct_delta(c, t)),

@@ -98,13 +98,6 @@ pub struct Environment {
     /// Claude CLI permission mode. `None` means no `--permission-mode` flag is passed.
     /// Ignored for Codex.
     pub permission_mode: Option<PermissionMode>,
-    /// Tools to block via settings.json deny list.
-    /// Ignored for Codex.
-    pub blocked_tools: &'static [&'static str],
-    /// Additional environment variables passed to the agent process.
-    pub extra_env: &'static [(&'static str, &'static str)],
-    /// Custom CLAUDE.md / AGENTS.md content. If None, uses whatever 8v init writes.
-    pub claude_md: Option<&'static str>,
 }
 
 /// Role of a turn in an agent conversation.
@@ -278,6 +271,22 @@ impl Sample {
         }
         let sum: f64 = self.observations.iter().map(&f).sum();
         Some(sum / self.observations.len() as f64)
+    }
+
+    /// Mean of a metric, panicking if the sample is empty.
+    ///
+    /// Use this in reporting / experiment aggregation where an empty sample
+    /// means all runs crashed — the experiment is invalid and the number
+    /// should not silently become 0.0.
+    #[track_caller]
+    pub fn require_mean(&self, f: impl Fn(&Observation) -> f64) -> f64 {
+        self.mean(f).unwrap_or_else(|| {
+            panic!(
+                "require_mean: sample '{}' ({}) has no observations — \
+                 every run failed or was never recorded",
+                self.scenario, self.description
+            )
+        })
     }
 
     /// Standard deviation of a metric.

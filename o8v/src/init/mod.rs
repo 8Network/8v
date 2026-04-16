@@ -70,6 +70,12 @@ pub struct Args {
     /// Non-interactive mode: say yes to all prompts.
     #[arg(long, short = 'y')]
     pub yes: bool,
+
+    /// Override the `command` field written to `.mcp.json` for the 8v server.
+    /// Defaults to `"8v"` (resolved via PATH). Used by the benchmark harness
+    /// so the spawned MCP server is the same binary under test.
+    #[arg(long = "mcp-command", value_name = "PATH")]
+    pub mcp_command: Option<String>,
 }
 
 // ─── Run ────────────────────────────────────────────────────────────────────
@@ -198,7 +204,8 @@ pub fn run(args: &Args) -> ExitCode {
 
     // Step 3: MCP
     if confirm("Set up MCP?", args.yes) {
-        if let Err(e) = setup_mcp_json(init_dir.mcp_json(), project_root) {
+        let mcp_command = args.mcp_command.as_deref().unwrap_or("8v");
+        if let Err(e) = setup_mcp_json(init_dir.mcp_json(), project_root, mcp_command) {
             eprintln!("error: failed to setup .mcp.json: {e}");
             return ExitCode::from(EXIT_FAIL);
         }

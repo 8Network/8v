@@ -220,11 +220,6 @@ impl super::Renderable for LsReport {
         };
         Output::new(format!("{}\n", s))
     }
-
-    fn render_human(&self) -> Output {
-        // Human same as plain for ls
-        self.render_plain()
-    }
 }
 
 /// Render file nodes grouped by directory with indentation (used in tree mode).

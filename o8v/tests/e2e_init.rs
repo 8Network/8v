@@ -120,7 +120,7 @@ fn init_yes_creates_mcp_and_docs() {
     let deny = v["permissions"]["deny"]
         .as_array()
         .expect("permissions.deny must be an array");
-    for tool in ["Read", "Edit", "Write", "Bash", "Grep", "Glob"] {
+    for tool in ["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"] {
         assert!(
             deny.iter().any(|v| v == tool),
             "must deny {tool} — got: {settings}"

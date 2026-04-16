@@ -112,14 +112,14 @@ fn mean_cost(sample: &Sample) -> Option<f64> {
 }
 
 fn compute_effects(control: &Sample, treatments: &[Sample], n: usize) -> Vec<Effect> {
-    let control_tokens = control.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
+    let control_tokens = control.require_mean(|o| o.total_tokens as f64);
     let control_cost = mean_cost(control);
-    let control_tools = control.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
+    let control_tools = control.require_mean(|o| o.tool_names.len() as f64);
 
     treatments.iter().map(|treatment| {
-        let t_tokens = treatment.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
+        let t_tokens = treatment.require_mean(|o| o.total_tokens as f64);
         let t_cost = mean_cost(treatment);
-        let t_tools = treatment.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
+        let t_tools = treatment.require_mean(|o| o.tool_names.len() as f64);
 
         let token_delta_pct = if control_tokens > 0.0 {
             ((t_tokens - control_tokens) / control_tokens) * 100.0
@@ -165,9 +165,9 @@ fn render_table(result: &ExperimentResult) {
 
     // Tokens (mean)
     let mut row = vec!["Tokens (mean)".to_string()];
-    row.push(format_tokens(result.control.mean(|o| o.total_tokens as f64).unwrap_or(0.0)));
+    row.push(format_tokens(result.control.require_mean(|o| o.total_tokens as f64)));
     for t in &result.treatments {
-        row.push(format_tokens(t.mean(|o| o.total_tokens as f64).unwrap_or(0.0)));
+        row.push(format_tokens(t.require_mean(|o| o.total_tokens as f64)));
     }
     table.add_row(row);
 
@@ -195,65 +195,65 @@ fn render_table(result: &ExperimentResult) {
 
     // Tool calls (mean)
     let mut row = vec!["Tool calls (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0)));
+    row.push(format!("{:.1}", result.control.require_mean(|o| o.tool_names.len() as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0)));
+        row.push(format!("{:.1}", t.require_mean(|o| o.tool_names.len() as f64)));
     }
     table.add_row(row);
 
     // 8v events (mean)
     let mut row = vec!["8v events (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.mean(|o| o.event_count as f64).unwrap_or(0.0)));
+    row.push(format!("{:.1}", result.control.require_mean(|o| o.event_count as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.mean(|o| o.event_count as f64).unwrap_or(0.0)));
+        row.push(format!("{:.1}", t.require_mean(|o| o.event_count as f64)));
     }
     table.add_row(row);
 
     // Input Tokens (mean)
     let mut row = vec!["Input Tokens (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.input_tokens as f64).unwrap_or(0.0)));
+    row.push(format!("{:.0}", result.control.require_mean(|o| o.input_tokens as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.input_tokens as f64).unwrap_or(0.0)));
+        row.push(format!("{:.0}", t.require_mean(|o| o.input_tokens as f64)));
     }
     table.add_row(row);
 
     // Output Tokens (mean)
     let mut row = vec!["Output Tokens (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.output_tokens as f64).unwrap_or(0.0)));
+    row.push(format!("{:.0}", result.control.require_mean(|o| o.output_tokens as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.output_tokens as f64).unwrap_or(0.0)));
+        row.push(format!("{:.0}", t.require_mean(|o| o.output_tokens as f64)));
     }
     table.add_row(row);
 
     // Cache Read (mean)
     let mut row = vec!["Cache Read (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.cache_read_input_tokens as f64).unwrap_or(0.0)));
+    row.push(format!("{:.0}", result.control.require_mean(|o| o.cache_read_input_tokens as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.cache_read_input_tokens as f64).unwrap_or(0.0)));
+        row.push(format!("{:.0}", t.require_mean(|o| o.cache_read_input_tokens as f64)));
     }
     table.add_row(row);
 
     // Cache Creation (mean)
     let mut row = vec!["Cache Creation (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.cache_creation_input_tokens as f64).unwrap_or(0.0)));
+    row.push(format!("{:.0}", result.control.require_mean(|o| o.cache_creation_input_tokens as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.cache_creation_input_tokens as f64).unwrap_or(0.0)));
+        row.push(format!("{:.0}", t.require_mean(|o| o.cache_creation_input_tokens as f64)));
     }
     table.add_row(row);
 
     // Turns (mean)
     let mut row = vec!["Turns (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.mean(|o| o.turn_count as f64).unwrap_or(0.0)));
+    row.push(format!("{:.1}", result.control.require_mean(|o| o.turn_count as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.mean(|o| o.turn_count as f64).unwrap_or(0.0)));
+        row.push(format!("{:.1}", t.require_mean(|o| o.turn_count as f64)));
     }
     table.add_row(row);
 
     // Init Bytes (mean)
     let mut row = vec!["Init Bytes (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.init_message_bytes as f64).unwrap_or(0.0)));
+    row.push(format!("{:.0}", result.control.require_mean(|o| o.init_message_bytes as f64)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.init_message_bytes as f64).unwrap_or(0.0)));
+        row.push(format!("{:.0}", t.require_mean(|o| o.init_message_bytes as f64)));
     }
     table.add_row(row);
 

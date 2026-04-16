@@ -44,11 +44,6 @@ impl super::Renderable for RunReport {
         };
         Output::new(format!("{}\n", s))
     }
-
-    fn render_human(&self) -> Output {
-        // Human gets the same output as plain for run.
-        self.render_plain()
-    }
 }
 
 /// Render stdout/stderr sections matching the format_process_output convention.

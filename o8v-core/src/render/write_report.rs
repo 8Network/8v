@@ -82,10 +82,6 @@ impl super::Renderable for WriteReport {
         };
         Output::new(json)
     }
-
-    fn render_human(&self) -> Output {
-        self.render_plain()
-    }
 }
 
 #[cfg(test)]

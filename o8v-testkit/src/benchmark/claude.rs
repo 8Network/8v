@@ -213,8 +213,6 @@ impl ClaudeDriver {
         working_dir: &Path,
         mcp_config: Option<&Path>,
         permission_mode: Option<PermissionMode>,
-        blocked_tools: &[&str],
-        env_vars: &[(&str, &str)],
         settings_path: Option<&Path>,
     ) -> Result<AgentResult, String> {
         let mut args = vec![
@@ -236,11 +234,6 @@ impl ClaudeDriver {
             args.push(&mcp_path_str);
         }
 
-        for tool in blocked_tools {
-            args.push("--disallowedTools");
-            args.push(tool);
-        }
-
         let settings_path_str;
         if let Some(settings) = settings_path {
             settings_path_str = settings.to_str()
@@ -258,10 +251,6 @@ impl ClaudeDriver {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-
-        for (key, val) in env_vars {
-            cmd.env(key, val);
-        }
 
         let mut child = cmd.spawn()
             .map_err(|e| format!("failed to spawn claude: {e} (is `claude` in PATH?)"))?;

@@ -57,15 +57,12 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
                     std::fs::canonicalize(project.path().join(".claude/settings.json"))
                         .expect("8v init --yes ran but .claude/settings.json is missing — this is a bug in 8v init"),
                 );
+                mcp_config = Some(project.path().join(".mcp.json"));
             } else {
-                write_mcp_json(project.path(), binary);
+                // Baseline: truly bare. No MCP, no settings. The 8v schema
+                // token cost is reported separately as a tax column.
                 settings_path = None;
-            }
-            mcp_config = Some(project.path().join(".mcp.json"));
-
-            if let Some(content) = scenario.env.claude_md {
-                project.write_file("CLAUDE.md", content.as_bytes())
-                    .expect("write custom CLAUDE.md");
+                mcp_config = None;
             }
         }
         Agent::Codex => {
@@ -75,11 +72,6 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
             }
             mcp_config = None;
             settings_path = None;
-
-            if let Some(content) = scenario.env.claude_md {
-                project.write_file("AGENTS.md", content.as_bytes())
-                    .expect("write custom AGENTS.md");
-            }
         }
     }
 
@@ -103,21 +95,16 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
             project.path(),
             mcp_config.as_deref(),
             scenario.env.permission_mode,
-            scenario.env.blocked_tools,
-            scenario.env.extra_env,
             settings_path.as_deref(),
         )
         .expect("claude driver failed"),
         Agent::Codex => {
-            // disable_shell correlates with setup_8v today: when 8v MCP is
-            // registered, shell access is redundant and we disable it to force
-            // the agent through MCP. If these two concepts diverge in the
-            // future, add a separate `disable_shell` field to ScenarioEnv.
+            // When 8v MCP is registered, shell access is redundant and we
+            // disable it so the agent goes through MCP.
             let disable_shell = scenario.env.setup_8v;
             CodexDriver::run(
                 &prompt,
                 project.path(),
-                scenario.env.extra_env,
                 disable_shell,
             )
             .expect("codex driver failed")
@@ -222,39 +209,19 @@ fn setup_git(project: &Path) {
 }
 
 fn run_8v_init(project: &Path, binary: &str) {
+    // --mcp-command writes the test binary path directly into .mcp.json, so
+    // the spawned MCP server is the same binary under test. No post-init
+    // patching — single source of truth.
     let output = Command::new(binary)
-        .args(["init", "--yes"])
+        .args(["init", "--yes", "--mcp-command", binary])
         .current_dir(project)
         .output()
         .expect("run 8v init");
     assert!(
         output.status.success(),
-        "8v init --yes failed: {}",
+        "8v init --yes --mcp-command {binary} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    // Patch .mcp.json to use the test binary path (overwrite what 8v init wrote).
-    write_mcp_json(project, binary);
-}
-
-/// Write .mcp.json registering the 8v binary as MCP server.
-///
-/// Called for ALL scenarios (baseline and treatment) so both conditions pay
-/// the same MCP schema tax. The only difference between conditions is in
-/// CLAUDE.md: baseline instructs native tools, treatment instructs 8v tools.
-fn write_mcp_json(project: &Path, binary: &str) {
-    let mcp_value = serde_json::json!({
-        "mcpServers": {
-            "8v": {
-                "command": binary,
-                "args": ["mcp"]
-            }
-        }
-    });
-    let mcp_json = serde_json::to_string_pretty(&mcp_value)
-        .expect("serialize mcp.json") + "\n";
-    let root = o8v_fs::ContainmentRoot::new(project).expect("containment root for mcp write");
-    o8v_fs::safe_write(&project.join(".mcp.json"), &root, mcp_json.as_bytes())
-        .expect("write .mcp.json");
 }
 
 fn write_codex_config(project: &Path, binary: &str) {
