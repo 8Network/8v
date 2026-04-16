@@ -34,6 +34,45 @@ pub(crate) fn resolve_path(
     }
 }
 
+/// Resolve a slice of path strings against the containment root.
+///
+/// Each entry may carry a `path:N-M` range suffix. The suffix is stripped before
+/// resolution and re-appended afterward so the workspace resolver never sees it.
+pub(crate) fn resolve_paths(
+    paths: &mut [String],
+    containment_root: &o8v_fs::ContainmentRoot,
+) -> Result<(), String> {
+    for entry in paths.iter_mut() {
+        // Strip trailing `:N-M` range suffix before resolving.
+        let (base, suffix) = split_range_suffix(entry);
+        let mut base_owned = base.to_string();
+        resolve_path(&mut base_owned, containment_root)?;
+        *entry = if let Some(s) = suffix {
+            format!("{base_owned}{s}")
+        } else {
+            base_owned
+        };
+    }
+    Ok(())
+}
+
+/// Split `"path:N-M"` into `("path", Some(":N-M"))` or `("path", None)`.
+///
+/// Only splits on the last colon when it is followed by `digits-digits`.
+fn split_range_suffix(input: &str) -> (&str, Option<&str>) {
+    if let Some(colon_pos) = input.rfind(':') {
+        let after = &input[colon_pos + 1..];
+        if let Some(dash_pos) = after.find('-') {
+            let start_ok = after[..dash_pos].chars().all(|c| c.is_ascii_digit()) && !after[..dash_pos].is_empty();
+            let end_ok = after[dash_pos + 1..].chars().all(|c| c.is_ascii_digit()) && !after[dash_pos + 1..].is_empty();
+            if start_ok && end_ok {
+                return (&input[..colon_pos], Some(&input[colon_pos..]));
+            }
+        }
+    }
+    (input, None)
+}
+
 /// Resolve an optional path. No-op when `None`.
 pub(crate) fn resolve_optional_path(
     path: &mut Option<String>,

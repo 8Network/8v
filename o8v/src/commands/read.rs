@@ -15,8 +15,9 @@ use std::path::Path;
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
-    /// File path, optionally with line range (path:start-end)
-    pub path: String,
+    /// File path(s), optionally with line range (path:start-end). Multiple paths allowed.
+    #[arg(required = true)]
+    pub paths: Vec<String>,
 
     /// Show full file content instead of symbols
     #[arg(long)]
@@ -49,30 +50,23 @@ fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
 
 // ─── Typed Report ────────────────────────────────────────────────────────────
 
-/// Read a file and return a typed `ReadReport`.
+/// Read a single file path (with optional range suffix) and return a typed `ReadReport`.
 ///
-/// Contains the same file reading, validation, and parsing logic as
-/// `read_to_string` but populates a structured `ReadReport` instead of
-/// formatting to a String. Called by `ReadCommand::execute()`.
-pub fn read_to_report(
-    args: &Args,
-    ctx: &o8v_core::command::CommandContext,
+/// Returns `Err(String)` if the file cannot be read or the range is invalid.
+fn read_one(
+    label: &str,
+    full: bool,
+    workspace: &o8v::workspace::WorkspaceRoot,
 ) -> Result<o8v_core::render::read_report::ReadReport, String> {
     use o8v_core::render::read_report::{LineEntry, ReadReport, SymbolEntry};
 
-    let workspace = ctx
-        .extensions
-        .get::<o8v::workspace::WorkspaceRoot>()
-        .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
-
-    let (file_path, range) = parse_path_range(&args.path);
+    let (file_path, range) = parse_path_range(label);
 
     let abs_path = workspace.resolve(&file_path);
-
     let root = workspace.containment();
 
     let config = o8v_fs::FsConfig::default();
-    let file = match o8v_fs::safe_read(&abs_path, &root, &config) {
+    let file = match o8v_fs::safe_read(&abs_path, root, &config) {
         Ok(f) => f,
         Err(o8v_fs::FsError::Io { cause, .. })
             if cause.kind() == std::io::ErrorKind::InvalidData =>
@@ -110,7 +104,6 @@ pub fn read_to_report(
     }
 
     let report = if let Some((start, end)) = range {
-        // Clamp to valid range (1-indexed), matching output_range_plain behaviour.
         let clamped_start = start.max(1);
         let clamped_end = end.min(total_lines);
         let lines: Vec<LineEntry> = content
@@ -135,7 +128,7 @@ pub fn read_to_report(
             total_lines,
             lines,
         }
-    } else if args.full {
+    } else if full {
         let lines: Vec<LineEntry> = content
             .lines()
             .enumerate()
@@ -172,6 +165,47 @@ pub fn read_to_report(
     };
 
     Ok(report)
+}
+
+/// Read one or more files and return a typed `ReadReport`.
+///
+/// Single path → returns the specific variant (Symbols, Range, Full) — backward compatible.
+/// Multiple paths → returns `ReadReport::Multi` with per-file results; errors are inline.
+pub fn read_to_report(
+    args: &Args,
+    ctx: &o8v_core::command::CommandContext,
+) -> Result<o8v_core::render::read_report::ReadReport, String> {
+    use o8v_core::render::read_report::{MultiEntry, MultiResult, ReadReport};
+
+    let workspace = ctx
+        .extensions
+        .get::<o8v::workspace::WorkspaceRoot>()
+        .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
+
+    if args.paths.len() == 1 {
+        // Single path — backward-compatible: return the sub-report directly (no Multi wrapper).
+        return read_one(&args.paths[0], args.full, workspace);
+    }
+
+    // Multiple paths — collect into Multi, errors are inline.
+    let entries: Vec<MultiEntry> = args
+        .paths
+        .iter()
+        .map(|label| {
+            let result = match read_one(label, args.full, workspace) {
+                Ok(report) => MultiResult::Ok {
+                    report: Box::new(report),
+                },
+                Err(message) => MultiResult::Err { message },
+            };
+            MultiEntry {
+                label: label.clone(),
+                result,
+            }
+        })
+        .collect();
+
+    Ok(ReadReport::Multi { entries })
 }
 
 // ── Command trait impl ──────────────────────────────────────────────────

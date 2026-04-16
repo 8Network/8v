@@ -28,6 +28,29 @@ pub enum ReadReport {
         total_lines: usize,
         lines: Vec<LineEntry>,
     },
+    /// Multiple files read in one call.
+    Multi {
+        entries: Vec<MultiEntry>,
+    },
+}
+
+/// One entry in a multi-file read — either success or error.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiEntry {
+    /// The path label (as given by the user, including any range suffix).
+    pub label: String,
+    /// The result for this path.
+    pub result: MultiResult,
+}
+
+/// Result for a single file in a multi-file read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status")]
+pub enum MultiResult {
+    /// Successfully read — contains the full sub-report.
+    Ok { report: Box<ReadReport> },
+    /// Failed — contains the error message.
+    Err { message: String },
 }
 
 /// A single symbol extracted from a file.
@@ -86,6 +109,27 @@ impl super::Renderable for ReadReport {
                 let mut output = format!("{path} ({total_lines} lines)\n\n");
                 for entry in lines {
                     output.push_str(&format!("{:>4}  {}\n", entry.line, entry.text));
+                }
+                Output::new(output)
+            }
+            ReadReport::Multi { entries } => {
+                let mut output = String::new();
+                for (i, entry) in entries.iter().enumerate() {
+                    if i > 0 {
+                        output.push('\n');
+                    }
+                    output.push_str(&format!("=== {} ===\n", entry.label));
+                    match &entry.result {
+                        MultiResult::Ok { report } => {
+                            // render the sub-report but strip its trailing newline if present,
+                            // then re-add consistently.
+                            let sub = report.render_plain();
+                            output.push_str(sub.as_str());
+                        }
+                        MultiResult::Err { message } => {
+                            output.push_str(&format!("error: {message}\n"));
+                        }
+                    }
                 }
                 Output::new(output)
             }
