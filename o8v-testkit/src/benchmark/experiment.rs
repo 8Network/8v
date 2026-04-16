@@ -63,6 +63,10 @@ pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResu
     // ── Render table ────────────────────────────────────────────────────
     render_table(&result);
 
+    // ── Structured report ───────────────────────────────────────────────
+    let report = super::report::build_report(&result);
+    write_structured_report(&report, config.name);
+
     // ── Persist ─────────────────────────────────────────────────────────
     persist_experiment(&result);
 
@@ -365,6 +369,18 @@ fn clean_events() {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => eprintln!("  [benchmark] warning: failed to clean events: {e}"),
+    }
+}
+
+fn write_structured_report(report: &super::report::ReportJson, experiment_name: &str) {
+    match BenchmarkStore::open() {
+        Ok(store) => {
+            match store.write_report(experiment_name, report) {
+                Ok(path) => eprintln!("  [benchmark] report: {}", path.display()),
+                Err(e) => eprintln!("  [benchmark] warning: failed to write report: {e}"),
+            }
+        }
+        Err(e) => eprintln!("  [benchmark] warning: failed to open store for report: {e}"),
     }
 }
 

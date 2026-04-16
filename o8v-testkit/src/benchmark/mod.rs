@@ -16,6 +16,7 @@ mod claude;
 pub mod experiment;
 mod pipeline;
 pub mod preflight;
+pub mod report;
 mod store;
 mod types;
 

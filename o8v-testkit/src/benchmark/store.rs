@@ -115,6 +115,22 @@ impl BenchmarkStore {
         Ok(records)
     }
 
+    /// Write a structured report JSON for an experiment.
+    /// File: `<experiment_name>/report.json`.
+    pub fn write_report(&self, experiment_name: &str, report: &super::report::ReportJson) -> Result<PathBuf, std::io::Error> {
+        let dir = self.containment.as_path().join(experiment_name);
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join("report.json");
+        let json = serde_json::to_string_pretty(report)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        // Use ContainmentRoot rooted at the sub-dir for safe_write.
+        let sub_containment = ContainmentRoot::new(&dir)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        o8v_fs::safe_write(&path, &sub_containment, json.as_bytes())
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        Ok(path)
+    }
+
     /// The containment root for all fs operations.
     pub fn containment(&self) -> &ContainmentRoot {
         &self.containment
@@ -237,5 +253,46 @@ mod tests {
         assert!(result.is_err(), "corrupt line must produce an error, not silently drop");
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("line 2"), "error must identify the offending line: {msg}");
+    }
+
+    #[test]
+    fn write_report_round_trips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = BenchmarkStore::at(tmp.path()).unwrap();
+
+        let report = super::super::report::ReportJson {
+            schema_version: 1,
+            experiment: "test-exp".into(),
+            commit: "abc".into(),
+            version_8v: "0.1.0".into(),
+            started_ms: 1000,
+            finished_ms: 2000,
+            agent_name: Some("claude-code".into()),
+            agent_version: Some("1.0.0".into()),
+            model_id: None,
+            mcp_protocol_version: None,
+            task: super::super::report::TaskInfo {
+                name: "test".into(),
+                fixture: "test-fixture".into(),
+                prompt_sha: "abc123".into(),
+            },
+            conditions: vec![],
+            deltas_vs_control: vec![],
+            confidence: super::super::report::Confidence {
+                n_per_condition: 3,
+                publishable: false,
+                reason: "test".into(),
+            },
+            runs: vec![],
+        };
+
+        let path = store.write_report("test-exp", &report).unwrap();
+        assert!(path.exists());
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["schema_version"], 1);
+        assert_eq!(parsed["experiment"], "test-exp");
+        assert_eq!(parsed["agent_name"], "claude-code");
     }
 }
