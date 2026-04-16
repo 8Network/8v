@@ -13,14 +13,16 @@
 //! failure does not abort the benchmark.
 
 mod claude;
+mod codex;
 pub mod experiment;
 mod pipeline;
 pub mod preflight;
 pub mod report;
 mod store;
 mod types;
+pub use types::PermissionMode;
 
 pub use experiment::run_experiment;
 pub use pipeline::run_scenario;
 pub use store::BenchmarkStore;
-pub use types::{AgentFeedback, Effect, Environment, ExperimentConfig, ExperimentResult, Observation, Sample, Scenario, Task, TurnRecord, Verification};
+pub use types::{Agent, AgentFeedback, Effect, Environment, ExperimentConfig, ExperimentResult, Observation, Sample, Scenario, Task, TurnRecord, Verification};

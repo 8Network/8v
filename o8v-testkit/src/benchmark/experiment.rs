@@ -15,7 +15,7 @@
 
 use comfy_table::{Table, ContentArrangement, presets::UTF8_FULL};
 
-use super::pipeline::{run_scenario, unix_ms, current_git_commit};
+use super::pipeline::{run_scenario, unix_ms, current_git_commit, events_ndjson_path};
 use super::preflight::preflight_fixture;
 use super::store::BenchmarkStore;
 use super::types::*;
@@ -63,12 +63,17 @@ pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResu
     // ── Render table ────────────────────────────────────────────────────
     render_table(&result);
 
+    // ── Open store once for report + persist ────────────────────────────
+    let store = BenchmarkStore::open()
+        .map_err(|e| eprintln!("  [benchmark] warning: failed to open benchmark store: {e}"))
+        .ok();
+
     // ── Structured report ───────────────────────────────────────────────
     let report = super::report::build_report(&result);
-    write_structured_report(&report, config.name);
+    write_structured_report(&report, config.name, store.as_ref());
 
     // ── Persist ─────────────────────────────────────────────────────────
-    persist_experiment(&result);
+    persist_experiment(&result, store.as_ref());
 
     result
 }
@@ -107,14 +112,14 @@ fn mean_cost(sample: &Sample) -> Option<f64> {
 }
 
 fn compute_effects(control: &Sample, treatments: &[Sample], n: usize) -> Vec<Effect> {
-    let control_tokens = control.mean(|o| o.total_tokens as f64);
+    let control_tokens = control.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
     let control_cost = mean_cost(control);
-    let control_tools = control.mean(|o| o.tool_names.len() as f64);
+    let control_tools = control.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
 
     treatments.iter().map(|treatment| {
-        let t_tokens = treatment.mean(|o| o.total_tokens as f64);
+        let t_tokens = treatment.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
         let t_cost = mean_cost(treatment);
-        let t_tools = treatment.mean(|o| o.tool_names.len() as f64);
+        let t_tools = treatment.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
 
         let token_delta_pct = if control_tokens > 0.0 {
             ((t_tokens - control_tokens) / control_tokens) * 100.0
@@ -160,17 +165,17 @@ fn render_table(result: &ExperimentResult) {
 
     // Tokens (mean)
     let mut row = vec!["Tokens (mean)".to_string()];
-    row.push(format_tokens(result.control.mean(|o| o.total_tokens as f64)));
+    row.push(format_tokens(result.control.mean(|o| o.total_tokens as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format_tokens(t.mean(|o| o.total_tokens as f64)));
+        row.push(format_tokens(t.mean(|o| o.total_tokens as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Tokens (stddev)
     let mut row = vec!["Tokens (stddev)".to_string()];
-    row.push(format_tokens(result.control.stddev(|o| o.total_tokens as f64)));
+    row.push(format_tokens(result.control.stddev(|o| o.total_tokens as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format_tokens(t.stddev(|o| o.total_tokens as f64)));
+        row.push(format_tokens(t.stddev(|o| o.total_tokens as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
@@ -190,65 +195,65 @@ fn render_table(result: &ExperimentResult) {
 
     // Tool calls (mean)
     let mut row = vec!["Tool calls (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.mean(|o| o.tool_names.len() as f64)));
+    row.push(format!("{:.1}", result.control.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.mean(|o| o.tool_names.len() as f64)));
+        row.push(format!("{:.1}", t.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // 8v events (mean)
     let mut row = vec!["8v events (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.mean(|o| o.event_count as f64)));
+    row.push(format!("{:.1}", result.control.mean(|o| o.event_count as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.mean(|o| o.event_count as f64)));
+        row.push(format!("{:.1}", t.mean(|o| o.event_count as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Input Tokens (mean)
     let mut row = vec!["Input Tokens (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.input_tokens as f64)));
+    row.push(format!("{:.0}", result.control.mean(|o| o.input_tokens as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.input_tokens as f64)));
+        row.push(format!("{:.0}", t.mean(|o| o.input_tokens as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Output Tokens (mean)
     let mut row = vec!["Output Tokens (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.output_tokens as f64)));
+    row.push(format!("{:.0}", result.control.mean(|o| o.output_tokens as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.output_tokens as f64)));
+        row.push(format!("{:.0}", t.mean(|o| o.output_tokens as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Cache Read (mean)
     let mut row = vec!["Cache Read (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.cache_read_tokens as f64)));
+    row.push(format!("{:.0}", result.control.mean(|o| o.cache_read_input_tokens as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.cache_read_tokens as f64)));
+        row.push(format!("{:.0}", t.mean(|o| o.cache_read_input_tokens as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Cache Creation (mean)
     let mut row = vec!["Cache Creation (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.cache_creation_tokens as f64)));
+    row.push(format!("{:.0}", result.control.mean(|o| o.cache_creation_input_tokens as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.cache_creation_tokens as f64)));
+        row.push(format!("{:.0}", t.mean(|o| o.cache_creation_input_tokens as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Turns (mean)
     let mut row = vec!["Turns (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.mean(|o| o.turn_count as f64)));
+    row.push(format!("{:.1}", result.control.mean(|o| o.turn_count as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.mean(|o| o.turn_count as f64)));
+        row.push(format!("{:.1}", t.mean(|o| o.turn_count as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
     // Init Bytes (mean)
     let mut row = vec!["Init Bytes (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.mean(|o| o.init_message_bytes as f64)));
+    row.push(format!("{:.0}", result.control.mean(|o| o.init_message_bytes as f64).unwrap_or(0.0)));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.mean(|o| o.init_message_bytes as f64)));
+        row.push(format!("{:.0}", t.mean(|o| o.init_message_bytes as f64).unwrap_or(0.0)));
     }
     table.add_row(row);
 
@@ -285,10 +290,6 @@ fn render_table(result: &ExperimentResult) {
     // Trim to exact column count
     sep.truncate(col_count);
     table.add_row(sep);
-
-    // Delta rows — one effect per treatment, each effect occupies its own column
-    // Build rows that span all treatment columns
-    let n_treatments = result.treatments.len();
 
     // Δ Tokens row
     let mut row = vec!["Δ Tokens".to_string(), "—".to_string()];
@@ -338,9 +339,6 @@ fn render_table(result: &ExperimentResult) {
     row.truncate(col_count);
     table.add_row(row);
 
-    // Suppress unused variable warning for n_treatments
-    let _ = n_treatments;
-
     eprintln!("\n{table}\n");
 }
 
@@ -363,8 +361,7 @@ fn format_delta_pct(pct: f64) -> String {
 }
 
 fn clean_events() {
-    let home = std::env::var("HOME").expect("HOME must be set for benchmarks");
-    let path = std::path::PathBuf::from(home).join(".8v").join("events.ndjson");
+    let path = events_ndjson_path();
     match std::fs::remove_file(&path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -372,42 +369,32 @@ fn clean_events() {
     }
 }
 
-fn write_structured_report(report: &super::report::ReportJson, experiment_name: &str) {
-    match BenchmarkStore::open() {
-        Ok(store) => {
-            match store.write_report(experiment_name, report) {
-                Ok(path) => eprintln!("  [benchmark] report: {}", path.display()),
-                Err(e) => eprintln!("  [benchmark] warning: failed to write report: {e}"),
-            }
-        }
-        Err(e) => eprintln!("  [benchmark] warning: failed to open store for report: {e}"),
+fn write_structured_report(report: &super::report::ReportJson, experiment_name: &str, store: Option<&BenchmarkStore>) {
+    let Some(store) = store else { return };
+    match store.write_report(experiment_name, report) {
+        Ok(path) => eprintln!("  [benchmark] report: {}", path.display()),
+        Err(e) => eprintln!("  [benchmark] warning: failed to write report: {e}"),
     }
 }
 
-fn persist_experiment(result: &ExperimentResult) {
-    match BenchmarkStore::open() {
-        Ok(store) => {
-            // Persist each observation individually
-            for obs in &result.control.observations {
-                if let Err(e) = store.append(obs) {
-                    eprintln!("  [benchmark] warning: failed to persist observation: {e}");
-                }
-            }
-            for sample in &result.treatments {
-                for obs in &sample.observations {
-                    if let Err(e) = store.append(obs) {
-                        eprintln!("  [benchmark] warning: failed to persist observation: {e}");
-                    }
-                }
-            }
-            // Persist the ExperimentResult to experiments.ndjson
-            if let Err(e) = store.append_experiment(result) {
-                eprintln!("  [benchmark] warning: failed to persist experiment result: {e}");
+fn persist_experiment(result: &ExperimentResult, store: Option<&BenchmarkStore>) {
+    let Some(store) = store else { return };
+    // Persist each observation individually
+    for obs in &result.control.observations {
+        if let Err(e) = store.append(obs) {
+            eprintln!("  [benchmark] warning: failed to persist observation: {e}");
+        }
+    }
+    for sample in &result.treatments {
+        for obs in &sample.observations {
+            if let Err(e) = store.append(obs) {
+                eprintln!("  [benchmark] warning: failed to persist observation: {e}");
             }
         }
-        Err(e) => {
-            eprintln!("  [benchmark] warning: failed to open benchmark store: {e}");
-        }
+    }
+    // Persist the ExperimentResult to experiments.ndjson
+    if let Err(e) = store.append_experiment(result) {
+        eprintln!("  [benchmark] warning: failed to persist experiment result: {e}");
     }
 }
 

@@ -64,18 +64,70 @@ impl Task {
     }
 }
 
+/// Which agent CLI drives the benchmark run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Agent {
+    Claude,
+    Codex,
+}
+
+/// Claude CLI permission mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionMode {
+    AcceptEdits,
+    BypassPermissions,
+}
+
+impl PermissionMode {
+    /// Returns the CLI flag value passed to `--permission-mode`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::BypassPermissions => "bypassPermissions",
+        }
+    }
+}
+
 /// Environment configuration for a scenario.
 pub struct Environment {
+    /// Which agent to use. Defaults to Claude for backward compatibility.
+    pub agent: Agent,
     /// Run `8v init --yes` to set up MCP, CLAUDE.md, settings.
     pub setup_8v: bool,
-    /// Claude CLI permission mode: "acceptEdits", "bypassPermissions".
-    pub permission_mode: &'static str,
+    /// Claude CLI permission mode. `None` means no `--permission-mode` flag is passed.
+    /// Ignored for Codex.
+    pub permission_mode: Option<PermissionMode>,
     /// Tools to block via settings.json deny list.
+    /// Ignored for Codex.
     pub blocked_tools: &'static [&'static str],
-    /// Additional environment variables passed to the Claude process.
+    /// Additional environment variables passed to the agent process.
     pub extra_env: &'static [(&'static str, &'static str)],
-    /// Custom CLAUDE.md content. If None, uses whatever 8v init writes.
+    /// Custom CLAUDE.md / AGENTS.md content. If None, uses whatever 8v init writes.
     pub claude_md: Option<&'static str>,
+}
+
+/// Role of a turn in an agent conversation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TurnRole {
+    User,
+    Assistant,
+    Tool,
+    #[serde(other)]
+    Unknown,
+}
+
+impl TurnRole {
+    /// Parse from a string, falling back to `Unknown`.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "user" => TurnRole::User,
+            "assistant" => TurnRole::Assistant,
+            "tool" => TurnRole::Tool,
+            _ => TurnRole::Unknown,
+        }
+    }
 }
 
 /// A scenario ties a task to an environment.
@@ -121,10 +173,10 @@ pub struct Observation {
     pub stop_reason: Option<String>,
     #[serde(default)]
     pub is_error: bool,
-    #[serde(default)]
-    pub cache_read_tokens: u64,
-    #[serde(default)]
-    pub cache_creation_tokens: u64,
+    #[serde(default, alias = "cache_read_tokens")]
+    pub cache_read_input_tokens: u64,
+    #[serde(default, alias = "cache_creation_tokens")]
+    pub cache_creation_input_tokens: u64,
     #[serde(default)]
     pub input_tokens: u64,
     #[serde(default)]
@@ -159,15 +211,6 @@ pub struct Observation {
     pub tool_calls_detail: Vec<ToolCallDetail>,
 }
 
-/// A single tool invocation — name, input, output size, and error status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub name: String,
-    pub input: String,
-    pub output_bytes: u64,
-    pub is_error: bool,
-}
-
 /// A single tool invocation with full detail — name, input, output size, and error status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallDetail {
@@ -183,7 +226,7 @@ pub struct ToolCallDetail {
 /// Per-turn token record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnRecord {
-    pub role: String,
+    pub role: TurnRole,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
@@ -228,41 +271,44 @@ pub struct Sample {
 
 impl Sample {
     /// Mean of a metric across observations.
-    pub fn mean(&self, f: impl Fn(&Observation) -> f64) -> f64 {
+    /// Returns `None` if there are no observations.
+    pub fn mean(&self, f: impl Fn(&Observation) -> f64) -> Option<f64> {
         if self.observations.is_empty() {
-            return 0.0;
+            return None;
         }
         let sum: f64 = self.observations.iter().map(&f).sum();
-        sum / self.observations.len() as f64
+        Some(sum / self.observations.len() as f64)
     }
 
     /// Standard deviation of a metric.
-    pub fn stddev(&self, f: impl Fn(&Observation) -> f64) -> f64 {
+    /// Returns `None` if there are fewer than 2 observations.
+    pub fn stddev(&self, f: impl Fn(&Observation) -> f64) -> Option<f64> {
         if self.observations.len() < 2 {
-            return 0.0;
+            return None;
         }
-        let mean = self.mean(&f);
+        let mean = self.mean(&f)?;
         let variance: f64 = self.observations.iter()
             .map(|o| {
                 let diff = f(o) - mean;
                 diff * diff
             })
             .sum::<f64>() / (self.observations.len() - 1) as f64;
-        variance.sqrt()
+        Some(variance.sqrt())
     }
 
     /// Median of a metric.
-    pub fn median(&self, f: impl Fn(&Observation) -> f64) -> f64 {
-        let mut values: Vec<f64> = self.observations.iter().map(&f).collect();
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        if values.is_empty() {
-            return 0.0;
+    /// Returns `None` if there are no observations.
+    pub fn median(&self, f: impl Fn(&Observation) -> f64) -> Option<f64> {
+        if self.observations.is_empty() {
+            return None;
         }
+        let mut values: Vec<f64> = self.observations.iter().map(&f).collect();
+        values.sort_by(|a, b| a.partial_cmp(b).expect("NaN in metric values"));
         let mid = values.len() / 2;
         if values.len() % 2 == 0 {
-            (values[mid - 1] + values[mid]) / 2.0
+            Some((values[mid - 1] + values[mid]) / 2.0)
         } else {
-            values[mid]
+            Some(values[mid])
         }
     }
 
@@ -385,5 +431,87 @@ mod tests {
             variables: &[("name", "world")],
         };
         assert_eq!(task.resolved_prompt(), "Hello world, goodbye world.");
+    }
+
+    #[test]
+    fn sample_mean_returns_none_when_empty() {
+        let sample = Sample {
+            scenario: "s".to_string(),
+            description: "d".to_string(),
+            observations: vec![],
+        };
+        assert_eq!(sample.mean(|o| o.total_tokens as f64), None);
+    }
+
+    #[test]
+    fn sample_stddev_returns_none_when_fewer_than_two() {
+        let obs = Observation {
+            scenario: "s".to_string(),
+            task_name: "t".to_string(),
+            timestamp_ms: 0,
+            git_commit: "abc".to_string(),
+            version: "0.0.0".to_string(),
+            total_tokens: 100,
+            cost_usd: None,
+            exit_code: 0,
+            tool_names: vec![],
+            turns: vec![],
+            init_message_bytes: 0,
+            response_text: String::new(),
+            model: None,
+            session_id: None,
+            stop_reason: None,
+            is_error: false,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            turn_count: 0,
+            event_count: 0,
+            event_output_bytes: 0,
+            event_command_bytes: 0,
+            event_total_duration_ms: 0,
+            agent_name: None,
+            agent_version: None,
+            mcp_protocol_version: None,
+            agent_capabilities: vec![],
+            verification: Verification {
+                tests_pass: None,
+                check_pass: None,
+                build_pass: None,
+            },
+            feedback: None,
+            tool_calls_detail: vec![],
+        };
+        let sample = Sample {
+            scenario: "s".to_string(),
+            description: "d".to_string(),
+            observations: vec![obs],
+        };
+        assert_eq!(sample.stddev(|o| o.total_tokens as f64), None);
+    }
+
+    #[test]
+    fn sample_median_returns_none_when_empty() {
+        let sample = Sample {
+            scenario: "s".to_string(),
+            description: "d".to_string(),
+            observations: vec![],
+        };
+        assert_eq!(sample.median(|o| o.total_tokens as f64), None);
+    }
+
+    #[test]
+    fn turn_role_from_str_known_values() {
+        assert_eq!(TurnRole::from_str("user"), TurnRole::User);
+        assert_eq!(TurnRole::from_str("assistant"), TurnRole::Assistant);
+        assert_eq!(TurnRole::from_str("tool"), TurnRole::Tool);
+        assert_eq!(TurnRole::from_str("unknown_value"), TurnRole::Unknown);
+    }
+
+    #[test]
+    fn permission_mode_as_str() {
+        assert_eq!(PermissionMode::AcceptEdits.as_str(), "acceptEdits");
+        assert_eq!(PermissionMode::BypassPermissions.as_str(), "bypassPermissions");
     }
 }

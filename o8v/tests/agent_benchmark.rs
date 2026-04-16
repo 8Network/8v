@@ -162,3 +162,19 @@ fn experiment_check_polyglot() {
             "{} failed to fix issues in {}/{} runs", sample.description, sample.check_pass_count(), result.n);
     }
 }
+
+// ── Codex experiments ──────────────────────────────────────────────────────
+
+#[test]
+#[ignore = "agent benchmark — requires codex CLI, costs real API credits"]
+fn experiment_fix_test_codex() {
+    let binary = env!("CARGO_BIN_EXE_8v");
+    let result = run_experiment(&scenarios::EXPERIMENT_FIX_TEST_CODEX, binary);
+
+    assert!(result.control.tests_pass_count() > 0,
+        "Codex control failed to fix the test in {}/{} runs", result.control.tests_pass_count(), result.n);
+    for sample in &result.treatments {
+        assert!(sample.tests_pass_count() > 0,
+            "{} failed to fix the test in {}/{} runs", sample.description, sample.tests_pass_count(), result.n);
+    }
+}

@@ -11,7 +11,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use serde::Deserialize;
-use super::types::ToolCallDetail;
+use super::types::{PermissionMode, ToolCallDetail};
 
 // ── Claude CLI JSONL stream types ────────────────────────────────────────────
 
@@ -151,13 +151,12 @@ struct ClaudeResultUsage {
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
+const SIGNAL_KILLED: i32 = -1;
+
 /// A single tool invocation recorded from agent output.
 #[derive(Debug, Clone)]
 pub struct ToolCall {
     pub name: String,
-    /// Raw JSON of the tool input. Written for record-keeping; read by test code.
-    #[allow(dead_code)]
-    pub input: String,
 }
 
 /// Per-turn token breakdown from the Claude API response.
@@ -190,6 +189,8 @@ pub struct AgentResult {
     pub cache_creation_tokens: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// Number of JSONL lines that failed to parse. Non-zero indicates a corrupt or unexpected stream.
+    pub parse_errors: u32,
 }
 
 impl AgentResult {
@@ -198,38 +199,6 @@ impl AgentResult {
         self.tool_calls.iter().any(|t| t.name.contains("8v"))
     }
 
-    /// Total number of tool calls.
-    #[allow(dead_code)]
-    pub fn tool_call_count(&self) -> usize {
-        self.tool_calls.len()
-    }
-
-    /// Whether the agent used any of the specified native tools.
-    #[allow(dead_code)]
-    pub fn used_native_tools(&self, native: &[&str]) -> bool {
-        self.tool_calls.iter().any(|t| native.contains(&t.name.as_str()))
-    }
-
-    /// Returns true if the agent response mentions any of the given violations.
-    #[allow(dead_code)]
-    pub fn surfaces_violations(&self, violations: &[String]) -> bool {
-        if violations.is_empty() {
-            return true;
-        }
-        let text = self.response_text.to_lowercase();
-        violations.iter().any(|v| {
-            let v = v.to_lowercase();
-            if text.contains(&v) {
-                return true;
-            }
-            match v.as_str() {
-                "cargo fmt" => text.contains("fmt") || text.contains("format") || text.contains("rustfmt"),
-                "clippy" => text.contains("clippy") || text.contains("lint"),
-                "cargo check" => text.contains("compile") || text.contains("cargo check"),
-                _ => false,
-            }
-        })
-    }
 }
 
 /// Drives the Claude CLI process.
@@ -243,7 +212,7 @@ impl ClaudeDriver {
         prompt: &str,
         working_dir: &Path,
         mcp_config: Option<&Path>,
-        permission_mode: &str,
+        permission_mode: Option<PermissionMode>,
         blocked_tools: &[&str],
         env_vars: &[(&str, &str)],
         settings_path: Option<&Path>,
@@ -252,8 +221,11 @@ impl ClaudeDriver {
             "--output-format", "stream-json",
             "--input-format", "stream-json",
             "--verbose",
-            "--permission-mode", permission_mode,
         ];
+        if let Some(mode) = permission_mode {
+            args.push("--permission-mode");
+            args.push(mode.as_str());
+        }
 
         let mcp_path_str;
         if let Some(config) = mcp_config {
@@ -300,7 +272,9 @@ impl ClaudeDriver {
                 "type": "user",
                 "message": { "role": "user", "content": prompt }
             });
-            writeln!(stdin, "{}", serde_json::to_string(&msg).expect("serialize"))
+            let msg_str = serde_json::to_string(&msg)
+                .map_err(|e| format!("failed to serialize stdin message: {e}"))?;
+            writeln!(stdin, "{}", msg_str)
                 .map_err(|e| format!("write stdin: {e}"))?;
         }
 
@@ -318,7 +292,7 @@ impl ClaudeDriver {
             }
         }
 
-        Self::parse_output(&output.stdout, output.status.code().unwrap_or(-1))
+        Self::parse_output(&output.stdout, output.status.code().unwrap_or(SIGNAL_KILLED))
     }
 
     fn parse_output(stdout: &[u8], exit_code: i32) -> Result<AgentResult, String> {
@@ -339,9 +313,11 @@ impl ClaudeDriver {
         let mut input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
         let mut tool_use_index: HashMap<String, usize> = HashMap::new();
+        let mut parse_errors: u32 = 0;
 
         for line in stdout.lines() {
             let Ok(msg) = serde_json::from_str::<ClaudeStreamMsg>(line) else {
+                parse_errors += 1;
                 eprintln!("  [benchmark] warning: unparseable stream line: {}", line);
                 continue;
             };
@@ -362,7 +338,7 @@ impl ClaudeDriver {
                             ClaudeContentBlock::ToolUse { id, name, input } => {
                                 let input_str = serde_json::to_string(&input)
                                     .map_err(|e| format!("failed to serialize tool input: {e}"))?;
-                                tool_calls.push(ToolCall { name: name.clone(), input: input_str.clone() });
+                                tool_calls.push(ToolCall { name: name.clone() });
                                 let idx = tool_calls_detail.len();
                                 tool_calls_detail.push(ToolCallDetail {
                                     name: name.clone(),
@@ -417,6 +393,7 @@ impl ClaudeDriver {
                         total_tokens += u.input_tokens;
                         total_tokens += u.output_tokens;
                         total_tokens += u.cache_read_input_tokens;
+                        total_tokens += u.cache_creation_input_tokens;
                     }
                     cost_usd = res.total_cost_usd;
                     model = res.model;
@@ -451,6 +428,7 @@ impl ClaudeDriver {
             cache_creation_tokens,
             input_tokens,
             output_tokens,
+            parse_errors,
         })
     }
 }

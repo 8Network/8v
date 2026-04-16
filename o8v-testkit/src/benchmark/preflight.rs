@@ -70,7 +70,7 @@ pub fn preflight_fixture(scenario: &Scenario) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::types::{Environment, Scenario, Task};
+    use super::super::types::{Agent, Environment, Scenario, Task};
 
     // Fixture with a known failing test (`test_sum_range_inclusive`). Its
     // build+check gates typically pass, but the test gate fails — so preflight
@@ -86,8 +86,9 @@ mod tests {
         description: "preflight happy path",
         task: &HAPPY_TASK,
         env: Environment {
+            agent: Agent::Claude,
             setup_8v: false,
-            permission_mode: "",
+            permission_mode: None,
             blocked_tools: &[],
             extra_env: &[],
             claude_md: None,
@@ -106,8 +107,9 @@ mod tests {
         description: "preflight green fixture",
         task: &GREEN_TASK,
         env: Environment {
+            agent: Agent::Claude,
             setup_8v: false,
-            permission_mode: "",
+            permission_mode: None,
             blocked_tools: &[],
             extra_env: &[],
             claude_md: None,

@@ -115,20 +115,28 @@ impl BenchmarkStore {
         Ok(records)
     }
 
-    /// Write a structured report JSON for an experiment.
-    /// File: `<experiment_name>/report.json`.
+    /// Write structured report artifacts for an experiment.
+    /// Files: `<experiment_name>/report.json` and `<experiment_name>/report.md`.
+    /// Returns the directory path containing both artifacts.
     pub fn write_report(&self, experiment_name: &str, report: &super::report::ReportJson) -> Result<PathBuf, std::io::Error> {
         let dir = self.containment.as_path().join(experiment_name);
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join("report.json");
-        let json = serde_json::to_string_pretty(report)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        // Use ContainmentRoot rooted at the sub-dir for safe_write.
+
         let sub_containment = ContainmentRoot::new(&dir)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
-        o8v_fs::safe_write(&path, &sub_containment, json.as_bytes())
+
+        // report.json
+        let json = serde_json::to_string_pretty(report)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
-        Ok(path)
+        o8v_fs::safe_write(&dir.join("report.json"), &sub_containment, json.as_bytes())
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+        // report.md
+        let md = super::report::render_markdown(report);
+        o8v_fs::safe_write(&dir.join("report.md"), &sub_containment, md.as_bytes())
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+        Ok(dir)
     }
 
     /// The containment root for all fs operations.
@@ -145,7 +153,7 @@ impl BenchmarkStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::benchmark::types::{TurnRecord, Verification};
+    use crate::benchmark::types::{TurnRecord, TurnRole, Verification};
 
     fn sample_record() -> Observation {
         Observation {
@@ -159,7 +167,7 @@ mod tests {
             exit_code: 0,
             tool_names: vec!["8v".to_string()],
             turns: vec![TurnRecord {
-                role: "text".to_string(),
+                role: TurnRole::Unknown,
                 input_tokens: 100,
                 output_tokens: 50,
                 cache_read_input_tokens: 0,
@@ -181,8 +189,8 @@ mod tests {
             session_id: None,
             stop_reason: None,
             is_error: false,
-            cache_read_tokens: 0,
-            cache_creation_tokens: 0,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
             input_tokens: 0,
             output_tokens: 0,
             turn_count: 0,
@@ -264,7 +272,7 @@ mod tests {
             schema_version: 1,
             experiment: "test-exp".into(),
             commit: "abc".into(),
-            version_8v: "0.1.0".into(),
+            version_8v: Some("0.1.0".into()),
             started_ms: 1000,
             finished_ms: 2000,
             agent_name: Some("claude-code".into()),
@@ -273,7 +281,7 @@ mod tests {
             mcp_protocol_version: None,
             task: super::super::report::TaskInfo {
                 name: "test".into(),
-                fixture: "test-fixture".into(),
+                task_name: Some("test-fixture".into()),
                 prompt_sha: "abc123".into(),
             },
             conditions: vec![],
@@ -286,13 +294,24 @@ mod tests {
             runs: vec![],
         };
 
-        let path = store.write_report("test-exp", &report).unwrap();
-        assert!(path.exists());
+        let dir = store.write_report("test-exp", &report).unwrap();
+        assert!(dir.exists());
 
-        let content = std::fs::read_to_string(&path).unwrap();
+        // report.json round-trips
+        let json_path = dir.join("report.json");
+        assert!(json_path.exists(), "report.json must exist");
+        let content = std::fs::read_to_string(&json_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed["schema_version"], 1);
         assert_eq!(parsed["experiment"], "test-exp");
         assert_eq!(parsed["agent_name"], "claude-code");
+
+        // report.md round-trips
+        let md_path = dir.join("report.md");
+        assert!(md_path.exists(), "report.md must exist");
+        let md = std::fs::read_to_string(&md_path).unwrap();
+        assert!(md.starts_with("# Benchmark"), "markdown must start with header");
+        assert!(md.contains("test-exp"), "markdown must contain experiment name");
+        assert!(md.contains("claude-code"), "markdown must contain agent name");
     }
 }

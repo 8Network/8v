@@ -13,6 +13,7 @@ use std::time::SystemTime;
 
 use crate::scaffold::{fixture_path, TempProject};
 use super::claude::{AgentResult, ClaudeDriver};
+use super::codex::CodexDriver;
 use super::store::BenchmarkStore;
 use super::types::*;
 
@@ -48,25 +49,38 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
     let mcp_config;
     let settings_path;
 
-    if scenario.env.setup_8v {
-        run_8v_init(project.path(), binary);
-        settings_path = Some(
-            std::fs::canonicalize(project.path().join(".claude/settings.json"))
-                .expect("8v init --yes ran but .claude/settings.json is missing — this is a bug in 8v init"),
-        );
-    } else {
-        // Baseline: write .mcp.json with the 8v MCP server so both conditions pay
-        // the same MCP schema tax. The CLAUDE.md (written below) tells the agent
-        // to use native tools — the MCP registration does not change that.
-        write_mcp_json(project.path(), binary);
-        settings_path = None;
-    }
-    // Both conditions have .mcp.json — set it for the driver.
-    mcp_config = Some(project.path().join(".mcp.json"));
+    match scenario.env.agent {
+        Agent::Claude => {
+            if scenario.env.setup_8v {
+                run_8v_init(project.path(), binary);
+                settings_path = Some(
+                    std::fs::canonicalize(project.path().join(".claude/settings.json"))
+                        .expect("8v init --yes ran but .claude/settings.json is missing — this is a bug in 8v init"),
+                );
+            } else {
+                write_mcp_json(project.path(), binary);
+                settings_path = None;
+            }
+            mcp_config = Some(project.path().join(".mcp.json"));
 
-    if let Some(content) = scenario.env.claude_md {
-        project.write_file("CLAUDE.md", content.as_bytes())
-            .expect("write custom CLAUDE.md");
+            if let Some(content) = scenario.env.claude_md {
+                project.write_file("CLAUDE.md", content.as_bytes())
+                    .expect("write custom CLAUDE.md");
+            }
+        }
+        Agent::Codex => {
+            if scenario.env.setup_8v {
+                run_8v_init(project.path(), binary);
+                write_codex_config(project.path(), binary);
+            }
+            mcp_config = None;
+            settings_path = None;
+
+            if let Some(content) = scenario.env.claude_md {
+                project.write_file("AGENTS.md", content.as_bytes())
+                    .expect("write custom AGENTS.md");
+            }
+        }
     }
 
     // ── 2. Run agent ────────────────────────────────────────────────────────
@@ -83,16 +97,32 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         }
     }
 
-    let agent_result = ClaudeDriver::run(
-        &prompt,
-        project.path(),
-        mcp_config.as_deref(),
-        scenario.env.permission_mode,
-        scenario.env.blocked_tools,
-        scenario.env.extra_env,
-        settings_path.as_deref(),
-    )
-    .expect("claude driver failed");
+    let agent_result = match scenario.env.agent {
+        Agent::Claude => ClaudeDriver::run(
+            &prompt,
+            project.path(),
+            mcp_config.as_deref(),
+            scenario.env.permission_mode,
+            scenario.env.blocked_tools,
+            scenario.env.extra_env,
+            settings_path.as_deref(),
+        )
+        .expect("claude driver failed"),
+        Agent::Codex => {
+            // disable_shell correlates with setup_8v today: when 8v MCP is
+            // registered, shell access is redundant and we disable it to force
+            // the agent through MCP. If these two concepts diverge in the
+            // future, add a separate `disable_shell` field to ScenarioEnv.
+            let disable_shell = scenario.env.setup_8v;
+            CodexDriver::run(
+                &prompt,
+                project.path(),
+                scenario.env.extra_env,
+                disable_shell,
+            )
+            .expect("codex driver failed")
+        }
+    };
 
     // ── 3. Collect internal events ──────────────────────────────────────────
     let events = collect_events(&events_path);
@@ -114,7 +144,7 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         exit_code: agent_result.exit_code,
         tool_names: agent_result.tool_calls.iter().map(|t| t.name.clone()).collect(),
         turns: agent_result.turn_usage.iter().map(|t| TurnRecord {
-            role: t.role.clone(),
+            role: TurnRole::from_str(&t.role),
             input_tokens: t.input_tokens,
             output_tokens: t.output_tokens,
             cache_read_input_tokens: t.cache_read_input_tokens,
@@ -126,8 +156,8 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         session_id: agent_result.session_id.clone(),
         stop_reason: agent_result.stop_reason.clone(),
         is_error: agent_result.is_error,
-        cache_read_tokens: agent_result.cache_read_tokens,
-        cache_creation_tokens: agent_result.cache_creation_tokens,
+        cache_read_input_tokens: agent_result.cache_read_tokens,
+        cache_creation_input_tokens: agent_result.cache_creation_tokens,
         input_tokens: agent_result.input_tokens,
         output_tokens: agent_result.output_tokens,
         turn_count: agent_result.turn_usage.len() as u32,
@@ -227,7 +257,27 @@ fn write_mcp_json(project: &Path, binary: &str) {
         .expect("write .mcp.json");
 }
 
-fn events_ndjson_path() -> std::path::PathBuf {
+fn write_codex_config(project: &Path, binary: &str) {
+    let codex_dir = project.join(".codex");
+    std::fs::create_dir_all(&codex_dir).expect("create .codex dir");
+
+    // Use the `toml` crate to serialize so binary paths with backslashes or
+    // quotes are escaped correctly without manual string manipulation.
+    let config = {
+        let mut root = toml::Table::new();
+        let mut mcp_servers = toml::Table::new();
+        let mut server = toml::Table::new();
+        server.insert("command".into(), toml::Value::String(binary.to_string()));
+        server.insert("args".into(), toml::Value::Array(vec![toml::Value::String("mcp".into())]));
+        mcp_servers.insert("8v".into(), toml::Value::Table(server));
+        root.insert("mcp_servers".into(), toml::Value::Table(mcp_servers));
+        toml::to_string(&root).expect("serialize codex config.toml")
+    };
+    std::fs::write(codex_dir.join("config.toml"), config.as_bytes())
+        .expect("write .codex/config.toml");
+}
+
+pub(super) fn events_ndjson_path() -> std::path::PathBuf {
     let home = std::env::var("HOME")
         .expect("[benchmark] HOME environment variable is not set — cannot locate events.ndjson; this is a configuration error");
     std::path::PathBuf::from(home).join(".8v").join("events.ndjson")
@@ -265,16 +315,23 @@ fn collect_events(events_path: &Path) -> CollectedEvents {
     let mut command_bytes = 0u64;
     let mut total_duration_ms = 0u64;
     let mut agent = EventAgentInfo::default();
+    let mut parse_errors = 0usize;
+    let mut no_type_events = 0usize;
 
     for (i, line) in content.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
         let Ok(raw) = serde_json::from_str::<serde_json::Value>(line) else {
+            parse_errors += 1;
             eprintln!("  [benchmark] warning: unparseable event line {}: {}", i+1, line);
             continue;
         };
-        let event_type = raw.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let Some(event_type) = raw.get("event").and_then(|v| v.as_str()) else {
+            no_type_events += 1;
+            eprintln!("  [benchmark] warning: event line {} has no 'event' field: {}", i+1, line);
+            continue;
+        };
         match event_type {
             "CommandStarted" => {
                 count += 1;
@@ -306,6 +363,12 @@ fn collect_events(events_path: &Path) -> CollectedEvents {
         }
     }
 
+    if parse_errors > 0 {
+        eprintln!("  [benchmark] warning: {} unparseable event line(s) skipped", parse_errors);
+    }
+    if no_type_events > 0 {
+        eprintln!("  [benchmark] warning: {} event line(s) with no 'event' field skipped", no_type_events);
+    }
     CollectedEvents { count, output_bytes, command_bytes, total_duration_ms, agent }
 }
 
@@ -402,6 +465,11 @@ fn print_summary(name: &str, agent: &AgentResult, record: &Observation) {
     eprintln!("  check_pass:      {:?}", record.verification.check_pass);
     eprintln!("  build_pass:      {:?}", record.verification.build_pass);
     eprintln!("  tool names:      {:?}", record.tool_names);
+    for (i, detail) in record.tool_calls_detail.iter().enumerate() {
+        let err = if detail.is_error { " [ERROR]" } else { "" };
+        let input_preview: String = detail.input.chars().take(120).collect();
+        eprintln!("  tool[{i}]:         {} → {}{} ({} bytes out)", detail.name, input_preview, err, detail.output_bytes);
+    }
     if let Some(name) = &record.agent_name {
         let ver = record.agent_version.as_deref().unwrap_or("?");
         let proto = record.mcp_protocol_version.as_deref().unwrap_or("?");

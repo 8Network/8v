@@ -19,7 +19,7 @@ pub struct ReportJson {
     pub schema_version: u32,
     pub experiment: String,
     pub commit: String,
-    pub version_8v: String,
+    pub version_8v: Option<String>,
     pub started_ms: i64,
     pub finished_ms: i64,
     pub agent_name: Option<String>,
@@ -36,7 +36,7 @@ pub struct ReportJson {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskInfo {
     pub name: String,
-    pub fixture: String,
+    pub task_name: Option<String>,
     pub prompt_sha: String,
 }
 
@@ -94,10 +94,10 @@ pub struct ConditionReport {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeltaReport {
     pub condition: String,
-    pub cost_delta_pct: Option<f64>,
-    pub tokens_delta_pct: f64,
-    pub turns_delta_pct: f64,
-    pub calls_delta_pct: f64,
+    pub cost_delta_ratio: Option<f64>,
+    pub tokens_delta_ratio: f64,
+    pub turns_delta_ratio: f64,
+    pub calls_delta_ratio: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -122,6 +122,9 @@ pub struct RunRecord {
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_creation_tokens: u64,
+    /// Full tool call sequence — name, input args, output size, error flag.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls_detail: Vec<super::types::ToolCallDetail>,
 }
 
 // ── Builder ─────────────────────────────────────────────────────────────────
@@ -132,14 +135,13 @@ pub fn build_report(result: &ExperimentResult) -> ReportJson {
     let agent_version = first_obs.and_then(|o| o.agent_version.clone());
     let model_id = first_obs.and_then(|o| o.model.clone());
     let mcp_protocol_version = first_obs.and_then(|o| o.mcp_protocol_version.clone());
-    let version_8v = first_obs.map(|o| o.version.clone()).unwrap_or_default();
+    let version_8v = first_obs.map(|o| o.version.clone());
 
     let prompt_text = result.task.clone();
-    let prompt_sha = sha256_hex(&prompt_text);
+    let prompt_sha = hash_hex(&prompt_text);
 
-    let fixture = result.control.observations.first()
-        .map(|o| o.task_name.clone())
-        .unwrap_or_default();
+    let task_name = result.control.observations.first()
+        .map(|o| o.task_name.clone());
 
     let mut conditions = Vec::new();
     let mut runs = Vec::new();
@@ -174,7 +176,7 @@ pub fn build_report(result: &ExperimentResult) -> ReportJson {
         mcp_protocol_version,
         task: TaskInfo {
             name: result.task.clone(),
-            fixture,
+            task_name,
             prompt_sha,
         },
         conditions,
@@ -205,21 +207,37 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
             check_pass: obs.verification.check_pass,
             input_tokens: obs.input_tokens,
             output_tokens: obs.output_tokens,
-            cache_read_tokens: obs.cache_read_tokens,
-            cache_creation_tokens: obs.cache_creation_tokens,
+            cache_read_tokens: obs.cache_read_input_tokens,
+            cache_creation_tokens: obs.cache_creation_input_tokens,
+            tool_calls_detail: obs.tool_calls_detail.clone(),
         });
     }
 
     let tokens = stat_block(sample, |o| o.total_tokens as f64);
-    let cost_usd = stat_block(sample, |o| o.cost_usd.unwrap_or(0.0));
+    let cost_usd = {
+        let costs: Vec<f64> = sample.observations.iter()
+            .filter_map(|o| o.cost_usd)
+            .collect();
+        if costs.is_empty() {
+            StatBlock { mean: 0.0, stddev: 0.0, min: 0.0, max: 0.0, cv: 0.0 }
+        } else {
+            let mean = costs.iter().sum::<f64>() / costs.len() as f64;
+            let variance = costs.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / costs.len() as f64;
+            let stddev = variance.sqrt();
+            let min = costs.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max = costs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let cv = if mean.abs() > f64::EPSILON { stddev / mean } else { 0.0 };
+            StatBlock { mean, stddev, min, max, cv }
+        }
+    };
     let turns = stat_block(sample, |o| o.turn_count as f64);
     let tool_calls = stat_block(sample, |o| o.tool_names.len() as f64);
 
     let tokens_by_category = TokenBreakdown {
         input: stat_block(sample, |o| o.input_tokens as f64),
         output: stat_block(sample, |o| o.output_tokens as f64),
-        cache_read: stat_block(sample, |o| o.cache_read_tokens as f64),
-        cache_creation: stat_block(sample, |o| o.cache_creation_tokens as f64),
+        cache_read: stat_block(sample, |o| o.cache_read_input_tokens as f64),
+        cache_creation: stat_block(sample, |o| o.cache_creation_input_tokens as f64),
     };
 
     let tools_histogram = build_tools_histogram(sample);
@@ -257,8 +275,8 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
 }
 
 fn stat_block(sample: &Sample, f: impl Fn(&Observation) -> f64 + Copy) -> StatBlock {
-    let mean = sample.mean(f);
-    let stddev = sample.stddev(f);
+    let mean = sample.mean(f).unwrap_or(0.0);
+    let stddev = sample.stddev(f).unwrap_or(0.0);
     let cv = if mean.abs() > f64::EPSILON { stddev / mean } else { 0.0 };
     let values: Vec<f64> = sample.observations.iter().map(f).collect();
     let min = values.iter().copied().fold(f64::INFINITY, f64::min);
@@ -339,23 +357,34 @@ fn has_error_storm(details: &[super::types::ToolCallDetail]) -> bool {
 }
 
 fn build_deltas(control: &Sample, treatments: &[Sample]) -> Vec<DeltaReport> {
-    let ctrl_tokens = control.mean(|o| o.total_tokens as f64);
-    let ctrl_cost = control.mean(|o| o.cost_usd.unwrap_or(0.0));
-    let ctrl_turns = control.mean(|o| o.turn_count as f64);
-    let ctrl_calls = control.mean(|o| o.tool_names.len() as f64);
+    let ctrl_tokens = control.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
+    let ctrl_cost = {
+        let costs: Vec<f64> = control.observations.iter().filter_map(|o| o.cost_usd).collect();
+        if costs.is_empty() { None } else { Some(costs.iter().sum::<f64>() / costs.len() as f64) }
+    };
+    let ctrl_turns = control.mean(|o| o.turn_count as f64).unwrap_or(0.0);
+    let ctrl_calls = control.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
 
     treatments.iter().map(|t| {
-        let t_tokens = t.mean(|o| o.total_tokens as f64);
-        let t_cost = t.mean(|o| o.cost_usd.unwrap_or(0.0));
-        let t_turns = t.mean(|o| o.turn_count as f64);
-        let t_calls = t.mean(|o| o.tool_names.len() as f64);
+        let t_tokens = t.mean(|o| o.total_tokens as f64).unwrap_or(0.0);
+        let t_cost = {
+            let costs: Vec<f64> = t.observations.iter().filter_map(|o| o.cost_usd).collect();
+            if costs.is_empty() { None } else { Some(costs.iter().sum::<f64>() / costs.len() as f64) }
+        };
+        let t_turns = t.mean(|o| o.turn_count as f64).unwrap_or(0.0);
+        let t_calls = t.mean(|o| o.tool_names.len() as f64).unwrap_or(0.0);
+
+        let cost_delta_ratio = match (ctrl_cost, t_cost) {
+            (Some(c), Some(t)) if c > 0.0 => Some(pct_delta(c, t)),
+            _ => None,
+        };
 
         DeltaReport {
             condition: t.description.clone(),
-            tokens_delta_pct: pct_delta(ctrl_tokens, t_tokens),
-            cost_delta_pct: if ctrl_cost > 0.0 { Some(pct_delta(ctrl_cost, t_cost)) } else { None },
-            turns_delta_pct: pct_delta(ctrl_turns, t_turns),
-            calls_delta_pct: pct_delta(ctrl_calls, t_calls),
+            tokens_delta_ratio: pct_delta(ctrl_tokens, t_tokens),
+            cost_delta_ratio,
+            turns_delta_ratio: pct_delta(ctrl_turns, t_turns),
+            calls_delta_ratio: pct_delta(ctrl_calls, t_calls),
         }
     }).collect()
 }
@@ -384,7 +413,7 @@ fn assess_confidence(n: usize, max_cv: f64) -> (bool, String) {
     (true, format!("N={n}, max CV={:.1}%, 95% CI half-width {:.1}%", max_cv * 100.0, half_width_pct * 100.0))
 }
 
-fn sha256_hex(s: &str) -> String {
+fn hash_hex(s: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
@@ -396,7 +425,218 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+        .expect("system clock")
+}
+
+// ── Markdown renderer ───────────────────────────────────────────────────────
+
+pub fn render_markdown(report: &ReportJson) -> String {
+    if report.conditions.is_empty() {
+        return format!(
+            "# Benchmark — {}\n\n**Agent:** {}  |  **Runs:** 0\n\nNo conditions recorded.\n",
+            report.experiment, report.agent_name.as_deref().unwrap_or("unknown")
+        );
+    }
+
+    let mut md = String::new();
+
+    // Header
+    md.push_str(&format!("# Benchmark — {}\n\n", report.experiment));
+    md.push_str(&format!(
+        "**Commit:** {}  |  **8v version:** {}  |  **Runs:** N={} per condition\n",
+        report.commit, report.version_8v.as_deref().unwrap_or("unknown"), report.confidence.n_per_condition,
+    ));
+    md.push_str(&format!(
+        "**Task:** {}  |  **Fixture:** {}\n",
+        report.task.name, report.task.task_name.as_deref().unwrap_or("unknown"),
+    ));
+    if let Some(agent) = &report.agent_name {
+        let ver = report.agent_version.as_deref().unwrap_or("?");
+        let model = report.model_id.as_deref().unwrap_or("unknown");
+        md.push_str(&format!("**Agent:** {} v{}  |  **Model:** {}\n", agent, ver, model));
+    }
+    md.push('\n');
+
+    // Headline table
+    md.push_str("## Headline\n\n");
+    md.push_str("| Condition | Cost (mean) | Cost vs control | Tokens (mean) | Turns | Verification |\n");
+    md.push_str("|-----------|------------:|----------------:|--------------:|------:|:-------------|\n");
+
+    for (i, cond) in report.conditions.iter().enumerate() {
+        let cost_str = format!("${:.4}", cond.cost_usd.mean);
+        let delta_str = if i == 0 {
+            "\u{2014}".to_string()
+        } else {
+            report.deltas_vs_control.get(i - 1)
+                .and_then(|d| d.cost_delta_ratio)
+                .map(|d| format!("**{:+.1}%**", d * 100.0))
+                .unwrap_or_else(|| "n/a".into())
+        };
+        let tokens_str = format_number(cond.tokens.mean as u64);
+        let turns_str = format!("{:.1}", cond.turns.mean);
+        let verify = format!(
+            "tests {}/{}",
+            cond.verification.tests_pass.passed,
+            cond.verification.tests_pass.total,
+        );
+        md.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} |\n",
+            cond.description, cost_str, delta_str, tokens_str, turns_str, verify,
+        ));
+    }
+    md.push('\n');
+
+    if !report.confidence.publishable {
+        md.push_str(&format!("> {}\n\n", report.confidence.reason));
+    }
+
+    // Token breakdown
+    if report.conditions.len() >= 2 {
+        md.push_str("## Token breakdown (means)\n\n");
+        md.push_str("| Category | ");
+        for cond in &report.conditions {
+            md.push_str(&format!("{} | ", cond.description));
+        }
+        md.push_str("\n|----------|");
+        for _ in &report.conditions {
+            md.push_str("--------:|");
+        }
+        md.push('\n');
+
+        for (label, values) in [
+            ("input", report.conditions.iter().map(|c| c.tokens_by_category.input.mean).collect::<Vec<_>>()),
+            ("output", report.conditions.iter().map(|c| c.tokens_by_category.output.mean).collect::<Vec<_>>()),
+            ("cache_read", report.conditions.iter().map(|c| c.tokens_by_category.cache_read.mean).collect::<Vec<_>>()),
+            ("cache_creation", report.conditions.iter().map(|c| c.tokens_by_category.cache_creation.mean).collect::<Vec<_>>()),
+        ] {
+            md.push_str(&format!("| {} |", label));
+            for val in values {
+                md.push_str(&format!(" {} |", format_number(val as u64)));
+            }
+            md.push('\n');
+        }
+        md.push('\n');
+    }
+
+    // Variance
+    md.push_str("## Variance\n\n");
+    md.push_str("| Metric | ");
+    for cond in &report.conditions {
+        md.push_str(&format!("{} | ", cond.description));
+    }
+    md.push_str("\n|--------|");
+    for _ in &report.conditions {
+        md.push_str("--------:|");
+    }
+    md.push('\n');
+    md.push_str("| Tokens CV% |");
+    for cond in &report.conditions {
+        md.push_str(&format!(" {:.1}% |", cond.tokens.cv * 100.0));
+    }
+    md.push('\n');
+    md.push_str("| Cost CV% |");
+    for cond in &report.conditions {
+        md.push_str(&format!(" {:.1}% |", cond.cost_usd.cv * 100.0));
+    }
+    md.push_str("\n\n");
+
+    // Tools histogram
+    if report.conditions.len() >= 2 {
+        let mut all_tools: BTreeMap<String, ()> = BTreeMap::new();
+        for cond in &report.conditions {
+            for key in cond.tools_histogram.keys() {
+                all_tools.insert(key.clone(), ());
+            }
+        }
+        if !all_tools.is_empty() {
+            md.push_str("## Mechanism — tools histogram (per-run means)\n\n");
+            md.push_str("| Tool |");
+            for cond in &report.conditions {
+                md.push_str(&format!(" {} |", cond.description));
+            }
+            md.push_str("\n|------|");
+            for _ in &report.conditions {
+                md.push_str("--------:|");
+            }
+            md.push('\n');
+            for tool in all_tools.keys() {
+                md.push_str(&format!("| {} |", tool));
+                for cond in &report.conditions {
+                    let val = cond.tools_histogram.get(tool).copied().unwrap_or(0.0);
+                    md.push_str(&format!(" {:.1} |", val));
+                }
+                md.push('\n');
+            }
+            md.push('\n');
+        }
+    }
+
+    // Landmines
+    md.push_str("## Landmines\n\n");
+    let any_landmines = report.conditions.iter().any(|c| {
+        c.landmines.stuck_loop_runs > 0 || c.landmines.is_error_storms > 0
+    });
+    if any_landmines {
+        for cond in &report.conditions {
+            if cond.landmines.stuck_loop_runs > 0 {
+                md.push_str(&format!(
+                    "- **{}**: {} run(s) with stuck loop\n",
+                    cond.description, cond.landmines.stuck_loop_runs,
+                ));
+            }
+            if cond.landmines.is_error_storms > 0 {
+                md.push_str(&format!(
+                    "- **{}**: {} run(s) with error storm\n",
+                    cond.description, cond.landmines.is_error_storms,
+                ));
+            }
+        }
+    } else {
+        md.push_str("*No landmines detected.*\n");
+    }
+    md.push('\n');
+
+    // Per-run raw data
+    md.push_str("## Per-run raw data\n\n");
+    md.push_str("| Run | Condition | Tokens | Cost | Turns | Tools | Tests | Build | Check |\n");
+    md.push_str("|-----|-----------|-------:|-----:|------:|------:|:-----:|:-----:|:-----:|\n");
+    for run in &report.runs {
+        let cost_str = run.cost_usd.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "n/a".into());
+        let check = |v: Option<bool>| match v {
+            Some(true) => "\u{2714}",
+            Some(false) => "\u{2718}",
+            None => "\u{2014}",
+        };
+        md.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            run.run_index,
+            run.condition,
+            format_number(run.tokens),
+            cost_str,
+            run.turns,
+            run.tool_calls,
+            check(run.tests_pass),
+            check(run.build_pass),
+            check(run.check_pass),
+        ));
+    }
+
+    md
+}
+
+fn format_number(n: u64) -> String {
+    if n == 0 {
+        return "0".into();
+    }
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -424,8 +664,8 @@ mod tests {
             session_id: None,
             stop_reason: None,
             is_error: false,
-            cache_read_tokens: tokens / 2,
-            cache_creation_tokens: tokens / 4,
+            cache_read_input_tokens: tokens / 2,
+            cache_creation_input_tokens: tokens / 4,
             input_tokens: 10,
             output_tokens: tokens / 8,
             turn_count: turns,
@@ -523,8 +763,8 @@ mod tests {
         let ctrl_cost = (0.20 + 0.25 + 0.22) / 3.0;
         let treat_cost = (0.12 + 0.14 + 0.13) / 3.0;
         let expected = (treat_cost - ctrl_cost) / ctrl_cost;
-        assert!((delta.cost_delta_pct.unwrap() - expected).abs() < 0.001);
-        assert!(delta.cost_delta_pct.unwrap() < 0.0, "treatment should be cheaper");
+        assert!((delta.cost_delta_ratio.unwrap() - expected).abs() < 0.001);
+        assert!(delta.cost_delta_ratio.unwrap() < 0.0, "treatment should be cheaper");
     }
 
     #[test]
@@ -616,5 +856,136 @@ mod tests {
     fn pct_delta_zero_control() {
         let d = pct_delta(0.0, 50.0);
         assert_eq!(d, 0.0);
+    }
+
+    // ── Markdown rendering tests ──────────────────────────────────────
+
+    #[test]
+    fn render_markdown_has_header_and_metadata() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.starts_with("# Benchmark — test-experiment\n"));
+        assert!(md.contains("**Commit:**"));
+        assert!(md.contains("**Task:** test-task"));
+        assert!(md.contains("**Agent:** claude-code v1.0.0"));
+    }
+
+    #[test]
+    fn render_markdown_has_headline_table() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.contains("## Headline"));
+        assert!(md.contains("| Condition | Cost (mean)"));
+        assert!(md.contains("| Native |"));
+        assert!(md.contains("| With 8v |"));
+    }
+
+    #[test]
+    fn render_markdown_has_token_breakdown() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.contains("## Token breakdown"));
+        assert!(md.contains("| input |"));
+        assert!(md.contains("| output |"));
+        assert!(md.contains("| cache_read |"));
+        assert!(md.contains("| cache_creation |"));
+    }
+
+    #[test]
+    fn render_markdown_has_variance() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.contains("## Variance"));
+        assert!(md.contains("Tokens CV%"));
+        assert!(md.contains("Cost CV%"));
+    }
+
+    #[test]
+    fn render_markdown_has_tools_histogram() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.contains("## Mechanism — tools histogram"));
+        assert!(md.contains("| Bash |"));
+        assert!(md.contains("| mcp__8v__8v |"));
+    }
+
+    #[test]
+    fn render_markdown_has_landmines_section() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.contains("## Landmines"));
+        assert!(md.contains("No landmines detected"));
+    }
+
+    #[test]
+    fn render_markdown_has_per_run_data() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        assert!(md.contains("## Per-run raw data"));
+        // Count rows in the per-run table by looking for "| 0 |" through "| 5 |"
+        let in_per_run = md.split("## Per-run raw data").nth(1).unwrap();
+        let data_rows: Vec<&str> = in_per_run.lines()
+            .filter(|l| l.starts_with("| ") && !l.starts_with("| Run") && !l.starts_with("|--"))
+            .collect();
+        assert_eq!(data_rows.len(), 6, "expected 6 per-run rows, got: {}", data_rows.len());
+    }
+
+    #[test]
+    fn render_markdown_includes_confidence_info() {
+        let report = build_report(&make_result());
+        let md = render_markdown(&report);
+        if !report.confidence.publishable {
+            assert!(md.contains(&report.confidence.reason), "non-publishable must show reason");
+        }
+        // Either way, the headline section must reference conditions
+        assert!(md.contains("N="), "markdown must mention sample size");
+    }
+
+    // ── Acceptance: round-trip through BenchmarkStore ────────────────
+
+    #[test]
+    fn acceptance_report_round_trip_through_store() {
+        let result = make_result();
+        let report = build_report(&result);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let store = crate::benchmark::store::BenchmarkStore::at(tmp.path()).unwrap();
+        let dir = store.write_report("acceptance-test", &report).unwrap();
+
+        // report.json: parseable and schema matches
+        let json_path = dir.join("report.json");
+        assert!(json_path.exists());
+        let json_str = std::fs::read_to_string(&json_path).unwrap();
+        let parsed: ReportJson = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.schema_version, 1);
+        assert_eq!(parsed.experiment, "test-experiment");
+        assert_eq!(parsed.conditions.len(), 2);
+        assert_eq!(parsed.deltas_vs_control.len(), 1);
+        assert_eq!(parsed.runs.len(), 6);
+        assert_eq!(parsed.confidence.n_per_condition, 3);
+
+        // report.md: valid markdown with all sections
+        let md_path = dir.join("report.md");
+        assert!(md_path.exists());
+        let md = std::fs::read_to_string(&md_path).unwrap();
+        let expected_sections = [
+            "# Benchmark",
+            "## Headline",
+            "## Token breakdown",
+            "## Variance",
+            "## Mechanism",
+            "## Landmines",
+            "## Per-run raw data",
+        ];
+        for section in &expected_sections {
+            assert!(md.contains(section), "missing section: {section}");
+        }
+
+        // JSON and markdown agree on key facts
+        assert!(md.contains(&parsed.experiment));
+        assert!(md.contains(&parsed.commit));
+        for cond in &parsed.conditions {
+            assert!(md.contains(&cond.description), "markdown missing condition: {}", cond.description);
+        }
     }
 }

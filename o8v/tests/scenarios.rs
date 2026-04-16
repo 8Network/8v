@@ -9,22 +9,20 @@
 //!
 //! Each scenario maps to a test in agent_benchmark.rs.
 
-use o8v_testkit::benchmark::{Environment, ExperimentConfig, Scenario, Task};
+use o8v_testkit::benchmark::{Agent, Environment, ExperimentConfig, Scenario, Task};
+use o8v_testkit::benchmark::PermissionMode;
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
+// Task prompts are what a real user would say. No tool names, no workflow
+// instructions, no hints about how to work. Just the intent.
 
-/// Fix a failing test — off-by-one bug in sum_range.
-/// The agent must find the bug, fix it, and verify with cargo test.
 pub static FIX_FAILING_TEST: Task = Task {
     name: "fix-failing-test",
     fixture: "agent-benchmark/fix-test-rust",
-    prompt: "The test test_sum_range_inclusive is failing. Find the bug and fix it. \
-             Run the tests to verify your fix works.",
+    prompt: "The test test_sum_range_inclusive is failing. Find the bug and fix it.",
     variables: &[],
 };
 
-/// Diagnose code issues — clippy violation (needless &mut).
-/// The agent must identify the issue without being told what's wrong.
 pub static DIAGNOSE_ISSUES: Task = Task {
     name: "diagnose-issues",
     fixture: "agent-benchmark/diagnose-rust",
@@ -32,97 +30,63 @@ pub static DIAGNOSE_ISSUES: Task = Task {
     variables: &[],
 };
 
-/// Fix a failing Python test — safe_join has three real security bugs
-/// (parent-traversal via `..` components, absolute-path component escape,
-/// false-positive on filenames containing `..`). The agent must find and
-/// fix them so pytest passes.
 pub static FIX_PYTHON_TRAVERSAL: Task = Task {
     name: "fix-python-traversal",
     fixture: "agent-benchmark/fix-test-python",
-    prompt: "Some tests in this Python project are failing. Find the bugs, fix them, \
-             and run pytest to verify all tests pass.",
+    prompt: "Some tests in this Python project are failing. Find the bugs and fix them.",
     variables: &[],
 };
 
-/// Check a polyglot project for issues across all stacks.
-/// The agent must discover multiple stacks and report all violations.
 pub static CHECK_POLYGLOT: Task = Task {
     name: "check-polyglot",
     fixture: "agent-benchmark/check-polyglot",
-    prompt: "Check this entire project for issues across all stacks. \
-             Report everything that needs to be fixed — code quality, \
-             formatting, type errors, lint warnings.",
+    prompt: "Check this project for issues and fix everything you find.",
     variables: &[],
 };
 
 // ── Environments ─────────────────────────────────────────────────────────────
 
-/// Baseline: native tools available, MCP registered but agent chooses freely.
+/// Baseline: no 8v, no instructions. Raw agent with default tools.
 const BASELINE_ENV: Environment = Environment {
+    agent: Agent::Claude,
     setup_8v: false,
-    permission_mode: "acceptEdits",
+    permission_mode: Some(PermissionMode::AcceptEdits),
     blocked_tools: &[],
     extra_env: &[],
-    claude_md: Some("# Project\n\n\
-    Use native tools to complete the task.\n\n\
-    ## Command Discovery\n\n\
-    Start by understanding the project structure and available files:\n\n\
-    - `Glob` with pattern `**/*` — list all files in the project.\n\
-    - `Glob` with pattern `**/*.rs` — find files by extension.\n\
-    - `Glob` with pattern `**/Cargo.toml` — find project manifests.\n\
-    - `Bash` with `find . -name \"*.toml\"` — find files by name.\n\n\
-    ## Reading Files\n\n\
-    Read files to understand code structure before making changes:\n\n\
-    - `Read` — read a full file or a specific line range.\n\
-    - `Read` with `offset` and `limit` — read only the lines you need.\n\
-    - Start with small reads to locate relevant sections, then expand.\n\n\
-    ## Searching Files\n\n\
-    Search across the codebase to find patterns, usages, and related code:\n\n\
-    - `Grep` with a pattern — find content across files.\n\
-    - `Grep` with `glob` filter — restrict to specific file types (e.g. `*.rs`).\n\
-    - `Grep` with `-i` — case-insensitive search.\n\
-    - `Grep` with context lines — see surrounding code.\n\n\
-    ## Writing Files\n\n\
-    Make targeted changes to files:\n\n\
-    - `Edit` — replace specific text in a file (preferred for targeted changes).\n\
-    - `Write` — write an entire file (use only when creating new files).\n\
-    - Always `Read` the file before editing to confirm the exact text to replace.\n\n\
-    ## Building\n\n\
-    Compile the project with cargo:\n\n\
-    - `Bash` with `cargo build` — build the project.\n\
-    - `Bash` with `cargo build --release` — optimized build.\n\
-    - `Bash` with `cargo check` — fast type-check without producing a binary.\n\n\
-    ## Running Commands\n\n\
-    Execute any command via Bash:\n\n\
-    - `Bash` with `cargo run -- <args>` — run the project binary.\n\
-    - `Bash` with any shell command — grep, find, cat, etc.\n\n\
-    ## Testing and Verification\n\n\
-    Run tests and checks to verify your work:\n\n\
-    - `Bash` with `cargo test` — run all tests.\n\
-    - `Bash` with `cargo test <name>` — run a specific test.\n\
-    - `Bash` with `cargo clippy -- -D warnings` — lint (all warnings are errors).\n\
-    - `Bash` with `cargo fmt` — auto-format all files.\n\
-    - `Bash` with `cargo fmt --check` — check formatting without modifying files.\n\n\
-    ## Recommended Workflow\n\n\
-    1. `Glob` `**/*` — list all files to understand the project layout.\n\
-    2. `Glob` `**/Cargo.toml` — find Rust project manifests.\n\
-    3. `Grep` for relevant function or struct names — locate the code to change.\n\
-    4. `Read` the relevant file — understand context before editing.\n\
-    5. `Edit` — make your change with precision.\n\
-    6. `Bash` `cargo test` — verify correctness.\n\
-    7. `Bash` `cargo build` — confirm it compiles.\n\
-    8. `Bash` `cargo clippy -- -D warnings` — run lint checks.\n\
-    9. `Bash` `cargo fmt` — format before declaring done.\n"),
+    claude_md: None,
 };
 
 /// 8v available: full `8v init --yes`, native tools also available.
 /// Measures whether the agent chooses 8v when both options exist.
 const WITH_8V_ENV: Environment = Environment {
+    agent: Agent::Claude,
     setup_8v: true,
-    permission_mode: "acceptEdits",
+    permission_mode: Some(PermissionMode::AcceptEdits),
     blocked_tools: &[],
     extra_env: &[],
     claude_md: None, // 8v init writes CLAUDE.md
+};
+
+// ── Codex environments ──────────────────────────────────────────────────────
+
+/// Codex baseline: no 8v, no instructions. Raw agent with default tools.
+const CODEX_BASELINE_ENV: Environment = Environment {
+    agent: Agent::Codex,
+    setup_8v: false,
+    permission_mode: None,
+    blocked_tools: &[],
+    extra_env: &[],
+    claude_md: None,
+};
+
+/// Codex with 8v: MCP server registered, AGENTS.md instructs to use 8v.
+const CODEX_WITH_8V_ENV: Environment = Environment {
+    agent: Agent::Codex,
+    setup_8v: true,
+    permission_mode: None,
+    blocked_tools: &[],
+    extra_env: &[],
+    claude_md: None, // 8v init writes AGENTS.md
 };
 
 // ── Scenarios ────────────────────────────────────────────────────────────────
@@ -219,4 +183,30 @@ pub static EXPERIMENT_CHECK_POLYGLOT: ExperimentConfig = ExperimentConfig {
     control: &CHECK_POLYGLOT_BASELINE,
     treatments: &[&CHECK_POLYGLOT_8V],
     n: 6,
+};
+
+// ── Codex scenarios ────────────────────────────────────────────────────────
+
+pub static FIX_TEST_CODEX_BASELINE: Scenario = Scenario {
+    name: "fix-test-codex-baseline",
+    description: "Codex Native",
+    task: &FIX_FAILING_TEST,
+    env: CODEX_BASELINE_ENV,
+};
+
+pub static FIX_TEST_CODEX_8V: Scenario = Scenario {
+    name: "fix-test-codex-8v",
+    description: "Codex + 8v",
+    task: &FIX_FAILING_TEST,
+    env: CODEX_WITH_8V_ENV,
+};
+
+// ── Codex experiments ──────────────────────────────────────────────────────
+
+pub static EXPERIMENT_FIX_TEST_CODEX: ExperimentConfig = ExperimentConfig {
+    name: "fix-failing-test-codex",
+    task: &FIX_FAILING_TEST,
+    control: &FIX_TEST_CODEX_BASELINE,
+    treatments: &[&FIX_TEST_CODEX_8V],
+    n: 3,
 };
