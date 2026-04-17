@@ -32,26 +32,43 @@ pub fn build_context(interrupted: &'static AtomicBool) -> CommandContext {
     let bus = Arc::new(EventBus::new());
 
     // Best-effort workspace resolution from CWD.
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Ok((project_root, storage, config)) =
-            resolve_workspace(cwd.to_string_lossy().as_ref())
-        {
-            // Subscribe StorageSubscriber before any events are emitted.
-            let sub = Arc::new(crate::storage_subscriber::StorageSubscriber::new(
-                storage.clone(),
-            ));
-            bus.subscribe(sub);
+    // Both failures emit a tracing::warn! so operators can identify why storage
+    // is unavailable, rather than seeing a silent no-workspace fallback.
+    match std::env::current_dir() {
+        Ok(cwd) => {
+            match resolve_workspace(cwd.to_string_lossy().as_ref()) {
+                Ok((project_root, storage, config)) => {
+                    // Subscribe StorageSubscriber before any events are emitted.
+                    let sub = Arc::new(crate::storage_subscriber::StorageSubscriber::new(
+                        storage.clone(),
+                    ));
+                    bus.subscribe(sub);
 
-            // Insert WorkspaceRoot — the trust boundary for all file I/O in commands.
-            if let Ok(workspace_root) =
-                crate::workspace::WorkspaceRoot::new(project_root.to_string())
-            {
-                extensions.insert(workspace_root);
+                    // Insert WorkspaceRoot — the trust boundary for all file I/O in commands.
+                    if let Ok(workspace_root) =
+                        crate::workspace::WorkspaceRoot::new(project_root.to_string())
+                    {
+                        extensions.insert(workspace_root);
+                    }
+
+                    extensions.insert(project_root);
+                    extensions.insert(storage);
+                    extensions.insert(config);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        cwd = %cwd.display(),
+                        error = %e,
+                        "dispatch: could not resolve workspace from cwd;                          storage will be unavailable for this command"
+                    );
+                }
             }
-
-            extensions.insert(project_root);
-            extensions.insert(storage);
-            extensions.insert(config);
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "dispatch: could not get current_dir;                  workspace resolution skipped, storage will be unavailable"
+            );
         }
     }
 
