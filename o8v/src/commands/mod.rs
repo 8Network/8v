@@ -220,10 +220,24 @@ pub(crate) async fn dispatch_command_with_agent(
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Read(args) => {
+            use o8v_core::render::read_report::{MultiResult, ReadReport};
             let cmd = read::ReadCommand { args };
-            let (output, _, _) =
+            let (output, _, report) =
                 o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
-            Ok((output, ExitCode::SUCCESS, false))
+            // Batch-mode errors are inline in `Multi.entries`. The single-path
+            // case already propagates errors via CommandError. Exit non-zero
+            // if any entry failed, so agents can detect failure.
+            let exit = match &report {
+                ReadReport::Multi { entries }
+                    if entries
+                        .iter()
+                        .any(|e| matches!(e.result, MultiResult::Err { .. })) =>
+                {
+                    ExitCode::FAILURE
+                }
+                _ => ExitCode::SUCCESS,
+            };
+            Ok((output, exit, false))
         }
         Command::Write(args) => {
             let cmd = write::WriteCommand { args };

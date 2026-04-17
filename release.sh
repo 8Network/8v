@@ -215,13 +215,13 @@ ls -lh dist/8v-*
 for f in dist/8v-*; do
     SIZE=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f")
     if [ "$SIZE" -gt 20971520 ]; then
-        echo "WARNING: $(basename $f) is over 20MB ($SIZE bytes)"
+        echo "WARNING: $(basename "$f") is over 20MB ($SIZE bytes)"
     fi
 done
 
 # Verify dist/ contains only expected files
 EXPECTED=6
-ACTUAL=$(ls -1 dist/8v-* | wc -l | tr -d ' ')
+ACTUAL=$(find dist -maxdepth 1 -name '8v-*' | wc -l | tr -d ' ')
 if [ "$ACTUAL" -ne "$EXPECTED" ]; then
     echo "ERROR: expected $EXPECTED binaries in dist/, found $ACTUAL"
     ls -la dist/

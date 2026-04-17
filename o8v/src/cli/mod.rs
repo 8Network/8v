@@ -5,6 +5,8 @@
 //! CLI interface — parses arguments, forwards to commands.
 
 pub(crate) mod common;
+pub(crate) mod time_utc;
+pub(crate) mod version;
 
 use clap::Parser;
 
@@ -12,6 +14,7 @@ use clap::Parser;
 #[command(
     name = "8v",
     version,
+    long_version = version::long(),
     about = "Code reliability tool — one command checks everything"
 )]
 pub(crate) struct Cli {
