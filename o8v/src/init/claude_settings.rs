@@ -9,8 +9,8 @@
 //! commands 8v does not wrap. This module sets up permissions.allow for the
 //! 8v tool and permissions.deny for the native tools it replaces.
 
-use o8v_fs::FsConfig;
 use o8v::workspace::to_io;
+use o8v_fs::FsConfig;
 use serde::{Deserialize, Serialize};
 
 const MCP_TOOL_PERMISSION: &str = "mcp__8v__8v";
@@ -18,8 +18,7 @@ const MCP_TOOL_PERMISSION: &str = "mcp__8v__8v";
 /// Native file tools that 8v replaces. Denied so the agent uses 8v instead.
 /// Bash is intentionally omitted — agents need it to run commands 8v does
 /// not wrap.
-const DENIED_NATIVE_TOOLS: &[&str] =
-    &["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
+const DENIED_NATIVE_TOOLS: &[&str] = &["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 
 /// Claude Code settings.json structure.
 ///

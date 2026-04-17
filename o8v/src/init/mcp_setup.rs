@@ -2,8 +2,8 @@
 // Licensed under the Business Source License 1.1 (BSL-1.1).
 // See LICENSE file in the project root.
 
-use o8v_fs::FsConfig;
 use o8v::workspace::to_io;
+use o8v_fs::FsConfig;
 
 /// Write `.mcp.json` registering the 8v server, optionally with a custom
 /// command path.
@@ -65,8 +65,7 @@ pub(super) fn setup_mcp_json(
             }
         }
         Ok(false) => {
-            o8v_fs::safe_write(mcp_path, root, mcp_template(command).as_bytes())
-                .map_err(to_io)?;
+            o8v_fs::safe_write(mcp_path, root, mcp_template(command).as_bytes()).map_err(to_io)?;
         }
     }
 

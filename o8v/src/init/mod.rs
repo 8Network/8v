@@ -10,13 +10,13 @@ mod mcp_setup;
 
 use crate::cli::common::{EXIT_FAIL, EXIT_OK};
 use crate::hooks::install::{install_claude_hooks, install_git_commit_msg, install_git_pre_commit};
-use ai_docs::{append_section_if_missing, AI_SECTION};
+use ai_docs::{file_has_current_block, upsert_versioned_block, SentinelError, UpsertOutcome};
 use claude_settings::setup_claude_settings;
 use dialoguer::{Confirm, Select};
 use mcp_setup::setup_mcp_json;
+use o8v::workspace::{register_workspace, WorkspaceDir};
 use o8v_core::project::{ProjectKind, ProjectRoot};
 use o8v_stacks::detect_all;
-use o8v::workspace::{register_workspace, WorkspaceDir};
 use std::fs;
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -24,6 +24,9 @@ use std::process::ExitCode;
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG: &str = "[git]\nstrip_attribution = true\n";
+
+/// Version embedded at compile time from the crate's Cargo.toml.
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // ─── InitDir — path value object for init-time project files ────────────────
 
@@ -117,6 +120,11 @@ pub fn run(args: &Args) -> ExitCode {
     let projects = detect_result.projects();
     if projects.is_empty() {
         eprintln!("  No projects detected");
+        eprintln!(
+            "  warning: no stack detected at {}; `8v check` may not run anything here. \
+Run `8v init` inside a specific subproject if this is a monorepo root.",
+            root
+        );
     } else {
         for p in projects {
             let kind = match p.kind() {
@@ -213,28 +221,66 @@ pub fn run(args: &Args) -> ExitCode {
         completed.push(".mcp.json — MCP server registered");
     }
 
-    // Step 4: CLAUDE.md
+    // Step 4: CLAUDE.md — skip if AGENTS.md already has the current-version 8v block
     if confirm("Add 8v to CLAUDE.md?", args.yes) {
-        if let Err(e) =
-            append_section_if_missing(init_dir.claude_md(), "# 8v\n", AI_SECTION, project_root)
-        {
-            eprintln!("error: failed to update CLAUDE.md: {e}");
-            return ExitCode::from(EXIT_FAIL);
+        let agents_has_current = match file_has_current_block(
+            init_dir.agents_md(),
+            project_root,
+            CURRENT_VERSION,
+        ) {
+            Ok(has) => has,
+            Err(SentinelError::MissingEnd { version }) => {
+                eprintln!(
+                    "error: malformed 8v block in AGENTS.md: found '<!-- 8v:begin v{version} -->' \
+                     but no '<!-- 8v:end -->' — file is in an inconsistent state. \
+                     Remove the partial block manually and re-run `8v init`."
+                );
+                return ExitCode::from(EXIT_FAIL);
+            }
+        };
+
+        if agents_has_current {
+            eprintln!("  Skipped CLAUDE.md (AGENTS.md already has current 8v block)");
+        } else {
+            match upsert_versioned_block(init_dir.claude_md(), project_root, CURRENT_VERSION) {
+                Err(e) => {
+                    eprintln!("error: failed to update CLAUDE.md: {e}");
+                    return ExitCode::from(EXIT_FAIL);
+                }
+                Ok(UpsertOutcome::Written) => {
+                    eprintln!("✓ Updated CLAUDE.md");
+                    completed.push("CLAUDE.md — 8v instructions added");
+                }
+                Ok(UpsertOutcome::AlreadyCurrent) => {
+                    eprintln!("  CLAUDE.md already current (v{CURRENT_VERSION})");
+                }
+                Ok(UpsertOutcome::Upgraded { old_version }) => {
+                    eprintln!("✓ Updated CLAUDE.md (upgraded v{old_version} → v{CURRENT_VERSION})");
+                    completed.push("CLAUDE.md — 8v block upgraded");
+                }
+            }
         }
-        eprintln!("✓ Updated CLAUDE.md");
-        completed.push("CLAUDE.md — 8v instructions added");
     }
 
     // Step 5: AGENTS.md
     if confirm("Add 8v to AGENTS.md?", args.yes) {
-        if let Err(e) =
-            append_section_if_missing(init_dir.agents_md(), "# 8v\n", AI_SECTION, project_root)
-        {
-            eprintln!("error: failed to update AGENTS.md: {e}");
-            return ExitCode::from(EXIT_FAIL);
+        match upsert_versioned_block(init_dir.agents_md(), project_root, CURRENT_VERSION) {
+            Err(e) => {
+                eprintln!("error: failed to update AGENTS.md: {e}");
+                return ExitCode::from(EXIT_FAIL);
+            }
+            Ok(UpsertOutcome::Written) => {
+                eprintln!("✓ Updated AGENTS.md");
+                completed.push("AGENTS.md — 8v instructions added");
+            }
+            Ok(UpsertOutcome::AlreadyCurrent) => {
+                eprintln!("  AGENTS.md already current (v{CURRENT_VERSION})");
+            }
+            Ok(UpsertOutcome::Upgraded { old_version }) => {
+                eprintln!("✓ Updated AGENTS.md (upgraded v{old_version} → v{CURRENT_VERSION})");
+                completed.push("AGENTS.md — 8v block upgraded");
+            }
         }
-        eprintln!("✓ Updated AGENTS.md");
-        completed.push("AGENTS.md — 8v instructions added");
     }
 
     // Step 6: Pre-commit hook
@@ -322,8 +368,7 @@ fn confirm(prompt: &str, yes: bool) -> bool {
 /// The first `8v check` after init will write `last-check.json`. This run
 /// establishes the initial snapshot so subsequent checks compute a valid delta.
 fn run_baseline_check(containment_root: &o8v_fs::ContainmentRoot) -> Result<(), String> {
-    let project_root =
-        ProjectRoot::new(containment_root.as_path()).map_err(|e| e.to_string())?;
+    let project_root = ProjectRoot::new(containment_root.as_path()).map_err(|e| e.to_string())?;
 
     let interrupted = Box::leak(Box::new(std::sync::atomic::AtomicBool::new(false)));
     let check_config = o8v_core::CheckConfig {

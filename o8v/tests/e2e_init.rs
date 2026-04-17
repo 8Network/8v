@@ -127,3 +127,357 @@ fn init_yes_creates_mcp_and_docs() {
         );
     }
 }
+
+// ─── F-3: CLAUDE.md duplication ─────────────────────────────────────────────
+
+/// F-3: When AGENTS.md already has the 8v block, init must NOT append it to CLAUDE.md.
+#[test]
+fn init_skips_claude_md_when_agents_md_has_8v_block() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    // Pre-populate AGENTS.md with the current-version 8v versioned sentinel block.
+    // file_has_current_block checks for the HTML comment sentinels, not the old "# 8v" marker.
+    let agents_md = path.join("AGENTS.md");
+    let version = env!("CARGO_PKG_VERSION");
+    let agents_sentinel = format!(
+        "<!-- 8v:begin v{version} -->\nAlready has 8v instructions.\n<!-- 8v:end -->\n"
+    );
+    std::fs::write(&agents_md, &agents_sentinel).expect("write AGENTS.md");
+
+    // CLAUDE.md exists but does NOT have the 8v block
+    let claude_md = path.join("CLAUDE.md");
+    std::fs::write(&claude_md, "# My Project\n\nExisting instructions.\n")
+        .expect("write CLAUDE.md");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init should still exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // CLAUDE.md must NOT contain the versioned 8v sentinel (AGENTS.md already has it)
+    let claude_content = std::fs::read_to_string(&claude_md).expect("read CLAUDE.md");
+    assert!(
+        !claude_content.contains("<!-- 8v:begin"),
+        "CLAUDE.md must NOT get the 8v block when AGENTS.md already has it;\ngot:\n{claude_content}"
+    );
+
+    // AGENTS.md must be unchanged (still has the same versioned sentinel we wrote)
+    let agents_content = std::fs::read_to_string(&agents_md).expect("read AGENTS.md");
+    assert_eq!(
+        agents_content, agents_sentinel,
+        "AGENTS.md must be unchanged"
+    );
+}
+
+/// F-3 idempotency: running init twice must not duplicate the 8v block in CLAUDE.md.
+#[test]
+fn init_idempotent_no_duplicate_8v_block() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    // Run init once
+    let out1 = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes (first)");
+
+    assert_eq!(
+        out1.status.code(),
+        Some(0),
+        "first init should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out1.stderr)
+    );
+
+    // Run init again (idempotency check)
+    let out2 = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes (second)");
+
+    assert_eq!(
+        out2.status.code(),
+        Some(0),
+        "second init should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+
+    // CLAUDE.md must contain "# 8v" exactly once
+    let claude_md = path.join("CLAUDE.md");
+    let claude_content = std::fs::read_to_string(&claude_md).expect("read CLAUDE.md");
+    let count = claude_content.matches("# 8v").count();
+    assert_eq!(
+        count, 1,
+        "CLAUDE.md must contain '# 8v' exactly once after two inits; got {count} occurrences:\n{claude_content}"
+    );
+}
+
+// ─── F-4: Stack undetected warning ──────────────────────────────────────────
+
+/// F-4: init on a path with no stack-identifying files must exit 0 BUT warn the user.
+#[test]
+fn init_warns_when_no_stack_detected() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    // No Cargo.toml, no package.json, no go.mod, etc. — pure empty dir.
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init must still exit 0 on unknown stack\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert!(
+        combined.contains("warning: no stack detected"),
+        "init must warn when no stack is detected;\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+}
+
+// ─── Versioned sentinel tests ────────────────────────────────────────────────
+
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// T-1: Fresh install — no sentinels present → init writes block with current version sentinel.
+#[test]
+fn versioned_sentinel_fresh_install() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let agents_md = path.join("AGENTS.md");
+    let content = std::fs::read_to_string(&agents_md).expect("read AGENTS.md");
+    let expected_begin = format!("<!-- 8v:begin v{} -->", CURRENT_VERSION);
+    assert!(
+        content.contains(&expected_begin),
+        "AGENTS.md must contain begin sentinel with current version '{}';\ngot:\n{content}",
+        CURRENT_VERSION
+    );
+    assert!(
+        content.contains("<!-- 8v:end -->"),
+        "AGENTS.md must contain end sentinel;\ngot:\n{content}"
+    );
+}
+
+/// T-2: Already current — file has current-version block → init is a no-op, message says "already current".
+#[test]
+fn versioned_sentinel_already_current() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let agents_md = path.join("AGENTS.md");
+    let begin = format!("<!-- 8v:begin v{} -->", CURRENT_VERSION);
+    let existing = format!("{begin}\nsome 8v content\n<!-- 8v:end -->\n");
+    std::fs::write(&agents_md, &existing).expect("write AGENTS.md");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // File must be unchanged
+    let content = std::fs::read_to_string(&agents_md).expect("read AGENTS.md");
+    assert_eq!(
+        content, existing,
+        "AGENTS.md must be unchanged when version is already current"
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+    assert!(
+        combined.to_lowercase().contains("already current")
+            || combined.to_lowercase().contains("up to date")
+            || combined.to_lowercase().contains("up-to-date"),
+        "init must print 'already current' or similar;\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+}
+
+/// T-3: Outdated → upgrade — old version block gets replaced with current version.
+#[test]
+fn versioned_sentinel_upgrade_old_version() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let agents_md = path.join("AGENTS.md");
+    let old_content = "# Preamble\n\n<!-- 8v:begin v0.0.1 -->\nOLD CONTENT HERE\n<!-- 8v:end -->\n\n# Postamble\n";
+    std::fs::write(&agents_md, old_content).expect("write AGENTS.md");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let content = std::fs::read_to_string(&agents_md).expect("read AGENTS.md");
+
+    // Must have current version begin sentinel
+    let expected_begin = format!("<!-- 8v:begin v{} -->", CURRENT_VERSION);
+    assert!(
+        content.contains(&expected_begin),
+        "AGENTS.md must contain new begin sentinel;\ngot:\n{content}"
+    );
+
+    // Must NOT have old version sentinel
+    assert!(
+        !content.contains("<!-- 8v:begin v0.0.1 -->"),
+        "AGENTS.md must NOT contain old begin sentinel;\ngot:\n{content}"
+    );
+
+    // Old content must be gone
+    assert!(
+        !content.contains("OLD CONTENT HERE"),
+        "AGENTS.md must NOT contain old block content;\ngot:\n{content}"
+    );
+
+    // Preamble and postamble must be preserved byte-for-byte
+    assert!(
+        content.starts_with("# Preamble\n\n"),
+        "preamble must be preserved;\ngot:\n{content}"
+    );
+    assert!(
+        content.contains("\n\n# Postamble\n"),
+        "postamble must be preserved;\ngot:\n{content}"
+    );
+
+    // Print upgrade message
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+    assert!(
+        combined.contains("0.0.1") || combined.to_lowercase().contains("updated"),
+        "init must print an upgrade message mentioning old version or 'updated';\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+}
+
+/// T-4: AGENTS.md dedup — AGENTS.md has current-version block → CLAUDE.md gets no block.
+#[test]
+fn versioned_sentinel_agents_dedup_skips_claude() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let agents_md = path.join("AGENTS.md");
+    let begin = format!("<!-- 8v:begin v{} -->", CURRENT_VERSION);
+    let agents_content = format!("{begin}\nsome 8v content\n<!-- 8v:end -->\n");
+    std::fs::write(&agents_md, &agents_content).expect("write AGENTS.md");
+
+    let claude_md = path.join("CLAUDE.md");
+    std::fs::write(&claude_md, "# My Project\n\nExisting.\n").expect("write CLAUDE.md");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let claude_content = std::fs::read_to_string(&claude_md).expect("read CLAUDE.md");
+    assert!(
+        !claude_content.contains("<!-- 8v:begin"),
+        "CLAUDE.md must NOT get versioned sentinel when AGENTS.md already has current block;\ngot:\n{claude_content}"
+    );
+}
+
+/// T-5: Malformed state — begin sentinel present but no end sentinel → init fails loudly.
+#[test]
+fn versioned_sentinel_malformed_no_end() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let agents_md = path.join("AGENTS.md");
+    let malformed = "# Preamble\n\n<!-- 8v:begin v0.1.0 -->\nsome content\n# NO END SENTINEL\n";
+    std::fs::write(&agents_md, malformed).expect("write AGENTS.md");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    // Must NOT exit 0
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "init must fail on malformed state (begin without end)\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+    assert!(
+        combined.to_lowercase().contains("malformed")
+            || combined.to_lowercase().contains("missing")
+            || combined.contains("8v:end"),
+        "init must print a clear error about malformed state;\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+}
+
+/// T-6: AGENTS.md unreadable (directory) → init must print warning: line, not silently skip.
+#[test]
+fn versioned_sentinel_agents_md_unreadable_warns() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    // Create AGENTS.md as a directory so read_to_string fails
+    let agents_md = path.join("AGENTS.md");
+    std::fs::create_dir(&agents_md).expect("create AGENTS.md as directory");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert!(
+        combined.contains("warning:") && combined.to_lowercase().contains("agents.md"),
+        "init must print 'warning: ... AGENTS.md ...' when AGENTS.md is unreadable;\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+}
