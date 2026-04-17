@@ -102,7 +102,13 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
             // or otherwise invalid paths silently (no manifest possible).
             let subdir_root = match ProjectRoot::new(&subdir_path) {
                 Ok(p) => p,
-                Err(_) => continue,
+                Err(e) => {
+                    errors.push(DetectError::SubdirRootInvalid {
+                        path: subdir_path,
+                        cause: e,
+                    });
+                    continue;
+                }
             };
 
             let (sub_fs, mut sub_scan) = match scan_root(subdir_root.as_path()) {
@@ -129,4 +135,44 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
     }
 
     DetectResult { projects, errors }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for F7/F16: subdir detection failures must surface in errors.
+    ///
+    /// Strategy: create a tempdir with a restricted subdir (mode 0o000). The parent
+    /// directory scan lists it as FileKind::Directory. When the subdir loop runs, either
+    /// ProjectRoot::new fails (SubdirRootInvalid) or scan_root fails (Fs/DirectoryUnreadable)
+    /// depending on OS canonicalize behavior. Either way, the error must be recorded —
+    /// the pre-fix bug was Err(_) => continue which silently discarded it entirely.
+    #[cfg(unix)]
+    #[test]
+    fn subdir_root_invalid_surfaces_in_errors() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root_dir = tempfile::tempdir().unwrap();
+        let subdir = root_dir.path().join("restricted-subdir");
+        std::fs::create_dir(&subdir).unwrap();
+
+        // Remove all permissions so either canonicalize or directory scan fails.
+        std::fs::set_permissions(&subdir, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let root = ProjectRoot::new(root_dir.path()).unwrap();
+        let result = detect_all(&root);
+
+        // Restore permissions so tempdir cleanup succeeds.
+        let _ = std::fs::set_permissions(&subdir, std::fs::Permissions::from_mode(0o755));
+
+        // Pre-fix: errors is empty (bug). Post-fix: at least one error is recorded.
+        // The kind may be subdir_root_invalid (Linux) or directory_unreadable (macOS),
+        // because macOS canonicalize succeeds for 0o000 dirs but entering them fails.
+        assert!(
+            !result.errors().is_empty(),
+            "subdir failure for restricted-subdir must be recorded in errors, not silently dropped; got errors: {:?}",
+            result.errors()
+        );
+    }
 }

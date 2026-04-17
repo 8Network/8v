@@ -68,6 +68,13 @@ pub enum DetectError {
     #[error("invalid manifest {path}: {cause}")]
     ManifestInvalid { path: PathBuf, cause: String },
 
+    /// A subdirectory listed in the root scan failed ProjectRoot validation.
+    /// Happens during shallow subdirectory scanning when a directory exists
+    /// in the parent scan but fails canonicalization (race condition, permission
+    /// change, or non-UTF-8 name on Linux).
+    #[error("cannot validate subdirectory root {path}: {cause}")]
+    SubdirRootInvalid { path: PathBuf, cause: PathError },
+
     /// Filesystem error from o8v-fs (symlink escape, FIFO, size limit, etc.).
     /// Preserves the full FsError — never collapses PermissionDenied into
     /// ManifestUnreadable (bug #22).
@@ -83,6 +90,7 @@ impl DetectError {
             Self::DirectoryUnreadable { .. } => "directory_unreadable",
             Self::ManifestUnreadable { .. } => "manifest_unreadable",
             Self::ManifestInvalid { .. } => "manifest_invalid",
+            Self::SubdirRootInvalid { .. } => "subdir_root_invalid",
             Self::Fs(fs_err) => fs_err.kind(),
         }
     }
@@ -93,7 +101,8 @@ impl DetectError {
         match self {
             Self::DirectoryUnreadable { path, .. }
             | Self::ManifestUnreadable { path, .. }
-            | Self::ManifestInvalid { path, .. } => path,
+            | Self::ManifestInvalid { path, .. }
+            | Self::SubdirRootInvalid { path, .. } => path,
             Self::Fs(fs_err) => fs_err.path(),
         }
     }

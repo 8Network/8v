@@ -217,7 +217,13 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
             // or otherwise invalid paths silently (no manifest possible).
             let subdir_root = match ProjectRoot::new(&subdir_path) {
                 Ok(p) => p,
-                Err(_) => continue,
+                Err(e) => {
+                    errors.push(DetectError::SubdirRootInvalid {
+                        path: subdir_path,
+                        cause: e,
+                    });
+                    continue;
+                }
             };
 
             let (sub_fs, mut sub_scan) = match scan_root(subdir_root.as_path()) {
