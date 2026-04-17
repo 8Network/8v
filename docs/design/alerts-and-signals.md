@@ -24,9 +24,11 @@ Specifically:
 
 Two ideas worth keeping in writing:
 
-1. **The simplest path** to alerts is `stats --slas` reading `~/.8v/alerts.toml` (project-local variant allowed, with project overriding global). Each SLA is `(name, metric, target, window, filters)`. No new subcommand. Violations surface as rows in `stats` output with a `[violated]` tag, and exit code matches `stats`'s "empty/insufficient = 2" rule so CI gating is one convention across both commands. Ship this as a flag on `stats`, not a new primitive.
+1. **SLA is a concept, not a file.** An SLA is `(name, metric, target, window, filters)` — a named target about observable behavior. That shape is the same whether it's declared as a Rust constant (built-in detection with default threshold), loaded from `~/.8v/alerts.toml`, attached as an annotation on a command's `Args`, or emitted in JSON. One `Sla` type, many transports. The earlier draft conflated "SLA" with "entry in alerts.toml" and produced a false split between "hard-coded thresholds" and "SLAs" — they're the same concept at different transport points.
 
-2. **Self-emitted signals are an orthogonal axis** from the command surface. The schema-change question is "what can 8v emit that nobody else can reconstruct, and for which detection?" The earlier draft inverted that: proposed the fields first, hoped for detections later. Correct order: each schema field is blocked on a named, agreed-upon consumer.
+2. **The simplest surface** for acting on SLAs is `stats --slas`. Violations surface as rows in `stats` output with a `[violated]` tag; exit code matches `stats`'s "empty/insufficient = 2" rule so CI gating is one convention across both commands. No new subcommand. Config transport (`alerts.toml`, project-local variant, precedence) is a later question — first nail down the concept and ship the built-in SLAs that have defaults.
+
+3. **Self-emitted signals are an orthogonal axis** from the command surface. The schema-change question is "what can 8v emit that nobody else can reconstruct, and for which detection?" The earlier draft inverted that: proposed the fields first, hoped for detections later. Correct order: each schema field is blocked on a named, agreed-upon consumer.
 
 ## 4. When to revisit
 
@@ -43,7 +45,7 @@ If this is ever reopened, the following rules from the review must carry forward
 - **One canonical definition for "failure cluster"** across log/stats/alerts — name them distinctly if the math differs.
 - **Exit codes harmonized** across log/stats/alerts. Current log/stats rule: 0 = ran, 2 = empty/no-data. Alerts would add: > 2 = violation.
 - **Every rate-based detection needs a sample-size floor** (`n_calls ≥ 20 && n_sessions ≥ 3`). `insufficient_data` is a third outcome alongside `ok` and `violated`.
-- **Detections and SLAs are one mechanism**, not two. Each detection is a built-in SLA with default thresholds overridable in config.
+- **Detections and SLAs are the same concept**, not two parallel mechanisms. A built-in detection is an SLA with a default threshold, expressed in code. A user-configured SLA is the same shape, expressed in a transport (TOML, annotation, whatever). One `Sla` type, many transports. Don't build two evaluators.
 - **Recommendations name behaviors, not commits** — commit SHAs rot. Add a lint test asserting no `[0-9a-f]{7,40}` in recommendation strings.
 - **Legacy events policy unified** across all readers — today log/stats/alerts each proposed different treatment of pre-`session_id` lines. Pick one per operation (bucketing, percentile aggregation, alert evaluation) and document once.
 - **Config reads through `o8v-fs::safe_read` with containment extended** — don't open a fresh I/O surface just for TOML.
