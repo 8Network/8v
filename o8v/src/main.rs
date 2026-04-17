@@ -29,10 +29,16 @@ fn main() -> ExitCode {
     match cli.command {
         commands::Command::Init(args) => init::run(&args),
         commands::Command::Mcp => {
-            let rt = tokio::runtime::Builder::new_current_thread()
+            let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .unwrap();
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("error: failed to initialize async runtime: {e} — check OS thread limits or sandbox restrictions");
+                    return ExitCode::FAILURE;
+                }
+            };
             match rt.block_on(mcp::serve()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
@@ -42,10 +48,16 @@ fn main() -> ExitCode {
             }
         }
         command => {
-            let rt = tokio::runtime::Builder::new_current_thread()
+            let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .unwrap();
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("error: failed to initialize async runtime: {e} — check OS thread limits or sandbox restrictions");
+                    return ExitCode::FAILURE;
+                }
+            };
             match rt.block_on(commands::dispatch_command(
                 command,
                 o8v_core::caller::Caller::Cli,
