@@ -23,6 +23,7 @@ pub fn parse(
     stack: &str,
 ) -> ParseResult {
     let mut diagnostics = Vec::new();
+    let mut any_dropped = false;
     let lines: Vec<&str> = stderr.lines().collect();
     let mut i = 0;
 
@@ -52,6 +53,7 @@ pub fn parse(
             let (loc, span) = match location {
                 Some((loc, line_num, col)) => (loc, Some(Span::new(line_num, col, None, None))),
                 None => {
+                    any_dropped = true;
                     i = j; // advance past scanned lines to avoid infinite loop
                     continue;
                 }
@@ -86,9 +88,14 @@ pub fn parse(
     }
 
     let parsed_items = diagnostics.len() as u32;
+    let status = if any_dropped {
+        ParseStatus::Unparsed
+    } else {
+        ParseStatus::Parsed
+    };
     ParseResult {
         diagnostics,
-        status: ParseStatus::Parsed,
+        status,
         parsed_items,
     }
 }
@@ -307,7 +314,7 @@ console.log(foo);
     fn stress_deno_truncated_block() {
         let truncated = "TS2322 [ERROR]: Type 'string' is not assignable\nconst x = 1;";
         let result = run(truncated);
-        assert_eq!(result.status, ParseStatus::Parsed);
+        assert_eq!(result.status, ParseStatus::Unparsed);
         // No location, so diagnostic skipped
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -336,16 +343,42 @@ console.log(foo);
 
     #[test]
     fn stress_deno_malformed_at_line() {
-        let blocks = vec![
+        // Blocks 1-3: location line is genuinely unparseable — diagnostic is dropped.
+        let unparseable_blocks = vec![
             "TS2322 [ERROR]: error\n    at \n",
             "TS2322 [ERROR]: error\n    at file://\n",
             "TS2322 [ERROR]: error\n    at file:///path:invalid:col\n",
-            "TS2322 [ERROR]: error\n    at file:///path:999999999:888888888\n",
         ];
-        for block in blocks {
+        for block in unparseable_blocks {
             let result = run(block);
-            assert_eq!(result.status, ParseStatus::Parsed);
-            // Should not crash on malformed location
+            assert_eq!(result.status, ParseStatus::Unparsed);
         }
+
+        // Block 4: 999999999 and 888888888 both fit in u32 — parse_at_line succeeds.
+        // Path /path is not under /project → Location::Absolute. Diagnostic is pushed.
+        let parseable_block = "TS2322 [ERROR]: error\n    at file:///path:999999999:888888888\n";
+        let result = run(parseable_block);
+        assert_eq!(result.status, ParseStatus::Parsed);
+        assert_eq!(result.diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn remote_url_location_drops_diagnostic_reports_unparsed() {
+        // Header fully parsed (code=TS2345, severity=ERROR, message extracted),
+        // but location line is a remote URL with no :line:col — parse_at_line returns None.
+        // Bug: currently returns ParseStatus::Parsed with zero diagnostics (silent drop).
+        // Fix: must return ParseStatus::Unparsed so caller can flag it.
+        let stderr = concat!(
+            "TS2345 [ERROR]: Argument of type 'string' is not assignable to parameter of type 'number'.\n",
+            "const x: number = fn(\"hello\");\n",
+            "                     ^^^^^^^\n",
+            "    at https://deno.land/x/foo@1.0.0/mod.ts\n",
+        );
+        let result = run(stderr);
+        // Header was extracted — this is a dropped diagnostic, not a no-op.
+        // Must signal unparsed so caller knows something was lost.
+        assert_eq!(result.status, ParseStatus::Unparsed);
+        // The diagnostic cannot be emitted without a valid location — but status must be Unparsed
+        assert_eq!(result.diagnostics.len(), 0);
     }
 }
