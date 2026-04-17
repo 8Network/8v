@@ -252,3 +252,55 @@ fn install_rejects_tampered_checksum() {
         stderr
     );
 }
+#[test]
+#[ignore = "requires curl and sh (~30s)"]
+fn install_twice_is_idempotent() {
+    let project = TempProject::empty();
+    project.create_dir("bin").expect("create install dir");
+    let install_dir = project.path().join("bin");
+
+    let platform = detect_platform();
+    let binary_path = std::env::var("CARGO_BIN_EXE_8v").expect("CARGO_BIN_EXE_8v env var");
+    let binary_content = fs::read(&binary_path).expect("read 8v binary");
+    let sha = sha256_hex(&binary_content);
+
+    project.create_dir("latest").expect("create latest dir");
+    project
+        .write_file("latest/version.txt", b"0.1.0\n")
+        .expect("write version.txt");
+    project.create_dir("v0.1.0").expect("create version dir");
+
+    let binary_name = format!("8v-{}", platform);
+    project
+        .write_file(&format!("v0.1.0/{}", binary_name), &binary_content)
+        .expect("write binary");
+    let checksums = format!("{}  {}\n", sha, binary_name);
+    project
+        .write_file("v0.1.0/checksums.txt", checksums.as_bytes())
+        .expect("write checksums");
+
+    let server = FileServer::start(project.path().to_path_buf());
+    let scripts_dir = workspace_root().join("scripts");
+
+    let first = run_install(&server.base_url(), &install_dir, &scripts_dir);
+    assert!(
+        first.status.success(),
+        "first install failed:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let second = run_install(&server.base_url(), &install_dir, &scripts_dir);
+    assert!(
+        second.status.success(),
+        "second install failed:\n{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+
+    let installed = install_dir.join("8v");
+    assert!(installed.exists(), "8v binary missing after double install");
+    let installed_sha = sha256_hex(&fs::read(&installed).expect("read installed binary"));
+    assert_eq!(
+        sha, installed_sha,
+        "binary hash changed after second install"
+    );
+}
