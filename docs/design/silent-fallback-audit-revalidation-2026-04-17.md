@@ -51,6 +51,15 @@ produces no user-visible error.
 **Impact:** Low. Detection failure shows as "unknown stack" in output, which is visible.
 Not a true silent fallback — just a missing `warn!` log.
 
+
+**FIXED (2026-04-17, commit 9090ae2):** A related but distinct silent-drop bug was found and
+fixed in the shallow subdirectory scan: `o8v-stacks/src/detect.rs` and `o8v-project/src/lib.rs`
+both used `Err(_) => continue` when `ProjectRoot::new` failed for a subdirectory. A directory
+that exists on disk but fails canonicalization (race condition, permission change, non-UTF-8 name)
+was skipped with no record in the errors vector. Fix: push `DetectError::SubdirRootInvalid` to
+the errors vector before continuing. Regression test `subdir_root_invalid_surfaces_in_errors`
+confirms errors are non-empty when a restricted subdir fails validation.
+
 **Status:** Tracked, not fixed.
 
 ---
