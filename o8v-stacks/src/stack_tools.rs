@@ -19,6 +19,8 @@ pub struct StackTools {
     pub test_runner: Option<TestTool>,
     /// Build tool for 8v build. None = no build step for this stack (e.g. Python).
     pub build_tool: Option<BuildTool>,
+    /// Error extractor for errors-first rendering. None = no structured extraction.
+    pub error_extractor: Option<ErrorExtractor>,
 }
 
 /// Configuration for a code formatter.
@@ -66,4 +68,27 @@ pub struct BuildTool {
     pub program: &'static str,
     /// Arguments to pass to the build tool.
     pub args: &'static [&'static str],
+}
+
+/// Which kind of build operation is being run.
+/// Used by ErrorExtractor to dispatch to the right parser.
+pub enum RunKind {
+    /// `8v build` — compile the project.
+    Build,
+    /// `8v test` — run the test suite.
+    Test,
+}
+
+/// Extracts structured diagnostics from raw build/test output.
+///
+/// Callers pass stdout + stderr + the project root path + the run kind.
+/// The extractor returns a (possibly empty) vec of Diagnostics.
+/// Returning an empty vec is always valid — it means "no structured errors found".
+pub struct ErrorExtractor {
+    pub extract: fn(
+        stdout: &str,
+        stderr: &str,
+        project_root: &std::path::Path,
+        kind: RunKind,
+    ) -> Vec<o8v_core::diagnostic::Diagnostic>,
 }

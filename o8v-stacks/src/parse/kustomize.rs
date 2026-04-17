@@ -55,7 +55,6 @@ pub fn parse(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use o8v_core::diagnostic::*;
     use std::path::Path;
 
     const ROOT: &str = "/project";

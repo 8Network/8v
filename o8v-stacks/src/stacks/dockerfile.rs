@@ -17,5 +17,6 @@ pub fn tools() -> StackTools {
         formatter: None,
         test_runner: None,
         build_tool: None,
+        error_extractor: None,
     }
 }

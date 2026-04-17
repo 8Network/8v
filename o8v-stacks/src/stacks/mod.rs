@@ -23,8 +23,8 @@ mod terraform;
 mod typescript;
 
 use crate::stack_tools::StackTools;
-use o8v_core::Check;
 use o8v_core::project::Stack;
+use o8v_core::Check;
 
 /// Returns all tools for a given stack.
 ///
@@ -56,6 +56,7 @@ pub fn tools_for(stack: Stack) -> StackTools {
                 formatter: None,
                 test_runner: None,
                 build_tool: None,
+                error_extractor: None,
             }
         }
     };

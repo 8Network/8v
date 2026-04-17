@@ -31,5 +31,6 @@ pub fn tools() -> StackTools {
             program: "npm",
             args: &["run", "build", "--silent"],
         }),
+        error_extractor: None,
     }
 }

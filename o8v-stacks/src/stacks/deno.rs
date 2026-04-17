@@ -29,5 +29,6 @@ pub fn tools() -> StackTools {
             program: "deno",
             args: &["compile"],
         }),
+        error_extractor: None,
     }
 }

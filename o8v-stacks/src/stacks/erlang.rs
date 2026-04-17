@@ -47,5 +47,6 @@ pub fn tools() -> StackTools {
             program: "rebar3",
             args: &["compile"],
         }),
+        error_extractor: None,
     }
 }

@@ -26,6 +26,10 @@ pub struct Args {
     #[arg(long, default_value = "1")]
     pub page: usize,
 
+    /// Show extracted errors above raw stderr on test failure (default: on)
+    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+    pub errors_first: bool,
+
     #[command(flatten)]
     pub format: super::output_format::OutputFormat,
 }
@@ -44,16 +48,15 @@ pub struct TestCommand {
 impl Command for TestCommand {
     type Report = TestReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         validate_timeout(self.args.timeout).map_err(CommandError::Execution)?;
 
         let workspace = ctx
             .extensions
             .get::<o8v::workspace::WorkspaceRoot>()
-            .ok_or_else(|| CommandError::Execution("8v: no workspace — run 8v init first".to_string()))?;
+            .ok_or_else(|| {
+                CommandError::Execution("8v: no workspace — run 8v init first".to_string())
+            })?;
 
         let abs_path = workspace.resolve(&self.args.path);
 
@@ -76,6 +79,7 @@ impl Command for TestCommand {
         let stack_name = format!("{}", project.stack());
 
         let tools = o8v_stacks::tools_for(project.stack());
+        let error_extractor = tools.error_extractor;
         let test_tool = match tools.test_runner {
             Some(t) => t,
             None => {
@@ -86,7 +90,7 @@ impl Command for TestCommand {
                      If this project has tests, run them with the stack's native \
                      test tool directly.",
                     project.stack()
-                )))
+                )));
             }
         };
 
@@ -100,7 +104,8 @@ impl Command for TestCommand {
             &project_path,
             test_tool.program,
             test_tool.args,
-        );
+        )
+        .map_err(|e| CommandError::Execution(format!("8v test: {e}")))?;
 
         let mut cmd = std::process::Command::new(&resolved.program);
         cmd.args(&resolved.args);
@@ -116,11 +121,29 @@ impl Command for TestCommand {
         let proc_result = o8v_process::run(cmd, &config);
         let cmd_str = format!("{} {}", resolved.program, resolved.args.join(" "));
 
+        let success = matches!(proc_result.outcome, o8v_process::ExitOutcome::Success);
+
+        // Extract structured errors on failure when errors_first is enabled.
+        let errors = if !success && self.args.errors_first {
+            if let Some(extractor) = &error_extractor {
+                (extractor.extract)(
+                    &proc_result.stdout,
+                    &proc_result.stderr,
+                    &project_path,
+                    o8v_stacks::stack_tools::RunKind::Test,
+                )
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
         Ok(TestReport {
             process: o8v_core::process_report::ProcessReport {
                 command: cmd_str,
                 exit_code: exit_code_number(&proc_result.outcome),
-                success: matches!(proc_result.outcome, o8v_process::ExitOutcome::Success),
+                success,
                 exit_label: exit_label(&proc_result.outcome),
                 duration: proc_result.duration,
                 duration_display: o8v_process::format_duration(proc_result.duration),
@@ -140,7 +163,9 @@ impl Command for TestCommand {
                 verbose: false,
                 color: !self.args.format.no_color && std::env::var_os("NO_COLOR").is_none(),
                 page: self.args.page,
+                errors_first: self.args.errors_first,
             },
+            errors,
         })
     }
 }

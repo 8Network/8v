@@ -3,6 +3,7 @@
 // See LICENSE file in the project root.
 
 use super::output::Output;
+use crate::diagnostic::Diagnostic;
 use crate::process_report::ProcessReport;
 use crate::render::RenderConfig;
 
@@ -11,6 +12,8 @@ pub struct TestReport {
     pub stack: String,
     pub detection_errors: Vec<String>,
     pub render_config: RenderConfig,
+    /// Structured errors extracted from test output (errors-first rendering).
+    pub errors: Vec<Diagnostic>,
 }
 
 impl super::Renderable for TestReport {
@@ -25,12 +28,28 @@ impl super::Renderable for TestReport {
         buf.push_str(&format!("$ {}\n", p.command));
         buf.push_str(&format!("exit: {}\n", p.exit_label));
         buf.push_str(&format!("duration: {}\n", p.duration_display));
+
+        if self.render_config.errors_first && !self.errors.is_empty() {
+            const MAX_ERRORS: usize = 10;
+            let shown = self.errors.len().min(MAX_ERRORS);
+            buf.push_str(&format!("\nerrors ({}):\n", self.errors.len()));
+            for diag in self.errors.iter().take(MAX_ERRORS) {
+                buf.push_str(&format!("  {}\n", diag.message));
+            }
+            if self.errors.len() > shown {
+                let remaining = self.errors.len() - shown;
+                buf.push_str(&format!("  ... and {} more\n", remaining));
+            }
+        }
+
         super::run_report::render_process_output(&mut buf, p, &self.render_config);
         Output::new(buf)
     }
 
     fn render_json(&self) -> Output {
         let p = &self.process;
+        let errors_json = serde_json::to_value(&self.errors)
+            .expect("BUG: Vec<Diagnostic> is always serializable");
         let json = serde_json::json!({
             "command": p.command,
             "exit_code": p.exit_code,
@@ -43,6 +62,7 @@ impl super::Renderable for TestReport {
             },
             "stack": self.stack,
             "detection_errors": self.detection_errors,
+            "errors": errors_json,
         });
         let s = match serde_json::to_string(&json) {
             Ok(s) => s,
@@ -75,6 +95,7 @@ mod tests {
             stack: "rust".to_string(),
             detection_errors: vec![],
             render_config: RenderConfig::default(),
+            errors: vec![],
         }
     }
 

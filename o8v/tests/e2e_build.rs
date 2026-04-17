@@ -240,10 +240,17 @@ fn build_rust_broken_json_has_nonzero_exit_code() {
 
     assert_eq!(parsed["stack"], "rust", "stack should be rust");
     assert_ne!(parsed["exit_code"], 0, "exit_code should be non-zero");
-    let stderr_field = parsed["stderr"].as_str().unwrap_or("");
+    let errors = parsed["errors"]
+        .as_array()
+        .expect("errors field should be an array");
     assert!(
-        stderr_field.contains("mismatched types") || stderr_field.contains("E0308"),
-        "stderr field should contain compile error: {stderr_field}"
+        !errors.is_empty(),
+        "errors array should contain at least one diagnostic"
+    );
+    let errors_text = serde_json::to_string(&parsed["errors"]).unwrap();
+    assert!(
+        errors_text.contains("mismatched types") || errors_text.contains("E0308"),
+        "errors field should contain compile error: {errors_text}"
     );
 }
 
@@ -298,6 +305,65 @@ fn build_go_broken_json_has_nonzero_exit_code() {
     assert!(
         stderr_field.contains("invalid operation") || stderr_field.contains("mismatched types"),
         "stderr field should contain compile error: {stderr_field}"
+    );
+}
+
+// ─── Errors-first rendering ─────────────────────────────────────────────────
+
+#[test]
+fn build_rust_broken_errors_first_renders_before_stderr() {
+    let project = fixture("build-rust-broken");
+
+    let out = bin()
+        .args(["build", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v build on broken rust project");
+
+    assert!(!out.status.success(), "broken project should fail");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // errors-first preamble must appear
+    assert!(
+        stdout.contains("errors ("),
+        "output should contain errors preamble: {stdout}"
+    );
+
+    // at least one real rust compiler error code
+    assert!(
+        stdout.contains("error[E"),
+        "output should contain rust error code: {stdout}"
+    );
+
+    // preamble must appear before the raw stderr section
+    let preamble_pos = stdout.find("errors (").expect("preamble present");
+    let stderr_pos = stdout.find("stderr:").expect("stderr section present");
+    assert!(
+        preamble_pos < stderr_pos,
+        "errors preamble ({preamble_pos}) should appear before stderr section ({stderr_pos})"
+    );
+}
+
+#[test]
+fn build_rust_broken_errors_first_false_omits_preamble() {
+    let project = fixture("build-rust-broken");
+
+    let out = bin()
+        .args([
+            "build",
+            project.path().to_str().unwrap(),
+            "--errors-first",
+            "false",
+        ])
+        .output()
+        .expect("run 8v build with errors-first=false");
+
+    assert!(!out.status.success(), "broken project should fail");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("errors ("),
+        "preamble should be absent when --errors-first false: {stdout}"
     );
 }
 

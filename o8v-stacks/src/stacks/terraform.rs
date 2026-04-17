@@ -23,5 +23,6 @@ pub fn tools() -> StackTools {
         }),
         test_runner: None,
         build_tool: None,
+        error_extractor: None,
     }
 }

@@ -32,5 +32,6 @@ pub fn tools() -> StackTools {
             program: "swift",
             args: &["build"],
         }),
+        error_extractor: None,
     }
 }

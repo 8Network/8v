@@ -26,6 +26,10 @@ pub struct Args {
     #[arg(long, default_value = "1")]
     pub page: usize,
 
+    /// Show extracted errors above raw stderr on build failure (default: on)
+    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+    pub errors_first: bool,
+
     #[command(flatten)]
     pub format: super::output_format::OutputFormat,
 }
@@ -44,16 +48,15 @@ pub struct BuildCommand {
 impl Command for BuildCommand {
     type Report = BuildReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         validate_timeout(self.args.timeout).map_err(CommandError::Execution)?;
 
         let workspace = ctx
             .extensions
             .get::<o8v::workspace::WorkspaceRoot>()
-            .ok_or_else(|| CommandError::Execution("8v: no workspace — run 8v init first".to_string()))?;
+            .ok_or_else(|| {
+                CommandError::Execution("8v: no workspace — run 8v init first".to_string())
+            })?;
 
         let abs_path = workspace.resolve(&self.args.path);
 
@@ -76,6 +79,7 @@ impl Command for BuildCommand {
         let stack_name = format!("{}", project.stack());
 
         let tools = o8v_stacks::tools_for(project.stack());
+        let error_extractor = tools.error_extractor;
         let build_tool = match tools.build_tool {
             Some(t) => t,
             None => {
@@ -89,12 +93,21 @@ impl Command for BuildCommand {
 
         // Per-project refinement (pnpm/yarn/bun, gradlew wrapper, maven).
         let project_path = std::path::PathBuf::from(project.path().to_string());
-        let resolved = o8v_stacks::resolve_build_tool(
+        let mut resolved = o8v_stacks::resolve_build_tool(
             project.stack(),
             &project_path,
             build_tool.program,
             build_tool.args,
-        );
+        )
+        .map_err(|e| CommandError::Execution(format!("8v build: {e}")))?;
+
+        // --message-format=json is a Cargo-specific flag. Only inject it for
+        // Cargo builds where errors_first is active so the error extractor can
+        // parse structured diagnostics. Other stacks (Go, Python, etc.) do not
+        // understand this flag and will fail with a "malformed import path" error.
+        if self.args.errors_first && resolved.program == "cargo" {
+            resolved.args.push("--message-format=json".to_string());
+        }
 
         let mut cmd = std::process::Command::new(&resolved.program);
         cmd.args(&resolved.args);
@@ -110,11 +123,29 @@ impl Command for BuildCommand {
         let proc_result = o8v_process::run(cmd, &config);
         let cmd_str = format!("{} {}", resolved.program, resolved.args.join(" "));
 
+        let success = matches!(proc_result.outcome, o8v_process::ExitOutcome::Success);
+
+        // Extract structured errors on failure when errors_first is enabled.
+        let errors = if !success && self.args.errors_first {
+            if let Some(extractor) = &error_extractor {
+                (extractor.extract)(
+                    &proc_result.stdout,
+                    &proc_result.stderr,
+                    &project_path,
+                    o8v_stacks::stack_tools::RunKind::Build,
+                )
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
         Ok(BuildReport {
             process: o8v_core::process_report::ProcessReport {
                 command: cmd_str,
                 exit_code: exit_code_number(&proc_result.outcome),
-                success: matches!(proc_result.outcome, o8v_process::ExitOutcome::Success),
+                success,
                 exit_label: exit_label(&proc_result.outcome),
                 duration: proc_result.duration,
                 duration_display: o8v_process::format_duration(proc_result.duration),
@@ -134,7 +165,9 @@ impl Command for BuildCommand {
                 verbose: false,
                 color: !self.args.format.no_color && std::env::var_os("NO_COLOR").is_none(),
                 page: self.args.page,
+                errors_first: self.args.errors_first,
             },
+            errors,
         })
     }
 }

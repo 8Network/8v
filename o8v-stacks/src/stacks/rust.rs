@@ -1,7 +1,25 @@
 //! Rust stack — cargo check, clippy, cargo fmt.
 
-use crate::stack_tools::{BuildTool, FormatTool, StackTools, TestTool};
+use crate::stack_tools::{BuildTool, ErrorExtractor, FormatTool, RunKind, StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
+
+fn rust_extract(
+    stdout: &str,
+    stderr: &str,
+    project_root: &std::path::Path,
+    kind: RunKind,
+) -> Vec<o8v_core::diagnostic::Diagnostic> {
+    match kind {
+        RunKind::Build => {
+            crate::parse::cargo::parse(stdout, stderr, project_root, "cargo build", "rust")
+                .diagnostics
+        }
+        RunKind::Test => {
+            crate::parse::libtest_json::parse(stdout, stderr, project_root, "cargo test", "rust")
+                .diagnostics
+        }
+    }
+}
 
 /// Returns all tools for the rust stack.
 pub fn tools() -> StackTools {
@@ -59,6 +77,9 @@ pub fn tools() -> StackTools {
         build_tool: Some(BuildTool {
             program: "cargo",
             args: &["build"],
+        }),
+        error_extractor: Some(ErrorExtractor {
+            extract: rust_extract,
         }),
     }
 }

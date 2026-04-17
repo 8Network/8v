@@ -31,6 +31,7 @@ pub fn tools() -> StackTools {
             program: "dotnet",
             args: &["build"],
         }),
+        error_extractor: None,
     }
 }
 

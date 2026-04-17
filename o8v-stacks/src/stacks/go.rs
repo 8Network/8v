@@ -1,7 +1,23 @@
 //! Go stack — go vet, staticcheck.
 
-use crate::stack_tools::{BuildTool, FormatTool, StackTools, TestTool};
+use crate::stack_tools::{BuildTool, ErrorExtractor, FormatTool, RunKind, StackTools, TestTool};
 use crate::tool::EnrichedToolCheck;
+
+fn go_extract(
+    stdout: &str,
+    stderr: &str,
+    project_root: &std::path::Path,
+    kind: RunKind,
+) -> Vec<o8v_core::diagnostic::Diagnostic> {
+    match kind {
+        RunKind::Test => {
+            crate::parse::go_test_json::parse_test(stdout, stderr, project_root, "go test", "go")
+        }
+        RunKind::Build => {
+            crate::parse::go_test_json::parse_build(stdout, stderr, project_root, "go build", "go")
+        }
+    }
+}
 
 /// Returns all tools for the go stack.
 pub fn tools() -> StackTools {
@@ -38,6 +54,9 @@ pub fn tools() -> StackTools {
         build_tool: Some(BuildTool {
             program: "go",
             args: &["build", "./..."],
+        }),
+        error_extractor: Some(ErrorExtractor {
+            extract: go_extract,
         }),
     }
 }

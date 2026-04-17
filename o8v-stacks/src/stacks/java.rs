@@ -33,5 +33,6 @@ pub fn tools() -> StackTools {
             program: "mvn",
             args: &["package", "-q"],
         }),
+        error_extractor: None,
     }
 }

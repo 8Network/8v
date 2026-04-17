@@ -32,5 +32,6 @@ pub fn tools() -> StackTools {
             program: "gradle",
             args: &["build"],
         }),
+        error_extractor: None,
     }
 }

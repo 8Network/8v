@@ -325,7 +325,6 @@ struct CargoChild {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use o8v_core::diagnostic::*;
     use std::path::Path;
 
     fn root() -> &'static Path {

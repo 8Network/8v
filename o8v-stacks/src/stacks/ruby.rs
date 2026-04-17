@@ -26,5 +26,6 @@ pub fn tools() -> StackTools {
             args: &["test"],
         }),
         build_tool: None,
+        error_extractor: None,
     }
 }
