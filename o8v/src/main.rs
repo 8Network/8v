@@ -23,6 +23,11 @@ fn main() -> ExitCode {
     let interrupted: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
     signal::install(interrupted);
 
+    // Capture the raw CLI argv tail BEFORE clap consumes it for structured
+    // parsing. This is what lands in events.ndjson so agent behavior (which
+    // flags, which paths) is reconstructable from the event log.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+
     use clap::Parser;
     let cli = cli::Cli::parse();
 
@@ -61,6 +66,7 @@ fn main() -> ExitCode {
             match rt.block_on(commands::dispatch_command(
                 command,
                 o8v_core::caller::Caller::Cli,
+                argv,
                 interrupted,
             )) {
                 Ok((output, exit_code, use_stderr)) => {

@@ -80,7 +80,13 @@ mod tests {
         let storage = make_storage(&dir);
         let sub = StorageSubscriber::new(storage.clone());
 
-        let ev = CommandStarted::new("r1".into(), Caller::Cli, "check .", Some("/proj".into()));
+        let ev = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check .",
+            vec!["check".into(), ".".into()],
+            Some("/proj".into()),
+        );
         let bytes = serde_json::to_vec(&ev).unwrap();
         sub.on_event(&bytes);
 
@@ -112,7 +118,13 @@ mod tests {
         let storage = make_storage(&dir);
         let sub = StorageSubscriber::new(storage.clone());
 
-        let ev1 = CommandStarted::new("r1".into(), Caller::Mcp, "fmt .", None);
+        let ev1 = CommandStarted::new(
+            "r1".into(),
+            Caller::Mcp,
+            "fmt .",
+            vec!["fmt".into(), ".".into()],
+            None,
+        );
         let ev2 = CommandCompleted::new("r1".into(), 100, 10, true);
         let bytes1 = serde_json::to_vec(&ev1).unwrap();
         let bytes2 = serde_json::to_vec(&ev2).unwrap();
@@ -149,7 +161,13 @@ mod tests {
         let storage = make_storage(&dir);
         let sub = StorageSubscriber::new(storage.clone());
 
-        let ev1 = CommandStarted::new("unique-id-42".into(), Caller::Cli, "test .", None);
+        let ev1 = CommandStarted::new(
+            "unique-id-42".into(),
+            Caller::Cli,
+            "test .",
+            vec!["test".into(), ".".into()],
+            None,
+        );
         let ev2 = CommandCompleted::new("unique-id-42".into(), 500, 100, false);
         let bytes1 = serde_json::to_vec(&ev1).unwrap();
         let bytes2 = serde_json::to_vec(&ev2).unwrap();

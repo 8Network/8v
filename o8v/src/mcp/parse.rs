@@ -16,7 +16,7 @@ pub(super) const MAX_COMMAND_LEN: usize = 65_536; // 64 KB
 pub(super) fn parse_mcp_command(
     command: &str,
     containment_root: &o8v_fs::ContainmentRoot,
-) -> Result<crate::commands::Command, String> {
+) -> Result<(crate::commands::Command, Vec<String>), String> {
     // Reject null bytes before any further processing — shlex treats them as
     // word separators on some platforms but they are never valid in a command.
     if command.contains('\0') {
@@ -65,14 +65,18 @@ pub(super) fn parse_mcp_command(
         .chain(parts.iter().map(String::as_str))
         .collect();
 
-    let mut command = match crate::cli::Cli::try_parse_from(argv) {
+    let mut command = match crate::cli::Cli::try_parse_from(&argv) {
         Ok(cli) => cli.command,
         Err(e) => return Err(parse_error(e)),
     };
 
     command.resolve_mcp_paths(containment_root)?;
 
-    Ok(command)
+    // argv without the synthetic "8v" leader — matches what CLI captures
+    // via std::env::args().skip(1) so both callers emit identical shapes.
+    let argv_out: Vec<String> = argv.iter().skip(1).map(|s| (*s).to_string()).collect();
+
+    Ok((command, argv_out))
 }
 
 /// Return error for command parsing failures.
@@ -152,7 +156,9 @@ mod tests {
             &root,
         );
         assert!(result.is_ok(), "expected success, got {:?}", result.err());
-        match result.unwrap() {
+        let (cmd, argv) = result.unwrap();
+        assert_eq!(argv.first().map(|s| s.as_str()), Some("write"));
+        match cmd {
             crate::commands::Command::Write(args) => {
                 assert!(args.path.ends_with("src/main.rs:10"));
                 assert_eq!(args.content.as_deref(), Some("    for i in start..=end {"));
@@ -169,7 +175,8 @@ mod tests {
         // rather than being treated as an unknown flag.
         let result = parse_mcp_command(r#"write src/main.rs:10 "-- a literal comment""#, &root);
         assert!(result.is_ok(), "expected success, got {:?}", result.err());
-        match result.unwrap() {
+        let (cmd, _argv) = result.unwrap();
+        match cmd {
             crate::commands::Command::Write(args) => {
                 assert_eq!(args.content.as_deref(), Some("-- a literal comment"));
             }
@@ -183,7 +190,8 @@ mod tests {
         let root = make_containment_root(&dir);
         let result = parse_mcp_command(r#"write src/main.rs:10 """#, &root);
         assert!(result.is_ok(), "expected success, got {:?}", result.err());
-        match result.unwrap() {
+        let (cmd, _argv) = result.unwrap();
+        match cmd {
             crate::commands::Command::Write(args) => {
                 assert_eq!(args.content.as_deref(), Some(""));
             }
@@ -200,7 +208,8 @@ mod tests {
         // resolved per-variant via the typed Command enum.
         let result = parse_mcp_command(r#"search "foo bar" src"#, &root);
         assert!(result.is_ok(), "expected success, got {:?}", result.err());
-        match result.unwrap() {
+        let (cmd, _argv) = result.unwrap();
+        match cmd {
             crate::commands::Command::Search(args) => {
                 assert_eq!(args.pattern, "foo bar");
                 assert!(args.path.as_deref().unwrap().ends_with("src"));
@@ -240,7 +249,7 @@ mod tests {
         for (cmd, want) in cases {
             let mcp = parse_mcp_command(cmd, &root);
             assert!(mcp.is_ok(), "MCP parse failed for `{cmd}`: {:?}", mcp.err());
-            let got = match mcp.unwrap() {
+            let got = match mcp.unwrap().0 {
                 crate::commands::Command::Write(_) => "Write",
                 crate::commands::Command::Read(_) => "Read",
                 crate::commands::Command::Search(_) => "Search",

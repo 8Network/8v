@@ -89,6 +89,7 @@ pub async fn dispatch<C: Command>(
     audience: Audience,
     caller: Caller,
     command_str: &str,
+    argv: &[String],
 ) -> Result<(String, TaskId, C::Report), CommandError>
 where
     C::Report: Renderable,
@@ -114,8 +115,14 @@ where
     // Emit CommandStarted (with agent identity if available from MCP handshake).
     if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
         let agent_info = ctx.extensions.get::<o8v_core::caller::AgentInfo>().cloned();
-        let ev = CommandStarted::new(run_id.clone(), caller, command_str, project_path)
-            .with_agent_info(agent_info);
+        let ev = CommandStarted::new(
+            run_id.clone(),
+            caller,
+            command_str,
+            argv.to_vec(),
+            project_path,
+        )
+        .with_agent_info(agent_info);
         bus.emit(&ev);
     }
 
@@ -219,7 +226,7 @@ mod tests {
         bus.subscribe(recorder.clone());
 
         let cmd = NoopCommand;
-        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "noop").await;
+        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "noop", &[]).await;
         assert!(result.is_ok());
 
         let events = recorder.events.lock().unwrap();
@@ -247,7 +254,7 @@ mod tests {
         bus.subscribe(recorder.clone());
 
         let cmd = FailCommand;
-        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "fail").await;
+        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "fail", &[]).await;
         assert!(result.is_err(), "command must return an error");
 
         let events = recorder.events.lock().unwrap();

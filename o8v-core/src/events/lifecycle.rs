@@ -39,8 +39,14 @@ pub struct CommandStarted {
     pub version: String,
     /// Who invoked the command.
     pub caller: Caller,
-    /// The command string (e.g. "check .").
+    /// The subcommand category (e.g. "read", "check", "build"). Stable
+    /// across invocation flavors — use this for grouping in analytics.
     pub command: String,
+    /// Full argument tail as captured at the entry point. CLI captures
+    /// `std::env::args().skip(1)`; the MCP tool handler reconstructs an
+    /// equivalent argv from the JSON payload. First element is the
+    /// subcommand so `argv` alone reproduces the invocation.
+    pub argv: Vec<String>,
     /// Byte length of the command string.
     pub command_bytes: u64,
     /// Estimated token count: command_bytes / 4.
@@ -57,6 +63,7 @@ impl CommandStarted {
         run_id: String,
         caller: Caller,
         command: impl Into<String>,
+        argv: Vec<String>,
         project_path: Option<String>,
     ) -> Self {
         let command = command.into();
@@ -68,6 +75,7 @@ impl CommandStarted {
             version: VERSION.to_string(),
             caller,
             command,
+            argv,
             command_bytes,
             command_token_estimate: estimate_tokens(command_bytes),
             project_path,
@@ -122,21 +130,46 @@ mod tests {
 
     #[test]
     fn command_started_fields() {
-        let ev = CommandStarted::new("r1".into(), Caller::Cli, "check .", Some("/proj".into()));
+        let ev = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check",
+            vec!["check".into(), ".".into()],
+            Some("/proj".into()),
+        );
         assert_eq!(ev.event, "CommandStarted");
         assert_eq!(ev.run_id, "r1");
         assert_eq!(ev.caller, Caller::Cli);
-        assert_eq!(ev.command, "check .");
-        assert_eq!(ev.command_bytes, 7);
-        assert_eq!(ev.command_token_estimate, 1); // 7 / 4 = 1
+        assert_eq!(ev.command, "check");
+        assert_eq!(ev.argv, vec!["check".to_string(), ".".into()]);
         assert_eq!(ev.project_path, Some("/proj".into()));
     }
 
     #[test]
     fn command_started_mcp_caller() {
-        let ev = CommandStarted::new("r2".into(), Caller::Mcp, "fmt .", None);
+        let ev = CommandStarted::new("r2".into(), Caller::Mcp, "fmt", vec!["fmt".into()], None);
         assert_eq!(ev.caller, Caller::Mcp);
         assert_eq!(ev.project_path, None);
+        assert_eq!(ev.argv, vec!["fmt".to_string()]);
+    }
+
+    #[test]
+    fn command_started_argv_serializes() {
+        // argv must round-trip through JSON so ndjson consumers can read it.
+        let ev = CommandStarted::new(
+            "r9".into(),
+            Caller::Cli,
+            "read",
+            vec!["read".into(), "--full".into(), "a.rs".into(), "b.rs".into()],
+            None,
+        );
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(
+            json.contains(r#""argv":["read","--full","a.rs","b.rs"]"#),
+            "argv must serialize as an ordered array; got: {json}"
+        );
+        let parsed: CommandStarted = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.argv, ev.argv);
     }
 
     #[test]
@@ -157,7 +190,13 @@ mod tests {
 
     #[test]
     fn command_started_serializes() {
-        let ev = CommandStarted::new("x".into(), Caller::Cli, "check .", Some("/p".into()));
+        let ev = CommandStarted::new(
+            "x".into(),
+            Caller::Cli,
+            "check",
+            vec!["check".into(), ".".into()],
+            Some("/p".into()),
+        );
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("CommandStarted"));
         assert!(json.contains("cli"));
@@ -176,8 +215,14 @@ mod tests {
             protocol_version: "2025-03-26".into(),
             capabilities: vec!["roots".into(), "sampling".into()],
         };
-        let ev = CommandStarted::new("r5".into(), Caller::Mcp, "check .", None)
-            .with_agent_info(Some(info));
+        let ev = CommandStarted::new(
+            "r5".into(),
+            Caller::Mcp,
+            "check",
+            vec!["check".into(), ".".into()],
+            None,
+        )
+        .with_agent_info(Some(info));
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("agent_info"));
         assert!(json.contains("claude-code"));

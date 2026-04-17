@@ -112,7 +112,13 @@ mod tests {
 
     #[test]
     fn parse_valid_events() {
-        let started = CommandStarted::new("r1".into(), Caller::Cli, "check .", None);
+        let started = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check .",
+            vec!["check".into(), ".".into()],
+            None,
+        );
         let completed = CommandCompleted::new("r1".into(), 400, 50, true);
         let line1 = serde_json::to_string(&started).unwrap();
         let line2 = serde_json::to_string(&completed).unwrap();
@@ -141,7 +147,13 @@ mod tests {
 
     #[test]
     fn parse_empty_lines_skipped() {
-        let started = CommandStarted::new("r1".into(), Caller::Cli, "check .", None);
+        let started = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check .",
+            vec!["check".into(), ".".into()],
+            None,
+        );
         let completed = CommandCompleted::new("r1".into(), 400, 50, true);
         let line1 = serde_json::to_string(&started).unwrap();
         let line2 = serde_json::to_string(&completed).unwrap();
@@ -154,7 +166,7 @@ mod tests {
 
     #[test]
     fn parse_corrupt_json_errors() {
-        let content = r#"{"event":"CommandStarted","run_id":"r1","timestamp_ms":1000,"version":"0.1.0","caller":"cli","command":"check .","command_bytes":7,"command_token_estimate":1,"project_path":null}
+        let content = r#"{"event":"CommandStarted","run_id":"r1","timestamp_ms":1000,"version":"0.1.0","caller":"cli","command":"check .","command_bytes":7,"command_token_estimate":1,"argv":["check","."],"project_path":null}
 not valid json
 {"event":"CommandCompleted","run_id":"r1","timestamp_ms":1050,"output_bytes":400,"token_estimate":100,"duration_ms":50,"success":true}"#;
         let err = parse_events(content).unwrap_err();

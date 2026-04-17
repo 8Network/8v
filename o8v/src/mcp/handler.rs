@@ -56,11 +56,12 @@ pub(super) async fn handle_command(
     })?;
 
     // Parse and dispatch.
-    let parsed_command = super::parse::parse_mcp_command(command, &containment_root)?;
+    let (parsed_command, argv) = super::parse::parse_mcp_command(command, &containment_root)?;
 
     match crate::commands::dispatch_command_with_agent(
         parsed_command,
         o8v_core::caller::Caller::Mcp,
+        argv,
         &super::INTERRUPTED,
         agent_info,
     )

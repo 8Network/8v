@@ -128,14 +128,16 @@ impl Command {
 pub(crate) async fn dispatch_command(
     command: Command,
     caller: Caller,
+    argv: Vec<String>,
     interrupted: &'static AtomicBool,
 ) -> Result<(String, ExitCode, bool), CommandError> {
-    dispatch_command_with_agent(command, caller, interrupted, None).await
+    dispatch_command_with_agent(command, caller, argv, interrupted, None).await
 }
 
 pub(crate) async fn dispatch_command_with_agent(
     command: Command,
     caller: Caller,
+    argv: Vec<String>,
     interrupted: &'static AtomicBool,
     agent_info: Option<o8v_core::caller::AgentInfo>,
 ) -> Result<(String, ExitCode, bool), CommandError> {
@@ -155,7 +157,7 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Build(args) => {
             let cmd = build::BuildCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             let exit = if report.process.success {
                 ExitCode::SUCCESS
             } else {
@@ -166,7 +168,7 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Test(args) => {
             let cmd = test::TestCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             let exit = if report.process.success {
                 ExitCode::SUCCESS
             } else {
@@ -178,7 +180,7 @@ pub(crate) async fn dispatch_command_with_agent(
             let use_stderr = audience == Audience::Human;
             let cmd = check::CheckCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             let exit = if report.results().is_empty() && report.detection_errors().is_empty() {
                 ExitCode::from(2u8)
             } else if report.is_ok() {
@@ -192,7 +194,7 @@ pub(crate) async fn dispatch_command_with_agent(
             let use_stderr = audience == Audience::Human;
             let cmd = fmt::FmtCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             let exit = if report.entries.is_empty() && report.detection_errors.is_empty() {
                 ExitCode::from(2u8)
             } else if report.is_ok() {
@@ -205,7 +207,7 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Hooks(args) => {
             let cmd = hooks::HooksCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             let exit = if report.success {
                 ExitCode::SUCCESS
             } else {
@@ -216,14 +218,14 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Upgrade(args) => {
             let cmd = upgrade::UpgradeCommand { args };
             let (output, _, _) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Read(args) => {
             use o8v_core::render::read_report::{MultiResult, ReadReport};
             let cmd = read::ReadCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             // Batch-mode errors are inline in `Multi.entries`. The single-path
             // case already propagates errors via CommandError. Exit non-zero
             // if any entry failed, so agents can detect failure.
@@ -242,13 +244,13 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Write(args) => {
             let cmd = write::WriteCommand { args };
             let (output, _, _) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Search(args) => {
             let cmd = search::SearchCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             // files_skipped counts files we couldn't read (permission, I/O);
             // binary content is filtered separately. Surface read failures via
             // exit code so agents notice instead of silently under-searching.
@@ -262,7 +264,7 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Ls(args) => {
             let cmd = ls::LsCommand { args };
             let (output, _, _) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Init(_) | Command::Mcp => {
