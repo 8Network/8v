@@ -247,9 +247,17 @@ pub(crate) async fn dispatch_command_with_agent(
         }
         Command::Search(args) => {
             let cmd = search::SearchCommand { args };
-            let (output, _, _) =
+            let (output, _, report) =
                 o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
-            Ok((output, ExitCode::SUCCESS, false))
+            // files_skipped counts files we couldn't read (permission, I/O);
+            // binary content is filtered separately. Surface read failures via
+            // exit code so agents notice instead of silently under-searching.
+            let exit = if search::had_read_errors(&report) {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            };
+            Ok((output, exit, false))
         }
         Command::Ls(args) => {
             let cmd = ls::LsCommand { args };

@@ -365,3 +365,50 @@ impl Command for SearchCommand {
         })
     }
 }
+
+/// True when any file was skipped due to a read error (permission denied,
+/// I/O failure, etc.). Binary content is filtered earlier and does NOT
+/// increment `files_skipped`, so a non-zero count means a real failure the
+/// agent should be able to detect via the exit code.
+pub(crate) fn had_read_errors(report: &SearchReport) -> bool {
+    report.files_skipped > 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use o8v_core::render::RenderConfig;
+
+    fn empty_report(files_skipped: usize) -> SearchReport {
+        SearchReport {
+            pattern: String::new(),
+            files: Vec::new(),
+            total_matches: 0,
+            total_matches_before_limit: 0,
+            total_files: 0,
+            files_searched: 0,
+            files_skipped,
+            truncated: false,
+            file_mode: false,
+            context: Some(2),
+            render_config: RenderConfig {
+                limit: Some(20),
+                verbose: false,
+                color: false,
+                page: 1,
+                errors_first: false,
+            },
+        }
+    }
+
+    #[test]
+    fn had_read_errors_false_when_zero_skipped() {
+        assert!(!had_read_errors(&empty_report(0)));
+    }
+
+    #[test]
+    fn had_read_errors_true_when_any_skipped() {
+        assert!(had_read_errors(&empty_report(1)));
+        assert!(had_read_errors(&empty_report(42)));
+    }
+}
