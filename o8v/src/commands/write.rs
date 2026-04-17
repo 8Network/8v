@@ -632,11 +632,7 @@ pub(crate) fn write_to_report(
             };
 
             if new_content == existing_content {
-                return Err(format!(
-                    "Error: no matches found for {find:?} in {path_str}. \
-                     Read the file to find the exact text (whitespace and indentation must match), \
-                     then retry with the correct --find value."
-                ));
+                return Err(render_not_found_hint(find, existing_content, &path_str));
             }
 
             let count = if *all {
@@ -675,6 +671,64 @@ impl Command for WriteCommand {
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
+
+/// Render whitespace as visible glyphs so agents can see tab-vs-space and
+/// trailing-space differences in error messages.
+/// Space → `·`, tab → `→`, newline → `↵` (followed by a real newline so the
+/// output still visually wraps).
+fn visualize_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            ' ' => out.push('·'),
+            '\t' => out.push('→'),
+            '\n' => {
+                out.push('↵');
+                out.push('\n');
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Build the error message for a `--find` miss. If the find is single-line
+/// and any line in the file matches `find.trim()` (i.e. whitespace-only
+/// difference), render both with visible whitespace as a "closest match"
+/// hint. Otherwise fall back to a generic message.
+fn render_not_found_hint(find: &str, content: &str, path: &str) -> String {
+    // Multi-line find is out of scope for the hint — too many candidate
+    // strategies. Still emit a path-qualified fallback.
+    if find.contains('\n') {
+        return format!(
+            "Error: no matches found for {find:?} in {path}. \
+             Read the file to find the exact text (whitespace and indentation must match), \
+             then retry with the correct --find value."
+        );
+    }
+
+    let find_trim = find.trim();
+    let candidate = content
+        .lines()
+        .find(|line| !line.is_empty() && line.trim() == find_trim && *line != find);
+
+    match candidate {
+        Some(line) => format!(
+            "Error: no matches found for --find in {path}.\n\
+             closest match differs in whitespace (· = space, → = tab, ↵ = newline):\n\
+             requested:  {}\n\
+             found:      {}\n\
+             Fix the --find value to match the file exactly and retry.",
+            visualize_whitespace(find),
+            visualize_whitespace(line),
+        ),
+        None => format!(
+            "Error: no matches found for {find:?} in {path}. \
+             Read the file to find the exact text (whitespace and indentation must match), \
+             then retry with the correct --find value."
+        ),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -733,5 +787,70 @@ mod tests {
         let (path, range) = parse_path_line("foo.txt").unwrap();
         assert_eq!(path, "foo.txt");
         assert_eq!(range, None);
+    }
+
+    // ── Bug #12 (A2/D14): find/replace error must show closest-match diff hint ─
+    //
+    // When --find misses because of whitespace mismatch (tabs vs spaces,
+    // trailing whitespace, etc.), the error today says only "no matches found".
+    // Agents retry-loop because they can't see what differs. These tests pin
+    // the new behavior: if a line in the file matches find.trim(), show the
+    // candidate with visible whitespace markers so the difference is obvious.
+
+    #[test]
+    fn not_found_hint_shows_tab_vs_spaces_candidate() {
+        let content = "    foo\n"; // four spaces + foo
+        let find = "\tfoo"; // tab + foo
+        let hint = render_not_found_hint(find, content, "file.txt");
+        // Must reference the requested text.
+        assert!(
+            hint.contains("file.txt"),
+            "hint should cite the path; got:\n{hint}"
+        );
+        // Must show a closest candidate (the spaces-prefixed foo line).
+        assert!(
+            hint.contains("closest match") || hint.contains("closest candidate"),
+            "hint must announce a closest match; got:\n{hint}"
+        );
+        // Must make whitespace visible in BOTH the requested find and the
+        // candidate so the reader sees tab-vs-space.
+        // Representation: · for space, → for tab (documented in the message).
+        assert!(
+            hint.contains('→'),
+            "hint must render tab as '→' so mismatch is visible; got:\n{hint}"
+        );
+        assert!(
+            hint.contains('·'),
+            "hint must render space as '·' so mismatch is visible; got:\n{hint}"
+        );
+    }
+
+    #[test]
+    fn not_found_hint_shows_trailing_space_candidate() {
+        // File has two trailing spaces; --find has one. `replace`/`replacen`
+        // would miss (not a substring), so the hint logic must kick in.
+        let content = "let x = 1;  \n";
+        let find = "let x = 1; ";
+        let hint = render_not_found_hint(find, content, "file.rs");
+        assert!(
+            hint.contains("closest"),
+            "expected closest hint in:\n{hint}"
+        );
+        assert!(hint.contains('·'), "expected '·' marker in:\n{hint}");
+    }
+
+    #[test]
+    fn not_found_hint_falls_back_when_no_candidate() {
+        // Totally unrelated find — no trim-equal line, no shared prefix.
+        let content = "alpha\nbeta\ngamma\n";
+        let find = "zzz_not_in_file_zzz";
+        let hint = render_not_found_hint(find, content, "f.txt");
+        // Must still produce a useful, non-panicking message.
+        assert!(
+            hint.contains("no matches found"),
+            "fallback must still say no matches; got:\n{hint}"
+        );
+        // And must mention the path.
+        assert!(hint.contains("f.txt"), "must cite path; got:\n{hint}");
     }
 }
