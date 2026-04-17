@@ -87,7 +87,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(clippy::disallowed_methods)]
     fn resolve_workspace_from_valid_project() {
         let _guard = crate::HOME_MUTEX.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
@@ -98,7 +97,8 @@ mod tests {
         )
         .unwrap();
         // Override HOME so StorageDir opens inside temp.
-        std::env::set_var("HOME", tmp.path());
+        // SAFETY: test-only, single-threaded via HOME_MUTEX.
+        unsafe { std::env::set_var("HOME", tmp.path()); }
 
         let result = resolve_workspace(tmp.path());
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
@@ -116,7 +116,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::disallowed_methods)]
     fn resolve_workspace_has_storage() {
         let _guard = crate::HOME_MUTEX.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
@@ -125,7 +124,8 @@ mod tests {
             "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
-        std::env::set_var("HOME", tmp.path());
+        // SAFETY: test-only, single-threaded via HOME_MUTEX.
+        unsafe { std::env::set_var("HOME", tmp.path()); }
 
         let (_project_root, storage, _config) = resolve_workspace(tmp.path()).unwrap();
         // Verify storage directory was created.
@@ -139,7 +139,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::disallowed_methods)]
     fn resolve_workspace_config_is_none_without_dot8v() {
         let _guard = crate::HOME_MUTEX.lock().unwrap();
         let project = tempfile::TempDir::new().unwrap();
@@ -151,7 +150,8 @@ mod tests {
         .unwrap();
         // Use a separate HOME so StorageDir::open() doesn't create .8v/ inside
         // the project directory.
-        std::env::set_var("HOME", home.path());
+        // SAFETY: test-only, single-threaded via HOME_MUTEX.
+        unsafe { std::env::set_var("HOME", home.path()); }
 
         let (_project_root, _storage, config) = resolve_workspace(project.path()).unwrap();
         assert!(

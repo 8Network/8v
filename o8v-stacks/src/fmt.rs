@@ -7,11 +7,11 @@
 //! Types (FmtReport, FmtEntry, FmtOutcome, FmtConfig) live in o8v-core
 //! because render depends on them. This module contains the orchestration.
 
+use crate::detect_all;
 use crate::stack_tools::FormatTool;
 use o8v_core::diagnostic::sanitize;
-use o8v_core::{FmtConfig, FmtEntry, FmtOutcome, FmtReport};
-use crate::detect_all;
 use o8v_core::project::{ProjectRoot, Stack};
+use o8v_core::{FmtConfig, FmtEntry, FmtOutcome, FmtReport};
 use std::process::Command;
 use std::sync::atomic::Ordering;
 
@@ -253,7 +253,6 @@ pub fn fmt(root: &ProjectRoot, config: &FmtConfig) -> FmtReport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use o8v_core::project::Stack;
 
     #[test]

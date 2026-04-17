@@ -306,15 +306,7 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
         if args.files {
             search_file_names(path, &root, &regex, &mut result);
         } else {
-            search_file_contents(
-                path,
-                &root,
-                containment,
-                &config,
-                &regex,
-                args,
-                &mut result,
-            );
+            search_file_contents(path, &root, containment, &config, &regex, args, &mut result);
         }
     }
 
@@ -330,10 +322,7 @@ pub struct SearchCommand {
 impl Command for SearchCommand {
     type Report = SearchReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         let result = do_search(&self.args, ctx).map_err(CommandError::Execution)?;
 
         let files: Vec<ReportFileMatches> = result
@@ -371,6 +360,7 @@ impl Command for SearchCommand {
                 verbose: false,
                 color: !self.args.format.no_color && std::env::var_os("NO_COLOR").is_none(),
                 page: self.args.page,
+                errors_first: false,
             },
         })
     }

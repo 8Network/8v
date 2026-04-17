@@ -7,8 +7,8 @@
 //! Symmetric with StorageSubscriber (the writer).
 //! Uses StorageDir for the path, o8v-fs for safe reads.
 
-use o8v_core::events::Event;
 use crate::workspace::StorageDir;
+use o8v_core::events::Event;
 
 #[derive(Debug)]
 pub enum EventReadError {
@@ -28,7 +28,9 @@ impl std::fmt::Display for EventReadError {
             Self::Io(msg) => write!(f, "{msg}"),
             Self::InvalidJson { line, source } => write!(f, "line {line}: invalid JSON: {source}"),
             Self::MissingEventField { line } => write!(f, "line {line}: missing \"event\" field"),
-            Self::InvalidEventField { line } => write!(f, "line {line}: \"event\" field is not a string"),
+            Self::InvalidEventField { line } => {
+                write!(f, "line {line}: \"event\" field is not a string")
+            }
         }
     }
 }
@@ -61,26 +63,39 @@ pub fn parse_events(content: &str) -> Result<Vec<Event>, EventReadError> {
             continue;
         }
 
-        let raw: serde_json::Value = serde_json::from_str(line)
-            .map_err(|e| EventReadError::InvalidJson { line: line_num, source: e.to_string() })?;
+        let raw: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| EventReadError::InvalidJson {
+                line: line_num,
+                source: e.to_string(),
+            })?;
 
-        let event_type = raw.get("event")
+        let event_type = raw
+            .get("event")
             .ok_or(EventReadError::MissingEventField { line: line_num })?
             .as_str()
             .ok_or(EventReadError::InvalidEventField { line: line_num })?;
 
         let event = match event_type {
             "CommandStarted" => {
-                let started: o8v_core::events::lifecycle::CommandStarted = serde_json::from_str(line)
-                    .map_err(|e| EventReadError::InvalidJson { line: line_num, source: e.to_string() })?;
+                let started: o8v_core::events::lifecycle::CommandStarted =
+                    serde_json::from_str(line).map_err(|e| EventReadError::InvalidJson {
+                        line: line_num,
+                        source: e.to_string(),
+                    })?;
                 Event::CommandStarted(started)
             }
             "CommandCompleted" => {
-                let completed: o8v_core::events::lifecycle::CommandCompleted = serde_json::from_str(line)
-                    .map_err(|e| EventReadError::InvalidJson { line: line_num, source: e.to_string() })?;
+                let completed: o8v_core::events::lifecycle::CommandCompleted =
+                    serde_json::from_str(line).map_err(|e| EventReadError::InvalidJson {
+                        line: line_num,
+                        source: e.to_string(),
+                    })?;
                 Event::CommandCompleted(completed)
             }
-            other => Event::Unknown { event_type: other.to_string(), raw },
+            other => Event::Unknown {
+                event_type: other.to_string(),
+                raw,
+            },
         };
 
         events.push(event);
@@ -92,8 +107,8 @@ pub fn parse_events(content: &str) -> Result<Vec<Event>, EventReadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use o8v_core::events::lifecycle::{CommandCompleted, CommandStarted};
     use o8v_core::caller::Caller;
+    use o8v_core::events::lifecycle::{CommandCompleted, CommandStarted};
 
     #[test]
     fn parse_valid_events() {
@@ -165,6 +180,8 @@ not valid json
         let content = r#"{"event":"FutureEvent","data":"something"}"#;
         let events = parse_events(content).unwrap();
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], Event::Unknown { event_type, .. } if event_type == "FutureEvent"));
+        assert!(
+            matches!(&events[0], Event::Unknown { event_type, .. } if event_type == "FutureEvent")
+        );
     }
 }

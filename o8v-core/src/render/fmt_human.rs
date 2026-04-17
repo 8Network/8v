@@ -112,8 +112,8 @@ fn color(enabled: bool, code: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::FmtEntry;
     use crate::project::{ProjectRoot, Stack};
+    use crate::FmtEntry;
     use std::time::Duration;
 
     fn dummy_root() -> ProjectRoot {

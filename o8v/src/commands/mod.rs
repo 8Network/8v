@@ -95,10 +95,7 @@ impl Command {
             Command::Write(a) => resolve_path(&mut a.path, root),
             Command::Search(a) => resolve_optional_path(&mut a.path, root),
             Command::Ls(a) => resolve_optional_path(&mut a.path, root),
-            Command::Init(_)
-            | Command::Hooks(_)
-            | Command::Upgrade(_)
-            | Command::Mcp => Ok(()),
+            Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => Ok(()),
         }
     }
 
@@ -157,20 +154,31 @@ pub(crate) async fn dispatch_command_with_agent(
     match command {
         Command::Build(args) => {
             let cmd = build::BuildCommand { args };
-            let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
-            let exit = if report.process.success { ExitCode::SUCCESS } else { ExitCode::FAILURE };
+            let (output, _, report) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let exit = if report.process.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            };
             Ok((output, exit, false))
         }
         Command::Test(args) => {
             let cmd = test::TestCommand { args };
-            let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
-            let exit = if report.process.success { ExitCode::SUCCESS } else { ExitCode::FAILURE };
+            let (output, _, report) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let exit = if report.process.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            };
             Ok((output, exit, false))
         }
         Command::Check(args) => {
             let use_stderr = audience == Audience::Human;
             let cmd = check::CheckCommand { args };
-            let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, report) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             let exit = if report.results().is_empty() && report.detection_errors().is_empty() {
                 ExitCode::from(2u8)
             } else if report.is_ok() {
@@ -183,7 +191,8 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Fmt(args) => {
             let use_stderr = audience == Audience::Human;
             let cmd = fmt::FmtCommand { args };
-            let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, report) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             let exit = if report.entries.is_empty() && report.detection_errors.is_empty() {
                 ExitCode::from(2u8)
             } else if report.is_ok() {
@@ -195,33 +204,43 @@ pub(crate) async fn dispatch_command_with_agent(
         }
         Command::Hooks(args) => {
             let cmd = hooks::HooksCommand { args };
-            let (output, _, report) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
-            let exit = if report.success { ExitCode::SUCCESS } else { ExitCode::from(report.exit_code) };
+            let (output, _, report) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let exit = if report.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(report.exit_code)
+            };
             Ok((output, exit, true))
         }
         Command::Upgrade(args) => {
             let cmd = upgrade::UpgradeCommand { args };
-            let (output, _, _) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, _) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Read(args) => {
             let cmd = read::ReadCommand { args };
-            let (output, _, _) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, _) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Write(args) => {
             let cmd = write::WriteCommand { args };
-            let (output, _, _) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, _) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Search(args) => {
             let cmd = search::SearchCommand { args };
-            let (output, _, _) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, _) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Ls(args) => {
             let cmd = ls::LsCommand { args };
-            let (output, _, _) = o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
+            let (output, _, _) =
+                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name).await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Init(_) | Command::Mcp => {

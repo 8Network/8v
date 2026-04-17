@@ -63,16 +63,14 @@ impl Workspaces {
                     ProjectKind::Compound { members }
                 }
             }
-            Self::Object(obj) => obj
-                .packages
-                .map_or(ProjectKind::Standalone, |members| {
-                    // Empty packages array is not a compound project.
-                    if members.is_empty() {
-                        ProjectKind::Standalone
-                    } else {
-                        ProjectKind::Compound { members }
-                    }
-                }),
+            Self::Object(obj) => obj.packages.map_or(ProjectKind::Standalone, |members| {
+                // Empty packages array is not a compound project.
+                if members.is_empty() {
+                    ProjectKind::Standalone
+                } else {
+                    ProjectKind::Compound { members }
+                }
+            }),
         }
     }
 }

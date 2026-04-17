@@ -11,10 +11,10 @@
 //! Stack definitions and tool execution live in o8v-stacks.
 //! This crate is the orchestration glue.
 
+use o8v_core::project::ProjectRoot;
 use o8v_core::{
     CheckConfig, CheckContext, CheckEntry, CheckEvent, CheckOutcome, CheckReport, CheckResult,
 };
-use o8v_core::project::ProjectRoot;
 use o8v_stacks::detect_all;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -148,17 +148,18 @@ pub fn check(
                     continue;
                 }
             };
-            #[allow(clippy::disallowed_methods)] // panic recovery, not silent fallback
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 c.run(&containment, &ctx)
-            }))
-            .unwrap_or_else(|_| {
-                tracing::error!(check = %name, "check panicked");
-                CheckOutcome::error(
-                    o8v_core::ErrorKind::Runtime,
-                    format!("'{name}' panicked — this is a bug in 8v or the check"),
-                )
-            });
+            })) {
+                Ok(result) => result,
+                Err(_) => {
+                    tracing::error!(check = %name, "check panicked");
+                    CheckOutcome::error(
+                        o8v_core::ErrorKind::Runtime,
+                        format!("'{name}' panicked — this is a bug in 8v or the check"),
+                    )
+                }
+            };
             let duration = start.elapsed();
 
             match &outcome {

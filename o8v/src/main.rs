@@ -46,7 +46,11 @@ fn main() -> ExitCode {
                 .enable_all()
                 .build()
                 .unwrap();
-            match rt.block_on(commands::dispatch_command(command, o8v_core::caller::Caller::Cli, interrupted)) {
+            match rt.block_on(commands::dispatch_command(
+                command,
+                o8v_core::caller::Caller::Cli,
+                interrupted,
+            )) {
                 Ok((output, exit_code, use_stderr)) => {
                     use std::io::Write;
                     let result = if use_stderr {

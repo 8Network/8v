@@ -338,18 +338,7 @@ fi
 step "Bumping version to $VERSION..."
 
 # Update all crate Cargo.toml files (workspace root has no version field — skip it)
-for cargo_file in \
-    o8v/Cargo.toml \
-    o8v-core/Cargo.toml \
-    o8v-fs/Cargo.toml \
-    o8v-process/Cargo.toml \
-    o8v-testkit/Cargo.toml \
-    o8v-workspace/Cargo.toml; do
-
-    if [ -f "$cargo_file" ]; then
-        sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$cargo_file"
-    fi
-done
+    sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
 # Regenerate Cargo.lock
 cargo check -p o8v > /dev/null 2>&1

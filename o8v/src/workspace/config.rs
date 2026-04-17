@@ -4,8 +4,8 @@
 
 //! `ConfigDir` — project-local `.8v/` configuration directory.
 
-use o8v_fs::ContainmentRoot;
 use o8v_core::project::ProjectRoot;
+use o8v_fs::ContainmentRoot;
 use std::path::PathBuf;
 
 use super::DIR_NAME;

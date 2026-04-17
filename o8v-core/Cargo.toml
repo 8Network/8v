@@ -1,6 +1,6 @@
 [package]
 name = "o8v-core"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 repository.workspace = true
 homepage.workspace = true

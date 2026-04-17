@@ -53,7 +53,12 @@ pub struct CommandStarted {
 }
 
 impl CommandStarted {
-    pub fn new(run_id: String, caller: Caller, command: impl Into<String>, project_path: Option<String>) -> Self {
+    pub fn new(
+        run_id: String,
+        caller: Caller,
+        command: impl Into<String>,
+        project_path: Option<String>,
+    ) -> Self {
         let command = command.into();
         let command_bytes = command.len() as u64;
         Self {
@@ -157,7 +162,10 @@ mod tests {
         assert!(json.contains("CommandStarted"));
         assert!(json.contains("cli"));
         assert!(json.contains("timestamp_ms"));
-        assert!(!json.contains("agent_info"), "agent_info should be skipped when None");
+        assert!(
+            !json.contains("agent_info"),
+            "agent_info should be skipped when None"
+        );
     }
 
     #[test]

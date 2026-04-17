@@ -33,7 +33,10 @@ pub struct Args {
 /// Run `8v fmt`.
 ///
 /// Returns the report. The caller decides how to render and what exit code to use.
-pub(crate) fn run(args: &Args, interrupted: &'static AtomicBool) -> Result<o8v_core::FmtReport, String> {
+pub(crate) fn run(
+    args: &Args,
+    interrupted: &'static AtomicBool,
+) -> Result<o8v_core::FmtReport, String> {
     let path_str = args.path.as_deref().unwrap_or(".");
     let root = ProjectRoot::new(path_str)
         .map_err(|e| o8v_core::render::sanitize_for_display(&e.to_string()))?;
@@ -59,10 +62,7 @@ pub struct FmtCommand {
 impl Command for FmtCommand {
     type Report = FmtReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         run(&self.args, ctx.interrupted).map_err(CommandError::Execution)
     }
 }

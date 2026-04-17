@@ -201,7 +201,15 @@ fn find_replace_all() {
     std::fs::write(&file, "foo bar\nfoo baz\n").unwrap();
 
     let out = bin_in(tmp.path())
-        .args(["write", "src.txt", "--find", "foo", "--replace", "qux", "--all"])
+        .args([
+            "write",
+            "src.txt",
+            "--find",
+            "foo",
+            "--replace",
+            "qux",
+            "--all",
+        ])
         .output()
         .expect("run 8v write");
 
@@ -556,8 +564,7 @@ fn crlf_file_byte_exact_preservation() {
     );
     let result = std::fs::read(&file).unwrap();
     assert_eq!(
-        result,
-        b"line1\r\nreplaced\r\nline3\r\n",
+        result, b"line1\r\nreplaced\r\nline3\r\n",
         "CRLF endings must be preserved byte-exactly"
     );
 }
@@ -868,8 +875,7 @@ fn crlf_file_byte_exact_preservation_with_blank_lines() {
     );
     let result = std::fs::read(&file).unwrap();
     assert_eq!(
-        result,
-        b"line1\r\nnew_a\r\nnew_b\r\nline3\r\n",
+        result, b"line1\r\nnew_a\r\nnew_b\r\nline3\r\n",
         "CRLF endings must be preserved byte-exactly including injected lines"
     );
 }

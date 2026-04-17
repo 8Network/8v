@@ -18,13 +18,17 @@ pub struct Extensions {
 
 impl Extensions {
     pub fn new() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
     pub fn insert<T: Send + Sync + 'static>(&mut self, val: T) {
         self.map.insert(TypeId::of::<T>(), Box::new(val));
     }
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<&T> {
-        self.map.get(&TypeId::of::<T>()).and_then(|b| b.downcast_ref())
+        self.map
+            .get(&TypeId::of::<T>())
+            .and_then(|b| b.downcast_ref())
     }
 }
 

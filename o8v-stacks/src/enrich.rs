@@ -130,25 +130,26 @@ fn safe_parse(
     tool: &str,
     stack: &str,
 ) -> o8v_core::diagnostic::ParseResult {
-    #[allow(clippy::disallowed_methods)] // panic recovery, not silent fallback
-    let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let mut result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         parse_fn(stdout, stderr, project_dir.as_path(), tool, stack)
-    }))
-    .unwrap_or_else(|e| {
-        let msg = if let Some(s) = e.downcast_ref::<&str>() {
-            s.to_string()
-        } else if let Some(s) = e.downcast_ref::<String>() {
-            s.clone()
-        } else {
-            "unknown panic".to_string()
-        };
-        tracing::error!(tool, panic = %msg, "parser panicked — this is a bug in 8v");
-        o8v_core::diagnostic::ParseResult {
-            diagnostics: vec![],
-            status: o8v_core::diagnostic::ParseStatus::Unparsed,
-            parsed_items: 0,
+    })) {
+        Ok(parse_result) => parse_result,
+        Err(e) => {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            tracing::error!(tool, panic = %msg, "parser panicked — this is a bug in 8v");
+            o8v_core::diagnostic::ParseResult {
+                diagnostics: vec![],
+                status: o8v_core::diagnostic::ParseStatus::Unparsed,
+                parsed_items: 0,
+            }
         }
-    });
+    };
 
     // Sanitize at the data boundary: strip ANSI from all external string fields.
     for d in &mut result.diagnostics {
@@ -192,8 +193,8 @@ fn safe_parse(
 mod tests {
     use super::*;
     use o8v_core::diagnostic::{Diagnostic, Location, ParseStatus, Severity};
-    use o8v_core::{CheckOutcome, ErrorKind};
     use o8v_core::project::ProjectRoot;
+    use o8v_core::{CheckOutcome, ErrorKind};
 
     fn dummy_diagnostic() -> Diagnostic {
         Diagnostic {

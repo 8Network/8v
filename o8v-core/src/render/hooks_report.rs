@@ -44,19 +44,28 @@ mod tests {
 
     #[test]
     fn render_plain_success() {
-        let report = HooksReport { exit_code: 0, success: true };
+        let report = HooksReport {
+            exit_code: 0,
+            success: true,
+        };
         assert_eq!(report.render_plain().as_str(), "ok");
     }
 
     #[test]
     fn render_plain_failure() {
-        let report = HooksReport { exit_code: 1, success: false };
+        let report = HooksReport {
+            exit_code: 1,
+            success: false,
+        };
         assert_eq!(report.render_plain().as_str(), "failed (exit 1)");
     }
 
     #[test]
     fn render_json_has_fields() {
-        let report = HooksReport { exit_code: 0, success: true };
+        let report = HooksReport {
+            exit_code: 0,
+            success: true,
+        };
         let json: serde_json::Value = serde_json::from_str(report.render_json().as_str()).unwrap();
         assert_eq!(json["exit_code"], 0);
         assert_eq!(json["success"], true);
@@ -64,13 +73,19 @@ mod tests {
 
     #[test]
     fn render_human_success() {
-        let report = HooksReport { exit_code: 0, success: true };
+        let report = HooksReport {
+            exit_code: 0,
+            success: true,
+        };
         assert_eq!(report.render_human().as_str(), "hooks: passed");
     }
 
     #[test]
     fn render_human_failure() {
-        let report = HooksReport { exit_code: 2, success: false };
+        let report = HooksReport {
+            exit_code: 2,
+            success: false,
+        };
         assert_eq!(report.render_human().as_str(), "hooks: failed (exit 2)");
     }
 }

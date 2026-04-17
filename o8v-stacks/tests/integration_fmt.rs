@@ -3,8 +3,8 @@
 //! Creates a temporary Rust project with unformatted code, runs fmt,
 //! and verifies it detects the formatting needs correctly.
 
-use o8v_core::{FmtConfig, FmtOutcome};
 use o8v_core::project::ProjectRoot;
+use o8v_core::{FmtConfig, FmtOutcome};
 use o8v_stacks::fmt;
 use std::fs;
 use std::sync::atomic::AtomicBool;

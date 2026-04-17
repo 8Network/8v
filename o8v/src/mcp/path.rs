@@ -63,8 +63,10 @@ fn split_range_suffix(input: &str) -> (&str, Option<&str>) {
     if let Some(colon_pos) = input.rfind(':') {
         let after = &input[colon_pos + 1..];
         if let Some(dash_pos) = after.find('-') {
-            let start_ok = after[..dash_pos].chars().all(|c| c.is_ascii_digit()) && !after[..dash_pos].is_empty();
-            let end_ok = after[dash_pos + 1..].chars().all(|c| c.is_ascii_digit()) && !after[dash_pos + 1..].is_empty();
+            let start_ok = after[..dash_pos].chars().all(|c| c.is_ascii_digit())
+                && !after[..dash_pos].is_empty();
+            let end_ok = after[dash_pos + 1..].chars().all(|c| c.is_ascii_digit())
+                && !after[dash_pos + 1..].is_empty();
             if start_ok && end_ok {
                 return (&input[..colon_pos], Some(&input[colon_pos..]));
             }

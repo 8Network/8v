@@ -1,8 +1,8 @@
 //! Check trait and result types.
 
 use crate::diagnostic::{sanitize, Diagnostic, ParseStatus};
-use o8v_fs::ContainmentRoot;
 use crate::project::{ProjectRoot, Stack};
+use o8v_fs::ContainmentRoot;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
@@ -17,7 +17,9 @@ pub struct CheckConfig {
 /// Events emitted during check execution for streaming progress.
 pub enum CheckEvent<'a> {
     /// Detection error found. Emitted before any checks.
-    DetectionError { error: &'a crate::project::DetectError },
+    DetectionError {
+        error: &'a crate::project::DetectError,
+    },
     /// Project detected, checks about to start.
     ProjectStart {
         name: &'a str,

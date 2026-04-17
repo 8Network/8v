@@ -448,10 +448,7 @@ pub struct LsCommand {
 impl Command for LsCommand {
     type Report = LsReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         let result = do_ls(&self.args, ctx).map_err(CommandError::Execution)?;
 
         let mode = if self.args.tree {

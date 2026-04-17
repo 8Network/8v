@@ -1,9 +1,9 @@
 //! Tests for `ToolCheck` — the adapter that turns CLI tools into Checks.
 //! Uses simple unix commands (true, false, echo, cat) as stand-ins for real tools.
 
+use o8v_core::project::ProjectRoot;
 use o8v_core::{Check, CheckContext, CheckOutcome};
 use o8v_fs::ContainmentRoot;
-use o8v_core::project::ProjectRoot;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 

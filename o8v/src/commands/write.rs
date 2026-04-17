@@ -289,7 +289,9 @@ fn detect_line_ending(content: &str) -> &'static str {
 
 /// Returns true if `content` contains any lone `\r` (i.e., `\r` not immediately followed by `\n`).
 fn has_lone_cr(content: &str) -> bool {
-    content.chars().zip(content.chars().skip(1).chain(std::iter::once('\0')))
+    content
+        .chars()
+        .zip(content.chars().skip(1).chain(std::iter::once('\0')))
         .any(|(c, next)| c == '\r' && next != '\n')
 }
 
@@ -361,7 +363,8 @@ fn validate_content_line_endings(content: &str) -> Result<(), String> {
 /// - `"a\nb\n"` → `["a", "b"]`
 /// - `"a\n\nb"` → `["a", "", "b"]` (blank middle preserved)
 fn content_to_lines(content: &str) -> Vec<String> {
-    let stripped = content.strip_suffix("\r\n")
+    let stripped = content
+        .strip_suffix("\r\n")
         .or_else(|| content.strip_suffix('\n'))
         .unwrap_or(content);
     stripped.split('\n').map(String::from).collect()
@@ -443,12 +446,13 @@ pub(crate) fn write_to_report(
             validate_content_line_endings(content)?;
             let content_lines = content_to_lines(content);
             let content_line_refs: Vec<&str> = content_lines.iter().map(String::as_str).collect();
-            let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len() - 1 + content_line_refs.len());
+            let mut new_lines: Vec<&str> =
+                Vec::with_capacity(lines.len() - 1 + content_line_refs.len());
             new_lines.extend_from_slice(&lines[..*line - 1]);
             new_lines.extend_from_slice(&content_line_refs);
             new_lines.extend_from_slice(&lines[*line..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Replace {
@@ -491,12 +495,13 @@ pub(crate) fn write_to_report(
             validate_content_line_endings(content)?;
             let content_lines = content_to_lines(content);
             let content_line_refs: Vec<&str> = content_lines.iter().map(String::as_str).collect();
-            let mut new_lines: Vec<&str> = Vec::with_capacity(lines.len() - (end - start) + content_line_refs.len());
+            let mut new_lines: Vec<&str> =
+                Vec::with_capacity(lines.len() - (end - start) + content_line_refs.len());
             new_lines.extend_from_slice(&lines[..*start - 1]);
             new_lines.extend_from_slice(&content_line_refs);
             new_lines.extend_from_slice(&lines[*end..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Replace {
@@ -527,7 +532,7 @@ pub(crate) fn write_to_report(
                 new_lines.insert(line - 1 + i, cl);
             }
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Insert {
@@ -562,16 +567,14 @@ pub(crate) fn write_to_report(
                 .map(|(_, line)| *line)
                 .collect();
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
-            o8v_fs::safe_write(&path, root,new_content_bytes.as_bytes())
+            o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::Delete { deleted_lines }
         }
         WriteOperation::CreateFile { content, force } => {
             if content.is_empty() {
-                return Err(
-                    "error: content cannot be empty when creating a file".to_string(),
-                );
+                return Err("error: content cannot be empty when creating a file".to_string());
             }
             if !force {
                 match o8v_fs::safe_exists(&path, root) {
@@ -586,7 +589,7 @@ pub(crate) fn write_to_report(
                     }
                 }
             }
-            o8v_fs::safe_write(&path, root,content.as_bytes())
+            o8v_fs::safe_write(&path, root, content.as_bytes())
                 .map_err(|e| format!("Error: failed to create file: {e}"))?;
             let line_count = content.lines().count();
             ReportOp::Create { line_count }
@@ -604,8 +607,7 @@ pub(crate) fn write_to_report(
             let existing_content = existing.content();
             validate_line_endings(existing_content)?;
             validate_content_line_endings(content)?;
-            let needs_separator = !existing_content.is_empty()
-                && !existing_content.ends_with('\n');
+            let needs_separator = !existing_content.is_empty() && !existing_content.ends_with('\n');
             let appended = if needs_separator {
                 let sep = detect_line_ending(existing_content);
                 format!("{sep}{content}")
@@ -642,7 +644,7 @@ pub(crate) fn write_to_report(
             } else {
                 1
             };
-            o8v_fs::safe_write(&path, root,new_content.as_bytes())
+            o8v_fs::safe_write(&path, root, new_content.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 
             ReportOp::FindReplace { count }
@@ -653,6 +655,23 @@ pub(crate) fn write_to_report(
         path: path_str,
         operation: report_op,
     })
+}
+
+// ── Command trait impl ──────────────────────────────────────────────────
+
+use o8v_core::command::{Command, CommandContext, CommandError};
+use o8v_core::render::write_report::WriteReport;
+
+pub struct WriteCommand {
+    pub args: Args,
+}
+
+impl Command for WriteCommand {
+    type Report = WriteReport;
+
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
+        write_to_report(&self.args, ctx).map_err(CommandError::Execution)
+    }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -714,25 +733,5 @@ mod tests {
         let (path, range) = parse_path_line("foo.txt").unwrap();
         assert_eq!(path, "foo.txt");
         assert_eq!(range, None);
-    }
-}
-
-// ── Command trait impl ──────────────────────────────────────────────────
-
-use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::render::write_report::WriteReport;
-
-pub struct WriteCommand {
-    pub args: Args,
-}
-
-impl Command for WriteCommand {
-    type Report = WriteReport;
-
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
-        write_to_report(&self.args, ctx).map_err(CommandError::Execution)
     }
 }

@@ -50,7 +50,7 @@ is small but useless if it doesn't surface the real error.
 | `search`| partial — `-C` adds context, `--files` toggles mode | ✗ one pattern, one path | 20 files × 10 matches | Multi-pattern would be a real batch win. |
 | `write` | partial — modes (`--insert`, `--delete`, `--find/--replace`, `--append`) | ✗ one file, one op | N/A | Batch here would mean a declarative edit list (path, op) in one call. |
 | `check` | ✓ `--limit 10`, `--verbose`, `--page` | ✗ one path | 10 lines per check | Default `--limit 10` may hide signal when many diagnostics exist. |
-| `fmt`   | ✓ `--check` mode, `--verbose` | ✗ one path | *no limit* | If fmt fixes 300 files the output is unbounded. |
+| `fmt`   | ✓ `--check` mode, `--verbose` | ✗ one path | O(stacks) ≈ 10 lines | Output is one entry per stack, not per file — already bounded. Latent gap: `FmtOutcome::Error.stderr` is captured but never rendered; if that path lights up, it would be unbounded. |
 | `build` | ✓ `--limit 30`, `--page` | ✗ one path | 30 lines per section | Stdout/stderr capped; errors at the bottom may be truncated. |
 | `test`  | ✓ `--limit 30`, `--page` | ✗ one path | 30 lines per section | Same as build — truncation can hide the failing test name. |
 

@@ -23,39 +23,15 @@ fn validate_base_url(url: &str) -> bool {
         || url.starts_with("http://127.0.0.1")
 }
 
-/// Extract crate Cargo.toml paths from release.sh's version bump loop.
-///
-/// Lines look like `    o8v/Cargo.toml \` (with trailing ` \`) or
-/// `    o8v-workspace/Cargo.toml; do` for the last entry.
-/// We find the first occurrence of `o8v-*/Cargo.toml` on each line within
-/// the loop body, which is robust to both suffixes.
-fn extract_crate_list_from_release_sh() -> Vec<String> {
+/// Verify release.sh version bump targets the workspace root Cargo.toml.
+fn release_sh_version_bump_sed_command() -> Option<String> {
     let release_sh = include_str!("../../scripts/release.sh");
-    let mut crates = Vec::new();
-    let mut in_bump_loop = false;
-
     for line in release_sh.lines() {
-        if line.contains("for cargo_file in") {
-            in_bump_loop = true;
-            continue;
-        }
-        if !in_bump_loop {
-            continue;
-        }
-        // Stop at the closing `done` of the version bump loop
-        if line.trim() == "done" {
-            break;
-        }
-        // Extract `o8v/Cargo.toml` or `o8v-xxx/Cargo.toml` from anywhere in the line
-        if let Some(start) = line.find("o8v") {
-            let rest = &line[start..];
-            if let Some(end) = rest.find("/Cargo.toml") {
-                let path = format!("{}/Cargo.toml", &rest[..end]);
-                crates.push(path);
-            }
+        if line.contains("sed") && line.contains("version = ") && line.contains("Cargo.toml") {
+            return Some(line.trim().to_string());
         }
     }
-    crates
+    None
 }
 
 /// Extract binary names from release.sh build section.
@@ -65,10 +41,8 @@ fn extract_binary_names_from_release_sh() -> Vec<String> {
 
     for line in release_sh.lines() {
         if line.contains("cp target") && line.contains("dist/8v-") {
-            // Extract "8v-darwin-arm64" etc.
             if let Some(start) = line.find("dist/") {
                 let rest = &line[start + 5..];
-                // Take everything up to whitespace
                 let binary = rest.split_whitespace().next().unwrap_or("");
                 if !binary.is_empty() {
                     binaries.push(binary.to_string());
@@ -80,26 +54,36 @@ fn extract_binary_names_from_release_sh() -> Vec<String> {
 }
 
 #[test]
-fn all_crate_cargo_toml_files_exist() {
-    let paths = extract_crate_list_from_release_sh();
-    assert!(
-        !paths.is_empty(),
-        "Failed to extract crate list from release.sh — check extract_crate_list_from_release_sh"
-    );
-
+fn workspace_cargo_toml_has_version_field() {
     let root = workspace_root();
-    for rel_path in &paths {
-        let full = root.join(rel_path);
-        assert!(
-            full.exists(),
-            "Cargo.toml listed in release.sh does not exist: {rel_path}"
-        );
-        let content = fs::read_to_string(&full).unwrap();
-        assert!(
-            content.contains("version = \""),
-            "{rel_path} has no version field — release.sh sed would silently skip it"
-        );
-    }
+    let cargo_toml = root.join("Cargo.toml");
+    assert!(
+        cargo_toml.exists(),
+        "Workspace root Cargo.toml does not exist"
+    );
+    let content = fs::read_to_string(&cargo_toml).expect("read workspace Cargo.toml");
+    assert!(
+        content.contains("[workspace.package]"),
+        "Workspace Cargo.toml missing [workspace.package] section"
+    );
+    assert!(
+        content.contains("version = \""),
+        "Workspace Cargo.toml missing version field — release.sh sed would silently skip it"
+    );
+}
+
+#[test]
+fn release_sh_version_bump_targets_workspace_root() {
+    let sed_cmd = release_sh_version_bump_sed_command()
+        .expect("release.sh has no sed command targeting Cargo.toml version — bump step broken");
+    assert!(
+        sed_cmd.contains("Cargo.toml"),
+        "sed command does not target Cargo.toml: {sed_cmd}"
+    );
+    assert!(
+        sed_cmd.contains("^version = "),
+        "sed command does not anchor to ^version = (may match dependency versions): {sed_cmd}"
+    );
 }
 
 #[test]
@@ -304,31 +288,3 @@ fn base_url_validation_allows_https_and_localhost() {
     assert!(!validate_base_url("ftp://example.com"));
     assert!(!validate_base_url(""));
 }
-
-#[test]
-fn cargo_file_list_in_release_sh_matches_expected() {
-    let mut parsed = extract_crate_list_from_release_sh();
-    parsed.sort();
-
-    let mut expected: Vec<String> = [
-        "o8v/Cargo.toml",
-        "o8v-core/Cargo.toml",
-        "o8v-fs/Cargo.toml",
-        "o8v-process/Cargo.toml",
-        "o8v-testkit/Cargo.toml",
-        "o8v-workspace/Cargo.toml",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    expected.sort();
-
-    assert_eq!(
-        parsed, expected,
-        "Cargo.toml list in release.sh does not match expected — lists have drifted"
-    );
-}
-
-// binstall tests removed — cargo binstall skipped (would require publishing
-// all 9 workspace crates to crates.io). Distribution is install script + 8v upgrade.
-

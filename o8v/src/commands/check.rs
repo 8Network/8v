@@ -46,10 +46,7 @@ fn parse_limit(s: &str) -> Result<usize, String> {
 /// - Gets StorageDir from CommandContext extensions (always ~/.8v/, already wired by dispatch)
 /// - Runs all checks, captures results in batch mode
 /// - Returns Err if project root resolution or storage open fails
-pub(crate) fn run(
-    args: &Args,
-    ctx: &CommandContext,
-) -> Result<o8v_core::CheckReport, String> {
+pub(crate) fn run(args: &Args, ctx: &CommandContext) -> Result<o8v_core::CheckReport, String> {
     // Resolve ProjectRoot from the path argument — the user may pass a path
     // different from CWD, so we always resolve from args.path here.
     let project_root = if let Some(path_str) = args.path.as_deref() {
@@ -107,7 +104,11 @@ pub(crate) fn run(
     let new = current_ids.difference(&previous_ids).count();
     let fixed = previous_ids.difference(&current_ids).count();
     let unchanged = current_ids.intersection(&previous_ids).count();
-    report.delta = Some(o8v_core::DeltaSummary { new, fixed, unchanged });
+    report.delta = Some(o8v_core::DeltaSummary {
+        new,
+        fixed,
+        unchanged,
+    });
 
     // Write current snapshot (best-effort).
     write_last_check(storage, &current_ids);
@@ -121,6 +122,7 @@ pub(crate) fn run(
         verbose: args.verbose,
         color: !args.format.no_color && std::env::var_os("NO_COLOR").is_none(),
         page: args.page,
+        errors_first: false,
     };
 
     Ok(report)
@@ -160,16 +162,19 @@ fn read_last_check(storage: &o8v::workspace::StorageDir) -> std::collections::Ha
     let path = storage.last_check();
     let config = o8v_fs::FsConfig::default();
     match o8v_fs::safe_read(&path, storage.containment(), &config) {
-        Ok(file) => serde_json::from_str(file.content()).unwrap_or_default(),
+        Ok(file) => match serde_json::from_str(file.content()) {
+            Ok(set) => set,
+            Err(e) => {
+                tracing::debug!("check: could not parse last-check.json: {e}");
+                std::collections::HashSet::new()
+            }
+        },
         Err(_) => std::collections::HashSet::new(),
     }
 }
 
 /// Write current diagnostic IDs to last-check.json (best-effort).
-fn write_last_check(
-    storage: &o8v::workspace::StorageDir,
-    ids: &std::collections::HashSet<String>,
-) {
+fn write_last_check(storage: &o8v::workspace::StorageDir, ids: &std::collections::HashSet<String>) {
     let bytes = match serde_json::to_vec(ids) {
         Ok(b) => b,
         Err(e) => {
@@ -194,10 +199,7 @@ pub struct CheckCommand {
 impl Command for CheckCommand {
     type Report = CheckReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         run(&self.args, ctx).map_err(CommandError::Execution)
     }
 }

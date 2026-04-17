@@ -303,6 +303,8 @@ pub struct RenderConfig {
     pub color: bool,
     /// Page number (1-based). Default 1 (first page).
     pub page: usize,
+    /// When true, render extracted errors above raw stderr on build failure.
+    pub errors_first: bool,
 }
 
 impl Default for RenderConfig {
@@ -312,6 +314,7 @@ impl Default for RenderConfig {
             verbose: false,
             color: false,
             page: 1,
+            errors_first: true,
         }
     }
 }

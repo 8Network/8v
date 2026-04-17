@@ -12,8 +12,8 @@ pub use crate::workspace::{resolve_workspace, ContextError};
 
 use o8v_core::caller::Caller;
 use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::events::{CommandCompleted, CommandStarted};
 use o8v_core::event_bus::EventBus;
+use o8v_core::events::{CommandCompleted, CommandStarted};
 use o8v_core::extensions::Extensions;
 use o8v_core::render::{Audience, Renderable};
 use o8v_core::task::TaskId;
@@ -78,10 +78,15 @@ where
 {
     let task_id = TaskId::new();
     let run_id = task_id.to_string();
-    let start_ms = std::time::SystemTime::now()
+    let start_ms = match std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    {
+        Ok(d) => d.as_millis() as u64,
+        Err(e) => {
+            tracing::warn!(error = %e, "dispatch: system clock is before UNIX_EPOCH, using 0 for start_ms");
+            0
+        }
+    };
 
     // Project path from extensions (if available).
     let project_path = ctx
@@ -102,10 +107,15 @@ where
     let success = result.is_ok();
 
     // Compute duration.
-    let end_ms = std::time::SystemTime::now()
+    let end_ms = match std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    {
+        Ok(d) => d.as_millis() as u64,
+        Err(e) => {
+            tracing::warn!(error = %e, "dispatch: system clock is before UNIX_EPOCH, using 0 for end_ms");
+            0
+        }
+    };
     let duration_ms = end_ms.saturating_sub(start_ms);
 
     // On failure: emit CommandCompleted with success=false, then propagate the error.
@@ -179,10 +189,7 @@ mod tests {
     struct NoopCommand;
     impl o8v_core::command::Command for NoopCommand {
         type Report = ();
-        async fn execute(
-            &self,
-            _ctx: &CommandContext,
-        ) -> Result<(), CommandError> {
+        async fn execute(&self, _ctx: &CommandContext) -> Result<(), CommandError> {
             Ok(())
         }
     }
@@ -208,11 +215,10 @@ mod tests {
     struct FailCommand;
     impl o8v_core::command::Command for FailCommand {
         type Report = ();
-        async fn execute(
-            &self,
-            _ctx: &CommandContext,
-        ) -> Result<(), CommandError> {
-            Err(CommandError::Execution("intentional test failure".to_string()))
+        async fn execute(&self, _ctx: &CommandContext) -> Result<(), CommandError> {
+            Err(CommandError::Execution(
+                "intentional test failure".to_string(),
+            ))
         }
     }
 
@@ -228,7 +234,11 @@ mod tests {
         assert!(result.is_err(), "command must return an error");
 
         let events = recorder.events.lock().unwrap();
-        assert_eq!(events.len(), 2, "must emit CommandStarted and CommandCompleted even on failure");
+        assert_eq!(
+            events.len(),
+            2,
+            "must emit CommandStarted and CommandCompleted even on failure"
+        );
         assert_eq!(events[0], "CommandStarted");
         assert_eq!(events[1], "CommandCompleted");
     }

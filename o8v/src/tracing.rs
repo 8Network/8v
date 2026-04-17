@@ -5,7 +5,6 @@
 //! Tracing initialization — application infrastructure.
 
 pub(crate) fn init() {
-    #[allow(clippy::disallowed_methods)]
     let filter = match tracing_subscriber::EnvFilter::try_from_default_env() {
         Ok(f) => f,
         Err(e) => {

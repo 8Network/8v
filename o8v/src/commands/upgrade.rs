@@ -70,9 +70,7 @@ fn fetch_text(url: &str) -> Result<String, String> {
 }
 
 /// Fetch a binary blob.
-fn fetch_binary(
-    url: &str,
-) -> Result<Vec<u8>, String> {
+fn fetch_binary(url: &str) -> Result<Vec<u8>, String> {
     let agent = ureq::builder()
         .timeout_connect(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
         .timeout_read(std::time::Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
@@ -289,6 +287,27 @@ fn run_impl_report(
         upgraded: true,
         error: None,
     })
+}
+
+// ── Command trait impl ──────────────────────────────────────────────────
+
+use o8v_core::command::{Command, CommandContext, CommandError};
+use o8v_core::render::upgrade_report::UpgradeReport;
+
+pub struct UpgradeCommand {
+    pub args: Args,
+}
+
+impl Command for UpgradeCommand {
+    type Report = UpgradeReport;
+
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
+        if ctx.interrupted.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(CommandError::Interrupted);
+        }
+
+        run_impl_report(&self.args, BASE_URL, None, None).map_err(CommandError::Execution)
+    }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -626,21 +645,14 @@ mod tests {
     fn integration_full_round_trip() {
         let binary_content = b"new binary v0.2.0 content here";
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.2.0",
-            &[(&filename, binary_content.as_ref())],
-        );
+        let server =
+            o8v_testkit::ReleaseTestServer::start("0.2.0", &[(&filename, binary_content.as_ref())]);
 
         let tmp = tempfile::tempdir().unwrap();
         let exe = make_dummy_exe(tmp.path());
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         let report = result.expect("upgrade should succeed");
         assert_eq!(report.current_version, "0.1.0");
@@ -650,7 +662,10 @@ mod tests {
 
         // Verify the binary was replaced
         let new_content = std::fs::read(&exe).unwrap();
-        assert_eq!(new_content, binary_content, "binary should be replaced with new content");
+        assert_eq!(
+            new_content, binary_content,
+            "binary should be replaced with new content"
+        );
     }
 
     // ─── Test 2: Already up to date ────────────────────────────────────────
@@ -658,29 +673,24 @@ mod tests {
     #[test]
     fn integration_already_up_to_date() {
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.1.0",
-            &[(&filename, b"binary")],
-        );
+        let server = o8v_testkit::ReleaseTestServer::start("0.1.0", &[(&filename, b"binary")]);
 
         let tmp = tempfile::tempdir().unwrap();
         let exe = make_dummy_exe(tmp.path());
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         let report = result.expect("should succeed");
-        assert!(!report.error.is_some());
+        assert!(report.error.is_none());
 
         // Binary should be unchanged
         let after = std::fs::read(&exe).unwrap();
-        assert_eq!(after, original, "binary should not change when already up to date");
+        assert_eq!(
+            after, original,
+            "binary should not change when already up to date"
+        );
     }
 
     // ─── Test 3: Downgrade rejected ────────────────────────────────────────
@@ -688,26 +698,22 @@ mod tests {
     #[test]
     fn integration_downgrade_rejected() {
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.0.9",
-            &[(&filename, b"old binary")],
-        );
+        let server = o8v_testkit::ReleaseTestServer::start("0.0.9", &[(&filename, b"old binary")]);
 
         let tmp = tempfile::tempdir().unwrap();
         let exe = make_dummy_exe(tmp.path());
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         assert!(result.is_err(), "downgrade should be rejected");
         let err = result.unwrap_err();
-        assert!(err.contains("older"), "error should mention older version: {}", err);
+        assert!(
+            err.contains("older"),
+            "error should mention older version: {}",
+            err
+        );
 
         // Binary unchanged
         let after = std::fs::read(&exe).unwrap();
@@ -719,10 +725,8 @@ mod tests {
     #[test]
     fn integration_tampered_binary_rejected() {
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.2.0",
-            &[(&filename, b"correct binary")],
-        );
+        let server =
+            o8v_testkit::ReleaseTestServer::start("0.2.0", &[(&filename, b"correct binary")]);
         // Tamper AFTER server starts (checksums.txt has hash of "correct binary")
         server.tamper(&format!("v0.2.0/{}", filename), b"TAMPERED binary");
 
@@ -731,12 +735,7 @@ mod tests {
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         assert!(result.is_err(), "tampered binary should be rejected");
         let err = result.unwrap_err();
@@ -748,7 +747,10 @@ mod tests {
 
         // Binary unchanged
         let after = std::fs::read(&exe).unwrap();
-        assert_eq!(after, original, "original binary must not be replaced on tamper");
+        assert_eq!(
+            after, original,
+            "original binary must not be replaced on tamper"
+        );
     }
 
     // ─── Test 5: Missing checksums.txt ─────────────────────────────────────
@@ -756,10 +758,8 @@ mod tests {
     #[test]
     fn integration_missing_checksums_rejected() {
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.2.0",
-            &[(&filename, b"binary content")],
-        );
+        let server =
+            o8v_testkit::ReleaseTestServer::start("0.2.0", &[(&filename, b"binary content")]);
         server.remove("v0.2.0/checksums.txt");
 
         let tmp = tempfile::tempdir().unwrap();
@@ -767,12 +767,7 @@ mod tests {
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         assert!(result.is_err(), "missing checksums should fail");
 
@@ -789,7 +784,11 @@ mod tests {
         // Instead, verify the constant is sane and test the size check
         // logic by creating a binary just over the limit.
         // This test verifies the download abort path exists.
-        assert_eq!(MAX_BINARY_SIZE, 100 * 1024 * 1024, "MAX_BINARY_SIZE should be 100MB");
+        assert_eq!(
+            MAX_BINARY_SIZE,
+            100 * 1024 * 1024,
+            "MAX_BINARY_SIZE should be 100MB"
+        );
         // The actual size check is tested by fetch_binary which reads in chunks
         // and aborts when downloaded > MAX_BINARY_SIZE. A full integration test
         // would require serving 100MB+ which is too slow for unit tests.
@@ -800,26 +799,26 @@ mod tests {
     #[test]
     fn integration_prerelease_rejected_without_flag() {
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.2.0-beta.1",
-            &[(&filename, b"beta binary")],
-        );
+        let server =
+            o8v_testkit::ReleaseTestServer::start("0.2.0-beta.1", &[(&filename, b"beta binary")]);
 
         let tmp = tempfile::tempdir().unwrap();
         let exe = make_dummy_exe(tmp.path());
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false); // no --pre
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
-        assert!(result.is_err(), "pre-release should be rejected without --pre");
+        assert!(
+            result.is_err(),
+            "pre-release should be rejected without --pre"
+        );
         let err = result.unwrap_err();
-        assert!(err.contains("pre"), "error should mention pre-release: {}", err);
+        assert!(
+            err.contains("pre"),
+            "error should mention pre-release: {}",
+            err
+        );
 
         let after = std::fs::read(&exe).unwrap();
         assert_eq!(after, original);
@@ -838,12 +837,7 @@ mod tests {
         let exe = make_dummy_exe(tmp.path());
         let args = test_args(false, true); // --pre
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         let report = result.expect("pre-release with --pre should succeed");
         assert!(report.upgraded);
@@ -857,10 +851,7 @@ mod tests {
     #[test]
     fn integration_version_injection_rejected() {
         let filename = current_platform_filename();
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "1.0.0",
-            &[(&filename, b"binary")],
-        );
+        let server = o8v_testkit::ReleaseTestServer::start("1.0.0", &[(&filename, b"binary")]);
         // Inject malicious content into version.txt
         server.tamper("latest/version.txt", b"1.0.0\n<script>alert(1)</script>");
 
@@ -869,12 +860,7 @@ mod tests {
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         assert!(result.is_err(), "injected version.txt should fail parse");
 
@@ -888,10 +874,8 @@ mod tests {
     fn integration_partial_checksum_rejected() {
         let filename = current_platform_filename();
         let binary_content = b"real binary";
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.2.0",
-            &[(&filename, binary_content.as_ref())],
-        );
+        let server =
+            o8v_testkit::ReleaseTestServer::start("0.2.0", &[(&filename, binary_content.as_ref())]);
 
         // Replace checksums.txt with a partial hash
         let partial_hash = "abcdef1234567890";
@@ -903,12 +887,7 @@ mod tests {
         let original = std::fs::read(&exe).unwrap();
         let args = test_args(false, false);
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         assert!(result.is_err(), "partial checksum should fail verification");
 
@@ -922,51 +901,22 @@ mod tests {
     fn integration_force_redownloads() {
         let filename = current_platform_filename();
         let binary_content = b"force-downloaded binary";
-        let server = o8v_testkit::ReleaseTestServer::start(
-            "0.1.0",
-            &[(&filename, binary_content.as_ref())],
-        );
+        let server =
+            o8v_testkit::ReleaseTestServer::start("0.1.0", &[(&filename, binary_content.as_ref())]);
 
         let tmp = tempfile::tempdir().unwrap();
         let exe = make_dummy_exe(tmp.path());
         let args = test_args(true, false); // --force
 
-        let result = run_impl_report(
-            &args,
-            &server.base_url(),
-            Some(&exe),
-            Some("0.1.0"),
-        );
+        let result = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"));
 
         let report = result.expect("force upgrade should succeed");
         assert!(report.upgraded);
 
         let after = std::fs::read(&exe).unwrap();
-        assert_eq!(after, binary_content, "force should re-download even when current");
-    }
-}
-
-// ── Command trait impl ──────────────────────────────────────────────────
-
-use o8v_core::command::{Command, CommandContext, CommandError};
-use o8v_core::render::upgrade_report::UpgradeReport;
-
-pub struct UpgradeCommand {
-    pub args: Args,
-}
-
-impl Command for UpgradeCommand {
-    type Report = UpgradeReport;
-
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
-        if ctx.interrupted.load(std::sync::atomic::Ordering::Acquire) {
-            return Err(CommandError::Interrupted);
-        }
-
-        run_impl_report(&self.args, BASE_URL, None, None)
-            .map_err(CommandError::Execution)
+        assert_eq!(
+            after, binary_content,
+            "force should re-download even when current"
+        );
     }
 }

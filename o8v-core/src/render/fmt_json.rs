@@ -51,8 +51,8 @@ pub fn render_fmt_json(report: &FmtReport) -> Output {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::FmtEntry;
     use crate::project::{ProjectRoot, Stack};
+    use crate::FmtEntry;
     use std::time::Duration;
 
     fn dummy_root() -> ProjectRoot {

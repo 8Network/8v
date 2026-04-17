@@ -6,7 +6,7 @@ use std::future::Future;
 use std::sync::atomic::AtomicBool;
 
 use crate::extensions::Extensions;
-use crate::render::{Renderable};
+use crate::render::Renderable;
 
 /// Typed errors for the command pipeline.
 #[derive(Debug)]

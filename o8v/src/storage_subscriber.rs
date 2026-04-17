@@ -8,8 +8,8 @@
 //! events as NDJSON lines to `~/.8v/events.ndjson`. Best-effort:
 //! serialization or I/O failures are logged, never propagated.
 
-use o8v_core::event_bus::Subscriber;
 use crate::workspace::StorageDir;
+use o8v_core::event_bus::Subscriber;
 
 /// Writes lifecycle events to `~/.8v/events.ndjson`.
 ///
@@ -137,7 +137,10 @@ mod tests {
 
         // File must not exist: no valid JSON was written.
         let path = storage.events();
-        assert!(!path.exists(), "non-JSON bytes must not be written to the NDJSON file");
+        assert!(
+            !path.exists(),
+            "non-JSON bytes must not be written to the NDJSON file"
+        );
     }
 
     #[test]

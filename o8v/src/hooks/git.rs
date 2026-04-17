@@ -83,14 +83,14 @@ pub fn run(args: &Args, interrupted: &'static AtomicBool) -> ExitCode {
 pub fn on_commit(interrupted: &'static AtomicBool) -> ExitCode {
     // Build check args for hook execution.
     let check_args = crate::commands::check::Args {
-        path: None,      // current directory
-        verbose: false,  // hooks should be quiet
+        path: None,     // current directory
+        verbose: false, // hooks should be quiet
         format: crate::commands::output_format::OutputFormat {
             plain: true,
             ..Default::default()
         },
-        limit: 10,       // default limit for error detail
-        page: 1,         // default to first page
+        limit: 10, // default limit for error detail
+        page: 1,   // default to first page
         timeout: Some(std::time::Duration::from_secs(60)),
     };
 

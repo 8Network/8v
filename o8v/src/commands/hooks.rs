@@ -14,16 +14,10 @@ pub struct HooksCommand {
 impl Command for HooksCommand {
     type Report = HooksReport;
 
-    async fn execute(
-        &self,
-        ctx: &CommandContext,
-    ) -> Result<Self::Report, CommandError> {
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
         let exit_code = crate::hooks::run_code(&self.args, ctx.interrupted);
         let success = exit_code == 0;
 
-        Ok(HooksReport {
-            exit_code,
-            success,
-        })
+        Ok(HooksReport { exit_code, success })
     }
 }

@@ -29,9 +29,7 @@ pub enum ReadReport {
         lines: Vec<LineEntry>,
     },
     /// Multiple files read in one call.
-    Multi {
-        entries: Vec<MultiEntry>,
-    },
+    Multi { entries: Vec<MultiEntry> },
 }
 
 /// One entry in a multi-file read — either success or error.

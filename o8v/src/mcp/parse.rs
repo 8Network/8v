@@ -167,10 +167,7 @@ mod tests {
         let root = make_containment_root(&dir);
         // allow_hyphen_values on content lets literal `--foo` through as content
         // rather than being treated as an unknown flag.
-        let result = parse_mcp_command(
-            r#"write src/main.rs:10 "-- a literal comment""#,
-            &root,
-        );
+        let result = parse_mcp_command(r#"write src/main.rs:10 "-- a literal comment""#, &root);
         assert!(result.is_ok(), "expected success, got {:?}", result.err());
         match result.unwrap() {
             crate::commands::Command::Write(args) => {
@@ -242,11 +239,7 @@ mod tests {
 
         for (cmd, want) in cases {
             let mcp = parse_mcp_command(cmd, &root);
-            assert!(
-                mcp.is_ok(),
-                "MCP parse failed for `{cmd}`: {:?}",
-                mcp.err()
-            );
+            assert!(mcp.is_ok(), "MCP parse failed for `{cmd}`: {:?}", mcp.err());
             let got = match mcp.unwrap() {
                 crate::commands::Command::Write(_) => "Write",
                 crate::commands::Command::Read(_) => "Read",
@@ -271,8 +264,7 @@ mod tests {
         let root = make_containment_root(&dir);
         // Regression: the flag-present case worked before the fix; verify no
         // regression.
-        let result =
-            parse_mcp_command(r#"write src/main.rs --find "foo" --replace "bar""#, &root);
+        let result = parse_mcp_command(r#"write src/main.rs --find "foo" --replace "bar""#, &root);
         assert!(result.is_ok(), "expected success, got {:?}", result.err());
     }
 }

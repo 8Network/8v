@@ -5,8 +5,8 @@
 //! Hook installation — writes scripts into .git/hooks/ and entries into .claude/settings.json.
 
 use dialoguer::Select;
-use o8v_fs::FsConfig;
 use o8v::workspace::to_io;
+use o8v_fs::FsConfig;
 use serde::{Deserialize, Serialize};
 
 // ─── Git hook constants ───────────────────────────────────────────────────────
