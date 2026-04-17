@@ -2,10 +2,10 @@
 
 pub mod error;
 pub mod path;
-pub mod project;
 pub mod stack;
+pub mod types;
 
 pub use error::{DetectError, PathError, ProjectError};
 pub use path::ProjectRoot;
-pub use project::{Project, ProjectKind};
+pub use types::{Project, ProjectKind};
 pub use stack::Stack;

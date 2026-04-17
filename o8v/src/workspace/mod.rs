@@ -14,8 +14,8 @@
 //! - [`REGISTRY_FILE`] — `workspaces.toml`
 //! - [`local_8v_dir`] — construct `.8v/` path relative to any project root
 
-use o8v_fs::{ContainmentRoot, FsConfig};
 use o8v_core::project::ProjectRoot;
+use o8v_fs::{ContainmentRoot, FsConfig};
 use std::path::PathBuf;
 
 pub mod config;
@@ -212,15 +212,6 @@ pub fn register_workspace(root: &ProjectRoot) -> std::io::Result<()> {
 }
 
 // ─── Test helpers ───────────────────────────────────────────────────────────
-
-/// HOME is process-global state. All tests that call `std::env::set_var("HOME", …)`
-/// must hold this lock for the duration of the test — including the `StorageDir::open()`
-/// call — to prevent parallel tests from racing on the same env var.
-///
-/// Declared at crate root so both `storage::tests` and `context::tests` share
-/// the exact same `Mutex` instance.
-#[cfg(test)]
-pub(crate) static HOME_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 

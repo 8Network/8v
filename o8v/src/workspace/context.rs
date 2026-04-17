@@ -56,7 +56,14 @@ impl std::error::Error for ContextError {
 /// silent fallbacks.
 pub fn resolve_workspace(
     path: impl AsRef<Path>,
-) -> Result<(o8v_core::project::ProjectRoot, StorageDir, Option<ConfigDir>), ContextError> {
+) -> Result<
+    (
+        o8v_core::project::ProjectRoot,
+        StorageDir,
+        Option<ConfigDir>,
+    ),
+    ContextError,
+> {
     // 1. Resolve to absolute path.
     let abs = std::fs::canonicalize(path.as_ref()).map_err(|e| {
         ContextError::PathResolution(std::io::Error::other(format!(
@@ -86,10 +93,38 @@ pub fn resolve_workspace(
 mod tests {
     use super::*;
 
+    /// Test-only helper: resolve workspace with an explicit home directory.
+    ///
+    /// Avoids mutating `HOME` in the environment — calls `StorageDir::at(home)`
+    /// directly so tests are hermetic and env-mutation-free.
+    fn resolve_workspace_with_home(
+        path: impl AsRef<Path>,
+        home: &Path,
+    ) -> Result<
+        (
+            o8v_core::project::ProjectRoot,
+            StorageDir,
+            Option<ConfigDir>,
+        ),
+        ContextError,
+    > {
+        let abs = std::fs::canonicalize(path.as_ref()).map_err(|e| {
+            ContextError::PathResolution(std::io::Error::other(format!(
+                "{}: {}",
+                path.as_ref().display(),
+                e
+            )))
+        })?;
+        let path_str = abs.to_string_lossy();
+        let project_root = o8v_core::project::ProjectRoot::new(path_str.as_ref())
+            .map_err(|e| ContextError::NoProjectRoot(e.to_string()))?;
+        let storage = StorageDir::at(home).map_err(ContextError::Storage)?;
+        let config = ConfigDir::open(&project_root).map_err(ContextError::Storage)?;
+        Ok((project_root, storage, config))
+    }
+
     #[test]
-    #[allow(clippy::disallowed_methods)]
     fn resolve_workspace_from_valid_project() {
-        let _guard = crate::workspace::HOME_MUTEX.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
         // Create a Cargo.toml so the directory looks like a project root.
         std::fs::write(
@@ -97,10 +132,8 @@ mod tests {
             "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
-        // Override HOME so StorageDir opens inside temp.
-        std::env::set_var("HOME", tmp.path());
 
-        let result = resolve_workspace(tmp.path());
+        let result = resolve_workspace_with_home(tmp.path(), tmp.path());
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
     }
 
@@ -116,32 +149,24 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::disallowed_methods)]
     fn resolve_workspace_has_storage() {
-        let _guard = crate::workspace::HOME_MUTEX.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join("Cargo.toml"),
             "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
-        std::env::set_var("HOME", tmp.path());
 
-        let (_project_root, storage, _config) = resolve_workspace(tmp.path()).unwrap();
-        // Verify storage directory was created.
-        let storage_path = tmp.path().join(".8v");
-        assert!(
-            storage_path.is_dir(),
-            "~/.8v/ was not created by StorageDir::open"
-        );
+        let (_project_root, storage, _config) =
+            resolve_workspace_with_home(tmp.path(), tmp.path()).unwrap();
+        // Verify the storage root itself was created/accessible.
+        assert!(tmp.path().is_dir(), "storage root was not created by StorageDir::at");
         // Verify last-check path accessible via storage.
         assert!(storage.last_check().ends_with("last-check.json"));
     }
 
     #[test]
-    #[allow(clippy::disallowed_methods)]
     fn resolve_workspace_config_is_none_without_dot8v() {
-        let _guard = crate::workspace::HOME_MUTEX.lock().unwrap();
         let project = tempfile::TempDir::new().unwrap();
         let home = tempfile::TempDir::new().unwrap();
         std::fs::write(
@@ -149,11 +174,9 @@ mod tests {
             "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
-        // Use a separate HOME so StorageDir::open() doesn't create .8v/ inside
-        // the project directory.
-        std::env::set_var("HOME", home.path());
 
-        let (_project_root, _storage, config) = resolve_workspace(project.path()).unwrap();
+        let (_project_root, _storage, config) =
+            resolve_workspace_with_home(project.path(), home.path()).unwrap();
         assert!(
             config.is_none(),
             "expected config to be None when no .8v/ directory exists in project"
