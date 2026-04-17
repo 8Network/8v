@@ -59,14 +59,15 @@ impl ReleaseTestServer {
             let hash = sha256_hex(content);
             checksums.push_str(&format!("{}  {}\n", hash, filename));
         }
-        std::fs::write(version_dir.join("checksums.txt"), &checksums)
-            .expect("write checksums.txt");
+        std::fs::write(version_dir.join("checksums.txt"), &checksums).expect("write checksums.txt");
 
         // Start HTTP server
-        let server = Arc::new(
-            tiny_http::Server::http("127.0.0.1:0").expect("bind to localhost"),
-        );
-        let port = server.server_addr().to_ip().expect("get server address").port();
+        let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").expect("bind to localhost"));
+        let port = server
+            .server_addr()
+            .to_ip()
+            .expect("get server address")
+            .port();
 
         let root = dir.path().to_path_buf();
         let server_clone = Arc::clone(&server);
@@ -131,7 +132,13 @@ fn serve_requests(server: &tiny_http::Server, root: PathBuf) {
         let file_path = root.join(url_path);
 
         if file_path.is_file() {
-            let content = std::fs::read(&file_path).unwrap_or_default();
+            let content = match std::fs::read(&file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(path = %file_path.display(), error = %e, "release_server: failed to read file");
+                    vec![]
+                }
+            };
             let response = tiny_http::Response::from_data(content);
             let _ = request.respond(response);
         } else {
@@ -168,7 +175,9 @@ mod tests {
         let url = format!("{}/v0.2.0/8v-darwin-arm64", server.base_url());
         let resp = ureq::get(&url).call().expect("fetch binary");
         let mut body = Vec::new();
-        resp.into_reader().read_to_end(&mut body).expect("read binary");
+        resp.into_reader()
+            .read_to_end(&mut body)
+            .expect("read binary");
         assert_eq!(body, content);
     }
 
@@ -180,8 +189,14 @@ mod tests {
         let resp = ureq::get(&url).call().expect("fetch checksums");
         let body = resp.into_string().expect("read body");
         let expected_hash = sha256_hex(content);
-        assert!(body.contains(&expected_hash), "checksums.txt contains correct hash");
-        assert!(body.contains("8v-darwin-arm64"), "checksums.txt contains filename");
+        assert!(
+            body.contains(&expected_hash),
+            "checksums.txt contains correct hash"
+        );
+        assert!(
+            body.contains("8v-darwin-arm64"),
+            "checksums.txt contains filename"
+        );
     }
 
     #[test]

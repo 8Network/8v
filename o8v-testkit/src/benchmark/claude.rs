@@ -6,12 +6,12 @@
 //!
 //! This is the "external data" source: tool calls, tokens, cost, response text.
 
+use super::types::{PermissionMode, ToolCallDetail};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use serde::Deserialize;
-use super::types::{PermissionMode, ToolCallDetail};
 
 // ── Claude CLI JSONL stream types ────────────────────────────────────────────
 
@@ -198,7 +198,6 @@ impl AgentResult {
     pub fn used_8v(&self) -> bool {
         self.tool_calls.iter().any(|t| t.name.contains("8v"))
     }
-
 }
 
 /// Drives the Claude CLI process.
@@ -216,8 +215,10 @@ impl ClaudeDriver {
         settings_path: Option<&Path>,
     ) -> Result<AgentResult, String> {
         let mut args = vec![
-            "--output-format", "stream-json",
-            "--input-format", "stream-json",
+            "--output-format",
+            "stream-json",
+            "--input-format",
+            "stream-json",
             "--verbose",
         ];
         if let Some(mode) = permission_mode {
@@ -227,7 +228,8 @@ impl ClaudeDriver {
 
         let mcp_path_str;
         if let Some(config) = mcp_config {
-            mcp_path_str = config.to_str()
+            mcp_path_str = config
+                .to_str()
                 .ok_or_else(|| "path is not valid UTF-8".to_string())?
                 .to_string();
             args.push("--mcp-config");
@@ -236,7 +238,8 @@ impl ClaudeDriver {
 
         let settings_path_str;
         if let Some(settings) = settings_path {
-            settings_path_str = settings.to_str()
+            settings_path_str = settings
+                .to_str()
                 .ok_or_else(|| "path is not valid UTF-8".to_string())?
                 .to_string();
             args.push("--settings");
@@ -252,19 +255,22 @@ impl ClaudeDriver {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| format!("failed to spawn claude: {e} (is `claude` in PATH?)"))?;
 
         {
-            let mut stdin = child.stdin.take().ok_or_else(|| "stdin not available".to_string())?;
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| "stdin not available".to_string())?;
             let msg = serde_json::json!({
                 "type": "user",
                 "message": { "role": "user", "content": prompt }
             });
             let msg_str = serde_json::to_string(&msg)
                 .map_err(|e| format!("failed to serialize stdin message: {e}"))?;
-            writeln!(stdin, "{}", msg_str)
-                .map_err(|e| format!("write stdin: {e}"))?;
+            writeln!(stdin, "{}", msg_str).map_err(|e| format!("write stdin: {e}"))?;
         }
 
         let output = child.wait_with_output().map_err(|e| format!("wait: {e}"))?;
@@ -277,11 +283,17 @@ impl ClaudeDriver {
                 eprintln!("  [claude stderr] {line}");
             }
             if stderr_lines.len() > 30 {
-                eprintln!("  [claude stderr] ... ({} more lines)", stderr_lines.len() - 30);
+                eprintln!(
+                    "  [claude stderr] ... ({} more lines)",
+                    stderr_lines.len() - 30
+                );
             }
         }
 
-        Self::parse_output(&output.stdout, output.status.code().unwrap_or(SIGNAL_KILLED))
+        Self::parse_output(
+            &output.stdout,
+            output.status.code().unwrap_or(SIGNAL_KILLED),
+        )
     }
 
     fn parse_output(stdout: &[u8], exit_code: i32) -> Result<AgentResult, String> {
@@ -360,7 +372,12 @@ impl ClaudeDriver {
                 }
                 ClaudeStreamMsg::User(user) => {
                     for block in user.message.content {
-                        if let ClaudeUserContentBlock::ToolResult { tool_use_id, content, is_error: tr_err } = block {
+                        if let ClaudeUserContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                            is_error: tr_err,
+                        } = block
+                        {
                             if let Some(&idx) = tool_use_index.get(&tool_use_id) {
                                 if let Some(detail) = tool_calls_detail.get_mut(idx) {
                                     detail.output_bytes = content.byte_len() as u64;
@@ -429,25 +446,36 @@ mod tests {
     #[test]
     fn parse_output_captures_tool_result_bytes_string_form() {
         let stream = concat!(
-            r#"{"type":"system","subtype":"init","session_id":"s1"}"#, "\n",
-            r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file":"x"}}]}}"#, "\n",
-            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":"hello world","is_error":false}]}}"#, "\n",
-            r#"{"type":"result","result":"done","is_error":false}"#, "\n",
+            r#"{"type":"system","subtype":"init","session_id":"s1"}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file":"x"}}]}}"#,
+            "\n",
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":"hello world","is_error":false}]}}"#,
+            "\n",
+            r#"{"type":"result","result":"done","is_error":false}"#,
+            "\n",
         );
         let res = ClaudeDriver::parse_output(stream.as_bytes(), 0).unwrap();
         assert_eq!(res.tool_calls_detail.len(), 1);
         assert_eq!(res.tool_calls_detail[0].name, "Read");
-        assert_eq!(res.tool_calls_detail[0].output_bytes, "hello world".len() as u64);
+        assert_eq!(
+            res.tool_calls_detail[0].output_bytes,
+            "hello world".len() as u64
+        );
         assert!(!res.tool_calls_detail[0].is_error);
     }
 
     #[test]
     fn parse_output_captures_tool_result_bytes_block_form_and_error() {
         let stream = concat!(
-            r#"{"type":"system","subtype":"init","session_id":"s1"}"#, "\n",
-            r#"{"type":"assistant","message":{"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"tu_a","name":"Bash","input":{"cmd":"x"}}]}}"#, "\n",
-            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_a","content":[{"type":"text","text":"abc"},{"type":"text","text":"def"}],"is_error":true}]}}"#, "\n",
-            r#"{"type":"result","result":"","is_error":false}"#, "\n",
+            r#"{"type":"system","subtype":"init","session_id":"s1"}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"tool_use","id":"tu_a","name":"Bash","input":{"cmd":"x"}}]}}"#,
+            "\n",
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_a","content":[{"type":"text","text":"abc"},{"type":"text","text":"def"}],"is_error":true}]}}"#,
+            "\n",
+            r#"{"type":"result","result":"","is_error":false}"#,
+            "\n",
         );
         let res = ClaudeDriver::parse_output(stream.as_bytes(), 0).unwrap();
         assert_eq!(res.tool_calls_detail.len(), 1);

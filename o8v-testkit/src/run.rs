@@ -1,8 +1,8 @@
 //! Check execution — run the check pipeline on fixtures or arbitrary paths.
 
 use crate::fixture::Fixture;
-use o8v_core::{CheckConfig, CheckReport};
 use o8v_core::project::ProjectRoot;
+use o8v_core::{CheckConfig, CheckReport};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 

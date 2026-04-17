@@ -10,9 +10,9 @@
 //!
 //! Uses `o8v_fs` for all file operations — same pattern as StorageSubscriber.
 
-use std::path::{Path, PathBuf};
-use o8v_fs::ContainmentRoot;
 use super::types::{ExperimentResult, Observation};
+use o8v_fs::ContainmentRoot;
+use std::path::{Path, PathBuf};
 
 const RESULTS_FILE: &str = "results.ndjson";
 
@@ -32,15 +32,14 @@ impl BenchmarkStore {
         // Bootstrap: create with raw fs — this IS the root we're establishing.
         std::fs::create_dir_all(dir)?;
         let canonical = std::fs::canonicalize(dir)?;
-        let containment = ContainmentRoot::new(&canonical)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let containment =
+            ContainmentRoot::new(&canonical).map_err(|e| std::io::Error::other(e.to_string()))?;
         Ok(Self { containment })
     }
 
     /// Create a store at `~/.8v/benchmark-results/`.
     pub fn open() -> Result<Self, std::io::Error> {
-        let home = std::env::var("HOME")
-            .map_err(|_| std::io::Error::other("HOME not set"))?;
+        let home = std::env::var("HOME").map_err(|_| std::io::Error::other("HOME not set"))?;
         Self::at(PathBuf::from(home).join(".8v").join("benchmark-results"))
     }
 
@@ -51,8 +50,8 @@ impl BenchmarkStore {
     /// safe_write to create it. Any other error is propagated immediately.
     pub fn append(&self, record: &Observation) -> Result<(), std::io::Error> {
         let path = self.results_path();
-        let line = serde_json::to_string(record)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let line =
+            serde_json::to_string(record).map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut data = line.into_bytes();
         data.push(b'\n');
@@ -73,8 +72,8 @@ impl BenchmarkStore {
     /// Same append semantics as `append()`.
     pub fn append_experiment(&self, result: &ExperimentResult) -> Result<(), std::io::Error> {
         let path = self.containment.as_path().join("experiments.ndjson");
-        let line = serde_json::to_string(result)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let line =
+            serde_json::to_string(result).map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut data = line.into_bytes();
         data.push(b'\n');
@@ -97,11 +96,12 @@ impl BenchmarkStore {
     /// number to aid debugging.
     pub fn read_all(&self) -> Result<Vec<Observation>, std::io::Error> {
         let path = self.results_path();
-        let content = match o8v_fs::safe_read(&path, &self.containment, &o8v_fs::FsConfig::default()) {
-            Ok(c) => c.content().to_string(),
-            Err(o8v_fs::FsError::NotFound { .. }) => return Ok(Vec::new()),
-            Err(e) => return Err(std::io::Error::other(e.to_string())),
-        };
+        let content =
+            match o8v_fs::safe_read(&path, &self.containment, &o8v_fs::FsConfig::default()) {
+                Ok(c) => c.content().to_string(),
+                Err(o8v_fs::FsError::NotFound { .. }) => return Ok(Vec::new()),
+                Err(e) => return Err(std::io::Error::other(e.to_string())),
+            };
 
         let mut records = Vec::new();
         for (i, line) in content.lines().enumerate() {
@@ -118,12 +118,16 @@ impl BenchmarkStore {
     /// Write structured report artifacts for an experiment.
     /// Files: `<experiment_name>/report.json` and `<experiment_name>/report.md`.
     /// Returns the directory path containing both artifacts.
-    pub fn write_report(&self, experiment_name: &str, report: &super::report::ReportJson) -> Result<PathBuf, std::io::Error> {
+    pub fn write_report(
+        &self,
+        experiment_name: &str,
+        report: &super::report::ReportJson,
+    ) -> Result<PathBuf, std::io::Error> {
         let dir = self.containment.as_path().join(experiment_name);
         std::fs::create_dir_all(&dir)?;
 
-        let sub_containment = ContainmentRoot::new(&dir)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let sub_containment =
+            ContainmentRoot::new(&dir).map_err(|e| std::io::Error::other(e.to_string()))?;
 
         // report.json
         let json = serde_json::to_string_pretty(report)
@@ -258,9 +262,15 @@ mod tests {
         o8v_fs::safe_write(&path, store.containment(), content.as_bytes()).unwrap();
 
         let result = store.read_all();
-        assert!(result.is_err(), "corrupt line must produce an error, not silently drop");
+        assert!(
+            result.is_err(),
+            "corrupt line must produce an error, not silently drop"
+        );
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("line 2"), "error must identify the offending line: {msg}");
+        assert!(
+            msg.contains("line 2"),
+            "error must identify the offending line: {msg}"
+        );
     }
 
     #[test]
@@ -310,8 +320,17 @@ mod tests {
         let md_path = dir.join("report.md");
         assert!(md_path.exists(), "report.md must exist");
         let md = std::fs::read_to_string(&md_path).unwrap();
-        assert!(md.starts_with("# Benchmark"), "markdown must start with header");
-        assert!(md.contains("test-exp"), "markdown must contain experiment name");
-        assert!(md.contains("claude-code"), "markdown must contain agent name");
+        assert!(
+            md.starts_with("# Benchmark"),
+            "markdown must start with header"
+        );
+        assert!(
+            md.contains("test-exp"),
+            "markdown must contain experiment name"
+        );
+        assert!(
+            md.contains("claude-code"),
+            "markdown must contain agent name"
+        );
     }
 }

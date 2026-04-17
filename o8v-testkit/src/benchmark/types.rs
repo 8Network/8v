@@ -135,6 +135,64 @@ pub struct Scenario {
     pub env: Environment,
 }
 
+impl Scenario {
+    /// Claude agent, no 8v. Default permission mode: acceptEdits.
+    pub const fn claude_baseline(name: &'static str, task: &'static Task) -> Self {
+        Self {
+            name,
+            description: "Native",
+            task,
+            env: Environment {
+                agent: Agent::Claude,
+                setup_8v: false,
+                permission_mode: Some(PermissionMode::AcceptEdits),
+            },
+        }
+    }
+
+    /// Claude agent with `8v init` run before the task.
+    pub const fn claude_with_8v(name: &'static str, task: &'static Task) -> Self {
+        Self {
+            name,
+            description: "With 8v",
+            task,
+            env: Environment {
+                agent: Agent::Claude,
+                setup_8v: true,
+                permission_mode: Some(PermissionMode::AcceptEdits),
+            },
+        }
+    }
+
+    /// Codex agent, no 8v.
+    pub const fn codex_baseline(name: &'static str, task: &'static Task) -> Self {
+        Self {
+            name,
+            description: "Codex Native",
+            task,
+            env: Environment {
+                agent: Agent::Codex,
+                setup_8v: false,
+                permission_mode: None,
+            },
+        }
+    }
+
+    /// Codex agent with `8v init` run before the task.
+    pub const fn codex_with_8v(name: &'static str, task: &'static Task) -> Self {
+        Self {
+            name,
+            description: "Codex + 8v",
+            task,
+            env: Environment {
+                agent: Agent::Codex,
+                setup_8v: true,
+                permission_mode: None,
+            },
+        }
+    }
+}
+
 /// A single observation — one run of one scenario.
 /// Persisted automatically by the pipeline.
 #[derive(Debug, Serialize, Deserialize)]
@@ -296,12 +354,15 @@ impl Sample {
             return None;
         }
         let mean = self.mean(&f)?;
-        let variance: f64 = self.observations.iter()
+        let variance: f64 = self
+            .observations
+            .iter()
             .map(|o| {
                 let diff = f(o) - mean;
                 diff * diff
             })
-            .sum::<f64>() / (self.observations.len() - 1) as f64;
+            .sum::<f64>()
+            / (self.observations.len() - 1) as f64;
         Some(variance.sqrt())
     }
 
@@ -314,7 +375,7 @@ impl Sample {
         let mut values: Vec<f64> = self.observations.iter().map(&f).collect();
         values.sort_by(|a, b| a.partial_cmp(b).expect("NaN in metric values"));
         let mid = values.len() / 2;
-        if values.len() % 2 == 0 {
+        if values.len().is_multiple_of(2) {
             Some((values[mid - 1] + values[mid]) / 2.0)
         } else {
             Some(values[mid])
@@ -323,21 +384,24 @@ impl Sample {
 
     /// Number of observations where cargo test passed.
     pub fn tests_pass_count(&self) -> usize {
-        self.observations.iter()
+        self.observations
+            .iter()
             .filter(|o| o.verification.tests_pass == Some(true))
             .count()
     }
 
     /// Number of observations where cargo check/clippy passed.
     pub fn check_pass_count(&self) -> usize {
-        self.observations.iter()
+        self.observations
+            .iter()
             .filter(|o| o.verification.check_pass == Some(true))
             .count()
     }
 
     /// Number of observations where cargo build passed.
     pub fn build_pass_count(&self) -> usize {
-        self.observations.iter()
+        self.observations
+            .iter()
             .filter(|o| o.verification.build_pass == Some(true))
             .count()
     }
@@ -415,7 +479,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "unresolved placeholder `{missing}` in prompt after variable substitution")]
+    #[should_panic(
+        expected = "unresolved placeholder `{missing}` in prompt after variable substitution"
+    )]
     fn task_resolved_prompt_panics_on_unresolved_placeholder() {
         let task = Task {
             name: "missing-var",
@@ -521,6 +587,9 @@ mod tests {
     #[test]
     fn permission_mode_as_str() {
         assert_eq!(PermissionMode::AcceptEdits.as_str(), "acceptEdits");
-        assert_eq!(PermissionMode::BypassPermissions.as_str(), "bypassPermissions");
+        assert_eq!(
+            PermissionMode::BypassPermissions.as_str(),
+            "bypassPermissions"
+        );
     }
 }

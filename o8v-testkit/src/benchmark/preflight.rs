@@ -12,9 +12,9 @@
 //! A green fixture is a harness bug: the agent has nothing to fix, so any
 //! measured delta is noise. See docs/design/fixture-preflight-gate.md.
 
-use crate::scaffold::{fixture_path, TempProject};
 use super::pipeline::run_verification;
 use super::types::Scenario;
+use crate::scaffold::{fixture_path, TempProject};
 
 /// Materialize the scenario's fixture and verify its initial state.
 ///
@@ -69,8 +69,8 @@ pub fn preflight_fixture(scenario: &Scenario) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{Agent, Environment, Scenario, Task};
+    use super::*;
 
     // Fixture with a known failing test (`test_sum_range_inclusive`). Its
     // build+check gates typically pass, but the test gate fails — so preflight

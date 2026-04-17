@@ -89,6 +89,11 @@ pub struct ConditionReport {
     pub tools_histogram: BTreeMap<String, f64>,
     pub verification: VerificationSummary,
     pub landmines: LandmineReport,
+    /// Schema tax: bytes in the initial system message, which carries every
+    /// registered MCP tool's JSON schema. Baseline (no MCP) shows the bare
+    /// cost; 8v conditions show the tax the 8v MCP server adds. Reported
+    /// per-condition so the cost is visible and compared alongside savings.
+    pub schema_tax_init_bytes: StatBlock,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -140,7 +145,10 @@ pub fn build_report(result: &ExperimentResult) -> ReportJson {
     let prompt_text = result.task.clone();
     let prompt_sha = hash_hex(&prompt_text);
 
-    let task_name = result.control.observations.first()
+    let task_name = result
+        .control
+        .observations
+        .first()
         .map(|o| o.task_name.clone());
 
     let mut conditions = Vec::new();
@@ -157,7 +165,10 @@ pub fn build_report(result: &ExperimentResult) -> ReportJson {
     let deltas_vs_control = build_deltas(&result.control, &result.treatments);
 
     let cv = if !conditions.is_empty() {
-        conditions.iter().map(|c| c.cost_usd.cv).fold(0.0_f64, f64::max)
+        conditions
+            .iter()
+            .map(|c| c.cost_usd.cv)
+            .fold(0.0_f64, f64::max)
     } else {
         0.0
     };
@@ -215,19 +226,38 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
 
     let tokens = stat_block(sample, |o| o.total_tokens as f64);
     let cost_usd = {
-        let costs: Vec<f64> = sample.observations.iter()
+        let costs: Vec<f64> = sample
+            .observations
+            .iter()
             .filter_map(|o| o.cost_usd)
             .collect();
         if costs.is_empty() {
-            StatBlock { mean: 0.0, stddev: 0.0, min: 0.0, max: 0.0, cv: 0.0 }
+            StatBlock {
+                mean: 0.0,
+                stddev: 0.0,
+                min: 0.0,
+                max: 0.0,
+                cv: 0.0,
+            }
         } else {
             let mean = costs.iter().sum::<f64>() / costs.len() as f64;
-            let variance = costs.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / costs.len() as f64;
+            let variance =
+                costs.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / costs.len() as f64;
             let stddev = variance.sqrt();
             let min = costs.iter().cloned().fold(f64::INFINITY, f64::min);
             let max = costs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let cv = if mean.abs() > f64::EPSILON { stddev / mean } else { 0.0 };
-            StatBlock { mean, stddev, min, max, cv }
+            let cv = if mean.abs() > f64::EPSILON {
+                stddev / mean
+            } else {
+                0.0
+            };
+            StatBlock {
+                mean,
+                stddev,
+                min,
+                max,
+                cv,
+            }
         }
     };
     let turns = stat_block(sample, |o| o.turn_count as f64);
@@ -259,6 +289,8 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
 
     let landmines = detect_landmines(sample);
 
+    let schema_tax_init_bytes = stat_block(sample, |o| o.init_message_bytes as f64);
+
     ConditionReport {
         name: sample.scenario.clone(),
         description: sample.description.clone(),
@@ -271,13 +303,18 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
         tools_histogram,
         verification,
         landmines,
+        schema_tax_init_bytes,
     }
 }
 
 fn stat_block(sample: &Sample, f: impl Fn(&Observation) -> f64 + Copy) -> StatBlock {
     let mean = sample.require_mean(f);
     let stddev = sample.stddev(f).unwrap_or(0.0);
-    let cv = if mean.abs() > f64::EPSILON { stddev / mean } else { 0.0 };
+    let cv = if mean.abs() > f64::EPSILON {
+        stddev / mean
+    } else {
+        0.0
+    };
     let values: Vec<f64> = sample.observations.iter().map(f).collect();
     let min = values.iter().copied().fold(f64::INFINITY, f64::min);
     let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -301,7 +338,8 @@ fn build_tools_histogram(sample: &Sample) -> BTreeMap<String, f64> {
             *counts.entry(name.clone()).or_default() += 1;
         }
     }
-    counts.into_iter()
+    counts
+        .into_iter()
         .map(|(name, count)| (name, count as f64 / n as f64))
         .collect()
 }
@@ -326,18 +364,36 @@ fn detect_landmines(sample: &Sample) -> LandmineReport {
 }
 
 fn has_stuck_loop(details: &[super::types::ToolCallDetail]) -> bool {
-    if details.len() < 3 {
-        return false;
-    }
-    for window in details.windows(3) {
-        let all_same = window[0].name == window[1].name
-            && window[1].name == window[2].name
-            && window[0].input == window[1].input
-            && window[1].input == window[2].input;
-        if all_same {
-            return true;
+    // Strict: 3 consecutive calls with same name AND same input.
+    // Catches perfect loops ("retry the exact same tool with the exact same args").
+    if details.len() >= 3 {
+        for window in details.windows(3) {
+            let all_same = window[0].name == window[1].name
+                && window[1].name == window[2].name
+                && window[0].input == window[1].input
+                && window[1].input == window[2].input;
+            if all_same {
+                return true;
+            }
         }
     }
+
+    // Loose: 5+ consecutive calls with same name (inputs may vary).
+    // Catches "thrashing" — agent fixated on one tool, varying args without
+    // progressing. Observed in polyglot Run 6: 100 turns, 81 tool calls,
+    // massive cost outlier, not caught by strict check.
+    let mut run_len = 1usize;
+    for pair in details.windows(2) {
+        if pair[0].name == pair[1].name {
+            run_len += 1;
+            if run_len >= 5 {
+                return true;
+            }
+        } else {
+            run_len = 1;
+        }
+    }
+
     false
 }
 
@@ -359,34 +415,49 @@ fn has_error_storm(details: &[super::types::ToolCallDetail]) -> bool {
 fn build_deltas(control: &Sample, treatments: &[Sample]) -> Vec<DeltaReport> {
     let ctrl_tokens = control.require_mean(|o| o.total_tokens as f64);
     let ctrl_cost = {
-        let costs: Vec<f64> = control.observations.iter().filter_map(|o| o.cost_usd).collect();
-        if costs.is_empty() { None } else { Some(costs.iter().sum::<f64>() / costs.len() as f64) }
+        let costs: Vec<f64> = control
+            .observations
+            .iter()
+            .filter_map(|o| o.cost_usd)
+            .collect();
+        if costs.is_empty() {
+            None
+        } else {
+            Some(costs.iter().sum::<f64>() / costs.len() as f64)
+        }
     };
     let ctrl_turns = control.require_mean(|o| o.turn_count as f64);
     let ctrl_calls = control.require_mean(|o| o.tool_names.len() as f64);
 
-    treatments.iter().map(|t| {
-        let t_tokens = t.require_mean(|o| o.total_tokens as f64);
-        let t_cost = {
-            let costs: Vec<f64> = t.observations.iter().filter_map(|o| o.cost_usd).collect();
-            if costs.is_empty() { None } else { Some(costs.iter().sum::<f64>() / costs.len() as f64) }
-        };
-        let t_turns = t.require_mean(|o| o.turn_count as f64);
-        let t_calls = t.require_mean(|o| o.tool_names.len() as f64);
+    treatments
+        .iter()
+        .map(|t| {
+            let t_tokens = t.require_mean(|o| o.total_tokens as f64);
+            let t_cost = {
+                let costs: Vec<f64> = t.observations.iter().filter_map(|o| o.cost_usd).collect();
+                if costs.is_empty() {
+                    None
+                } else {
+                    Some(costs.iter().sum::<f64>() / costs.len() as f64)
+                }
+            };
+            let t_turns = t.require_mean(|o| o.turn_count as f64);
+            let t_calls = t.require_mean(|o| o.tool_names.len() as f64);
 
-        let cost_delta_ratio = match (ctrl_cost, t_cost) {
-            (Some(c), Some(t)) if c > 0.0 => Some(pct_delta(c, t)),
-            _ => None,
-        };
+            let cost_delta_ratio = match (ctrl_cost, t_cost) {
+                (Some(c), Some(t)) if c > 0.0 => Some(pct_delta(c, t)),
+                _ => None,
+            };
 
-        DeltaReport {
-            condition: t.description.clone(),
-            tokens_delta_ratio: pct_delta(ctrl_tokens, t_tokens),
-            cost_delta_ratio,
-            turns_delta_ratio: pct_delta(ctrl_turns, t_turns),
-            calls_delta_ratio: pct_delta(ctrl_calls, t_calls),
-        }
-    }).collect()
+            DeltaReport {
+                condition: t.description.clone(),
+                tokens_delta_ratio: pct_delta(ctrl_tokens, t_tokens),
+                cost_delta_ratio,
+                turns_delta_ratio: pct_delta(ctrl_turns, t_turns),
+                calls_delta_ratio: pct_delta(ctrl_calls, t_calls),
+            }
+        })
+        .collect()
 }
 
 fn pct_delta(control: f64, treatment: f64) -> f64 {
@@ -410,7 +481,14 @@ fn assess_confidence(n: usize, max_cv: f64) -> (bool, String) {
             half_width_pct * 100.0, max_cv * 100.0,
         ));
     }
-    (true, format!("N={n}, max CV={:.1}%, 95% CI half-width {:.1}%", max_cv * 100.0, half_width_pct * 100.0))
+    (
+        true,
+        format!(
+            "N={n}, max CV={:.1}%, 95% CI half-width {:.1}%",
+            max_cv * 100.0,
+            half_width_pct * 100.0
+        ),
+    )
 }
 
 fn hash_hex(s: &str) -> String {
@@ -434,7 +512,8 @@ pub fn render_markdown(report: &ReportJson) -> String {
     if report.conditions.is_empty() {
         return format!(
             "# Benchmark — {}\n\n**Agent:** {}  |  **Runs:** 0\n\nNo conditions recorded.\n",
-            report.experiment, report.agent_name.as_deref().unwrap_or("unknown")
+            report.experiment,
+            report.agent_name.as_deref().unwrap_or("unknown")
         );
     }
 
@@ -444,30 +523,42 @@ pub fn render_markdown(report: &ReportJson) -> String {
     md.push_str(&format!("# Benchmark — {}\n\n", report.experiment));
     md.push_str(&format!(
         "**Commit:** {}  |  **8v version:** {}  |  **Runs:** N={} per condition\n",
-        report.commit, report.version_8v.as_deref().unwrap_or("unknown"), report.confidence.n_per_condition,
+        report.commit,
+        report.version_8v.as_deref().unwrap_or("unknown"),
+        report.confidence.n_per_condition,
     ));
     md.push_str(&format!(
         "**Task:** {}  |  **Fixture:** {}\n",
-        report.task.name, report.task.task_name.as_deref().unwrap_or("unknown"),
+        report.task.name,
+        report.task.task_name.as_deref().unwrap_or("unknown"),
     ));
     if let Some(agent) = &report.agent_name {
         let ver = report.agent_version.as_deref().unwrap_or("?");
         let model = report.model_id.as_deref().unwrap_or("unknown");
-        md.push_str(&format!("**Agent:** {} v{}  |  **Model:** {}\n", agent, ver, model));
+        md.push_str(&format!(
+            "**Agent:** {} v{}  |  **Model:** {}\n",
+            agent, ver, model
+        ));
     }
     md.push('\n');
 
     // Headline table
     md.push_str("## Headline\n\n");
-    md.push_str("| Condition | Cost (mean) | Cost vs control | Tokens (mean) | Turns | Verification |\n");
-    md.push_str("|-----------|------------:|----------------:|--------------:|------:|:-------------|\n");
+    md.push_str(
+        "| Condition | Cost (mean) | Cost vs control | Tokens (mean) | Turns | Verification |\n",
+    );
+    md.push_str(
+        "|-----------|------------:|----------------:|--------------:|------:|:-------------|\n",
+    );
 
     for (i, cond) in report.conditions.iter().enumerate() {
         let cost_str = format!("${:.4}", cond.cost_usd.mean);
         let delta_str = if i == 0 {
             "\u{2014}".to_string()
         } else {
-            report.deltas_vs_control.get(i - 1)
+            report
+                .deltas_vs_control
+                .get(i - 1)
                 .and_then(|d| d.cost_delta_ratio)
                 .map(|d| format!("**{:+.1}%**", d * 100.0))
                 .unwrap_or_else(|| "n/a".into())
@@ -476,8 +567,7 @@ pub fn render_markdown(report: &ReportJson) -> String {
         let turns_str = format!("{:.1}", cond.turns.mean);
         let verify = format!(
             "tests {}/{}",
-            cond.verification.tests_pass.passed,
-            cond.verification.tests_pass.total,
+            cond.verification.tests_pass.passed, cond.verification.tests_pass.total,
         );
         md.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} |\n",
@@ -504,10 +594,38 @@ pub fn render_markdown(report: &ReportJson) -> String {
         md.push('\n');
 
         for (label, values) in [
-            ("input", report.conditions.iter().map(|c| c.tokens_by_category.input.mean).collect::<Vec<_>>()),
-            ("output", report.conditions.iter().map(|c| c.tokens_by_category.output.mean).collect::<Vec<_>>()),
-            ("cache_read", report.conditions.iter().map(|c| c.tokens_by_category.cache_read.mean).collect::<Vec<_>>()),
-            ("cache_creation", report.conditions.iter().map(|c| c.tokens_by_category.cache_creation.mean).collect::<Vec<_>>()),
+            (
+                "input",
+                report
+                    .conditions
+                    .iter()
+                    .map(|c| c.tokens_by_category.input.mean)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "output",
+                report
+                    .conditions
+                    .iter()
+                    .map(|c| c.tokens_by_category.output.mean)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "cache_read",
+                report
+                    .conditions
+                    .iter()
+                    .map(|c| c.tokens_by_category.cache_read.mean)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "cache_creation",
+                report
+                    .conditions
+                    .iter()
+                    .map(|c| c.tokens_by_category.cache_creation.mean)
+                    .collect::<Vec<_>>(),
+            ),
         ] {
             md.push_str(&format!("| {} |", label));
             for val in values {
@@ -573,9 +691,10 @@ pub fn render_markdown(report: &ReportJson) -> String {
 
     // Landmines
     md.push_str("## Landmines\n\n");
-    let any_landmines = report.conditions.iter().any(|c| {
-        c.landmines.stuck_loop_runs > 0 || c.landmines.is_error_storms > 0
-    });
+    let any_landmines = report
+        .conditions
+        .iter()
+        .any(|c| c.landmines.stuck_loop_runs > 0 || c.landmines.is_error_storms > 0);
     if any_landmines {
         for cond in &report.conditions {
             if cond.landmines.stuck_loop_runs > 0 {
@@ -601,7 +720,10 @@ pub fn render_markdown(report: &ReportJson) -> String {
     md.push_str("| Run | Condition | Tokens | Cost | Turns | Tools | Tests | Build | Check |\n");
     md.push_str("|-----|-----------|-------:|-----:|------:|------:|:-----:|:-----:|:-----:|\n");
     for run in &report.runs {
-        let cost_str = run.cost_usd.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "n/a".into());
+        let cost_str = run
+            .cost_usd
+            .map(|c| format!("${:.4}", c))
+            .unwrap_or_else(|| "n/a".into());
         let check = |v: Option<bool>| match v {
             Some(true) => "\u{2714}",
             Some(false) => "\u{2718}",
@@ -696,16 +818,22 @@ mod tests {
     }
 
     fn make_result() -> ExperimentResult {
-        let control = make_sample("Native", vec![
-            make_observation(100000, 0.20, 20, vec!["Bash", "Read", "Read"]),
-            make_observation(120000, 0.25, 24, vec!["Bash", "Read", "Glob"]),
-            make_observation(110000, 0.22, 22, vec!["Bash", "Read", "Read"]),
-        ]);
-        let treatment = make_sample("With 8v", vec![
-            make_observation(60000, 0.12, 12, vec!["mcp__8v__8v", "mcp__8v__8v"]),
-            make_observation(70000, 0.14, 14, vec!["mcp__8v__8v", "mcp__8v__8v"]),
-            make_observation(65000, 0.13, 13, vec!["mcp__8v__8v", "mcp__8v__8v"]),
-        ]);
+        let control = make_sample(
+            "Native",
+            vec![
+                make_observation(100000, 0.20, 20, vec!["Bash", "Read", "Read"]),
+                make_observation(120000, 0.25, 24, vec!["Bash", "Read", "Glob"]),
+                make_observation(110000, 0.22, 22, vec!["Bash", "Read", "Read"]),
+            ],
+        );
+        let treatment = make_sample(
+            "With 8v",
+            vec![
+                make_observation(60000, 0.12, 12, vec!["mcp__8v__8v", "mcp__8v__8v"]),
+                make_observation(70000, 0.14, 14, vec!["mcp__8v__8v", "mcp__8v__8v"]),
+                make_observation(65000, 0.13, 13, vec!["mcp__8v__8v", "mcp__8v__8v"]),
+            ],
+        );
 
         ExperimentResult {
             name: "test-experiment".into(),
@@ -764,7 +892,10 @@ mod tests {
         let treat_cost = (0.12 + 0.14 + 0.13) / 3.0;
         let expected = (treat_cost - ctrl_cost) / ctrl_cost;
         assert!((delta.cost_delta_ratio.unwrap() - expected).abs() < 0.001);
-        assert!(delta.cost_delta_ratio.unwrap() < 0.0, "treatment should be cheaper");
+        assert!(
+            delta.cost_delta_ratio.unwrap() < 0.0,
+            "treatment should be cheaper"
+        );
     }
 
     #[test]
@@ -826,9 +957,24 @@ mod tests {
     fn landmine_stuck_loop_detected() {
         let mut obs = make_observation(100, 0.01, 1, vec!["Read", "Read", "Read"]);
         obs.tool_calls_detail = vec![
-            ToolCallDetail { name: "Read".into(), input: "{\"file\":\"x\"}".into(), output_bytes: 10, is_error: false },
-            ToolCallDetail { name: "Read".into(), input: "{\"file\":\"x\"}".into(), output_bytes: 10, is_error: false },
-            ToolCallDetail { name: "Read".into(), input: "{\"file\":\"x\"}".into(), output_bytes: 10, is_error: false },
+            ToolCallDetail {
+                name: "Read".into(),
+                input: "{\"file\":\"x\"}".into(),
+                output_bytes: 10,
+                is_error: false,
+            },
+            ToolCallDetail {
+                name: "Read".into(),
+                input: "{\"file\":\"x\"}".into(),
+                output_bytes: 10,
+                is_error: false,
+            },
+            ToolCallDetail {
+                name: "Read".into(),
+                input: "{\"file\":\"x\"}".into(),
+                output_bytes: 10,
+                is_error: false,
+            },
         ];
         let sample = make_sample("test", vec![obs]);
         let landmines = detect_landmines(&sample);
@@ -836,11 +982,55 @@ mod tests {
     }
 
     #[test]
+    fn landmine_thrash_same_name_varying_inputs() {
+        // Agent calls Read 5x in a row with different file paths — not caught
+        // by strict "identical" rule but is a real stuck-loop signal.
+        let mut obs = make_observation(100, 0.01, 1, vec!["Read"; 5]);
+        obs.tool_calls_detail = (0..5)
+            .map(|i| ToolCallDetail {
+                name: "Read".into(),
+                input: format!(r#"{{"file":"f{i}"}}"#),
+                output_bytes: 10,
+                is_error: false,
+            })
+            .collect();
+        let sample = make_sample("test", vec![obs]);
+        let landmines = detect_landmines(&sample);
+        assert_eq!(
+            landmines.stuck_loop_runs, 1,
+            "5 consecutive same-name calls should be flagged as stuck loop"
+        );
+    }
+
+    #[test]
+    fn landmine_no_false_positive_on_diverse_sequence() {
+        // Read, Grep, Edit, Read, Grep — varied, should NOT flag.
+        let mut obs = make_observation(100, 0.01, 1, vec!["Read", "Grep", "Edit", "Read", "Grep"]);
+        obs.tool_calls_detail = ["Read", "Grep", "Edit", "Read", "Grep"]
+            .iter()
+            .map(|n| ToolCallDetail {
+                name: (*n).into(),
+                input: "{}".into(),
+                output_bytes: 10,
+                is_error: false,
+            })
+            .collect();
+        let sample = make_sample("test", vec![obs]);
+        let landmines = detect_landmines(&sample);
+        assert_eq!(landmines.stuck_loop_runs, 0);
+    }
+
+    #[test]
     fn landmine_error_storm_detected() {
         let mut obs = make_observation(100, 0.01, 1, vec!["Write"; 5]);
-        obs.tool_calls_detail = (0..5).map(|_| ToolCallDetail {
-            name: "Write".into(), input: "{}".into(), output_bytes: 0, is_error: true,
-        }).collect();
+        obs.tool_calls_detail = (0..5)
+            .map(|_| ToolCallDetail {
+                name: "Write".into(),
+                input: "{}".into(),
+                output_bytes: 0,
+                is_error: true,
+            })
+            .collect();
         let sample = make_sample("test", vec![obs]);
         let landmines = detect_landmines(&sample);
         assert_eq!(landmines.is_error_storms, 1);
@@ -924,10 +1114,16 @@ mod tests {
         assert!(md.contains("## Per-run raw data"));
         // Count rows in the per-run table by looking for "| 0 |" through "| 5 |"
         let in_per_run = md.split("## Per-run raw data").nth(1).unwrap();
-        let data_rows: Vec<&str> = in_per_run.lines()
+        let data_rows: Vec<&str> = in_per_run
+            .lines()
             .filter(|l| l.starts_with("| ") && !l.starts_with("| Run") && !l.starts_with("|--"))
             .collect();
-        assert_eq!(data_rows.len(), 6, "expected 6 per-run rows, got: {}", data_rows.len());
+        assert_eq!(
+            data_rows.len(),
+            6,
+            "expected 6 per-run rows, got: {}",
+            data_rows.len()
+        );
     }
 
     #[test]
@@ -935,7 +1131,10 @@ mod tests {
         let report = build_report(&make_result());
         let md = render_markdown(&report);
         if !report.confidence.publishable {
-            assert!(md.contains(&report.confidence.reason), "non-publishable must show reason");
+            assert!(
+                md.contains(&report.confidence.reason),
+                "non-publishable must show reason"
+            );
         }
         // Either way, the headline section must reference conditions
         assert!(md.contains("N="), "markdown must mention sample size");
@@ -985,7 +1184,11 @@ mod tests {
         assert!(md.contains(&parsed.experiment));
         assert!(md.contains(&parsed.commit));
         for cond in &parsed.conditions {
-            assert!(md.contains(&cond.description), "markdown missing condition: {}", cond.description);
+            assert!(
+                md.contains(&cond.description),
+                "markdown missing condition: {}",
+                cond.description
+            );
         }
     }
 }

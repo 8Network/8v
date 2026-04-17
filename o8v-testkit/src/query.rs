@@ -4,8 +4,8 @@
 
 //! Diagnostic queries — search and filter check reports.
 
-use o8v_core::{CheckEntry, CheckOutcome, CheckReport, CheckResult, Diagnostic};
 use o8v_core::project::Stack;
+use o8v_core::{CheckEntry, CheckOutcome, CheckReport, CheckResult, Diagnostic};
 
 /// Collect all diagnostics for a given tool in a given stack.
 ///

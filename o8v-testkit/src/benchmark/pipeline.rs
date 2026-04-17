@@ -11,11 +11,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::SystemTime;
 
-use crate::scaffold::{fixture_path, TempProject};
 use super::claude::{AgentResult, ClaudeDriver};
 use super::codex::CodexDriver;
 use super::store::BenchmarkStore;
 use super::types::*;
+use crate::scaffold::{fixture_path, TempProject};
 
 /// Execute a benchmark scenario end-to-end.
 ///
@@ -38,7 +38,9 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
             .arg("--version")
             .output()
             .expect("8v --version");
-        String::from_utf8_lossy(&version_output.stdout).trim().to_string()
+        String::from_utf8_lossy(&version_output.stdout)
+            .trim()
+            .to_string()
     };
 
     // ── 1. Setup ────────────────────────────────────────────────────────────
@@ -85,7 +87,11 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         match std::fs::remove_file(&events_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => eprintln!("  [benchmark] warning: failed to remove events file {}: {}", events_path.display(), e),
+            Err(e) => eprintln!(
+                "  [benchmark] warning: failed to remove events file {}: {}",
+                events_path.display(),
+                e
+            ),
         }
     }
 
@@ -102,18 +108,20 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
             // When 8v MCP is registered, shell access is redundant and we
             // disable it so the agent goes through MCP.
             let disable_shell = scenario.env.setup_8v;
-            CodexDriver::run(
-                &prompt,
-                project.path(),
-                disable_shell,
-            )
-            .expect("codex driver failed")
+            CodexDriver::run(&prompt, project.path(), disable_shell).expect("codex driver failed")
         }
     };
 
+    if agent_result.parse_errors > 0 {
+        eprintln!(
+            "  [benchmark] warning: {} unparseable line(s) in agent stream — \
+             metrics for this run may be incomplete",
+            agent_result.parse_errors
+        );
+    }
+
     // ── 3. Collect internal events ──────────────────────────────────────────
     let events = collect_events(&events_path);
-
 
     // ── 4. Verify ───────────────────────────────────────────────────────────
     let verification = run_verification(project.path(), binary);
@@ -129,14 +137,22 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         total_tokens: agent_result.total_tokens,
         cost_usd: agent_result.cost_usd,
         exit_code: agent_result.exit_code,
-        tool_names: agent_result.tool_calls.iter().map(|t| t.name.clone()).collect(),
-        turns: agent_result.turn_usage.iter().map(|t| TurnRecord {
-            role: TurnRole::from_str(&t.role),
-            input_tokens: t.input_tokens,
-            output_tokens: t.output_tokens,
-            cache_read_input_tokens: t.cache_read_input_tokens,
-            cache_creation_input_tokens: t.cache_creation_input_tokens,
-        }).collect(),
+        tool_names: agent_result
+            .tool_calls
+            .iter()
+            .map(|t| t.name.clone())
+            .collect(),
+        turns: agent_result
+            .turn_usage
+            .iter()
+            .map(|t| TurnRecord {
+                role: TurnRole::from_str(&t.role),
+                input_tokens: t.input_tokens,
+                output_tokens: t.output_tokens,
+                cache_read_input_tokens: t.cache_read_input_tokens,
+                cache_creation_input_tokens: t.cache_creation_input_tokens,
+            })
+            .collect(),
         init_message_bytes: agent_result.init_message_bytes,
         response_text: agent_result.response_text.clone(),
         model: agent_result.model.clone(),
@@ -192,20 +208,60 @@ pub(super) fn unix_ms() -> i64 {
 }
 
 fn setup_git(project: &Path) {
-    let out = Command::new("git").args(["init"]).current_dir(project).output().expect("spawn git init");
-    assert!(out.status.success(), "git init failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .args(["init"])
+        .current_dir(project)
+        .output()
+        .expect("spawn git init");
+    assert!(
+        out.status.success(),
+        "git init failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    let out = Command::new("git").args(["config", "user.email", "test@example.com"]).current_dir(project).output().expect("spawn git config email");
-    assert!(out.status.success(), "git config user.email failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(project)
+        .output()
+        .expect("spawn git config email");
+    assert!(
+        out.status.success(),
+        "git config user.email failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    let out = Command::new("git").args(["config", "user.name", "Test User"]).current_dir(project).output().expect("spawn git config name");
-    assert!(out.status.success(), "git config user.name failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(project)
+        .output()
+        .expect("spawn git config name");
+    assert!(
+        out.status.success(),
+        "git config user.name failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    let out = Command::new("git").args(["add", "-A"]).current_dir(project).output().expect("spawn git add");
-    assert!(out.status.success(), "git add -A failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(project)
+        .output()
+        .expect("spawn git add");
+    assert!(
+        out.status.success(),
+        "git add -A failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    let out = Command::new("git").args(["commit", "-m", "Initial commit"]).current_dir(project).output().expect("spawn git commit");
-    assert!(out.status.success(), "git commit failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .args(["commit", "-m", "Initial commit"])
+        .current_dir(project)
+        .output()
+        .expect("spawn git commit");
+    assert!(
+        out.status.success(),
+        "git commit failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 fn run_8v_init(project: &Path, binary: &str) {
@@ -235,7 +291,10 @@ fn write_codex_config(project: &Path, binary: &str) {
         let mut mcp_servers = toml::Table::new();
         let mut server = toml::Table::new();
         server.insert("command".into(), toml::Value::String(binary.to_string()));
-        server.insert("args".into(), toml::Value::Array(vec![toml::Value::String("mcp".into())]));
+        server.insert(
+            "args".into(),
+            toml::Value::Array(vec![toml::Value::String("mcp".into())]),
+        );
         mcp_servers.insert("8v".into(), toml::Value::Table(server));
         root.insert("mcp_servers".into(), toml::Value::Table(mcp_servers));
         toml::to_string(&root).expect("serialize codex config.toml")
@@ -247,7 +306,9 @@ fn write_codex_config(project: &Path, binary: &str) {
 pub(super) fn events_ndjson_path() -> std::path::PathBuf {
     let home = std::env::var("HOME")
         .expect("[benchmark] HOME environment variable is not set — cannot locate events.ndjson; this is a configuration error");
-    std::path::PathBuf::from(home).join(".8v").join("events.ndjson")
+    std::path::PathBuf::from(home)
+        .join(".8v")
+        .join("events.ndjson")
 }
 
 /// Agent identity extracted from MCP handshake events.
@@ -270,11 +331,20 @@ struct CollectedEvents {
 fn collect_events(events_path: &Path) -> CollectedEvents {
     let content = match std::fs::read_to_string(events_path) {
         Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return CollectedEvents {
-            count: 0, output_bytes: 0, command_bytes: 0, total_duration_ms: 0,
-            agent: EventAgentInfo::default(),
-        },
-        Err(e) => panic!("[benchmark] failed to read events file {}: {}", events_path.display(), e),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return CollectedEvents {
+                count: 0,
+                output_bytes: 0,
+                command_bytes: 0,
+                total_duration_ms: 0,
+                agent: EventAgentInfo::default(),
+            }
+        }
+        Err(e) => panic!(
+            "[benchmark] failed to read events file {}: {}",
+            events_path.display(),
+            e
+        ),
     };
 
     let mut count = 0usize;
@@ -291,12 +361,20 @@ fn collect_events(events_path: &Path) -> CollectedEvents {
         }
         let Ok(raw) = serde_json::from_str::<serde_json::Value>(line) else {
             parse_errors += 1;
-            eprintln!("  [benchmark] warning: unparseable event line {}: {}", i+1, line);
+            eprintln!(
+                "  [benchmark] warning: unparseable event line {}: {}",
+                i + 1,
+                line
+            );
             continue;
         };
         let Some(event_type) = raw.get("event").and_then(|v| v.as_str()) else {
             no_type_events += 1;
-            eprintln!("  [benchmark] warning: event line {} has no 'event' field: {}", i+1, line);
+            eprintln!(
+                "  [benchmark] warning: event line {} has no 'event' field: {}",
+                i + 1,
+                line
+            );
             continue;
         };
         match event_type {
@@ -308,10 +386,17 @@ fn collect_events(events_path: &Path) -> CollectedEvents {
                 if agent.name.is_none() {
                     if let Some(info) = raw.get("agent_info") {
                         agent.name = info.get("name").and_then(|v| v.as_str()).map(String::from);
-                        agent.version = info.get("version").and_then(|v| v.as_str()).map(String::from);
-                        agent.protocol_version = info.get("protocol_version").and_then(|v| v.as_str()).map(String::from);
+                        agent.version = info
+                            .get("version")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        agent.protocol_version = info
+                            .get("protocol_version")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
                         if let Some(caps) = info.get("capabilities").and_then(|v| v.as_array()) {
-                            agent.capabilities = caps.iter()
+                            agent.capabilities = caps
+                                .iter()
                                 .filter_map(|v| v.as_str().map(String::from))
                                 .collect();
                         }
@@ -331,12 +416,24 @@ fn collect_events(events_path: &Path) -> CollectedEvents {
     }
 
     if parse_errors > 0 {
-        eprintln!("  [benchmark] warning: {} unparseable event line(s) skipped", parse_errors);
+        eprintln!(
+            "  [benchmark] warning: {} unparseable event line(s) skipped",
+            parse_errors
+        );
     }
     if no_type_events > 0 {
-        eprintln!("  [benchmark] warning: {} event line(s) with no 'event' field skipped", no_type_events);
+        eprintln!(
+            "  [benchmark] warning: {} event line(s) with no 'event' field skipped",
+            no_type_events
+        );
     }
-    CollectedEvents { count, output_bytes, command_bytes, total_duration_ms, agent }
+    CollectedEvents {
+        count,
+        output_bytes,
+        command_bytes,
+        total_duration_ms,
+        agent,
+    }
 }
 
 pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
@@ -345,6 +442,8 @@ pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
     // them as N/A rather than failures.
     let has_cargo = project.join("Cargo.toml").exists();
     let has_pyproject = project.join("pyproject.toml").exists();
+    let has_go_mod = project.join("go.mod").exists();
+    let has_tsconfig = project.join("tsconfig.json").exists();
     if has_pyproject && !has_cargo {
         let test_result = Some(
             Command::new("python3")
@@ -352,6 +451,44 @@ pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
                 .current_dir(project)
                 .output()
                 .expect("[benchmark] failed to spawn `python3 -m pytest` — is python3 installed?")
+                .status
+                .success(),
+        );
+        return Verification {
+            tests_pass: test_result,
+            check_pass: None,
+            build_pass: None,
+        };
+    }
+
+    // Go-only fixtures: go.mod present, no Cargo.toml. Gate is `go test ./...`.
+    if has_go_mod && !has_cargo {
+        let test_result = Some(
+            Command::new("go")
+                .args(["test", "./..."])
+                .current_dir(project)
+                .output()
+                .expect("[benchmark] failed to spawn `go test ./...` — is go installed?")
+                .status
+                .success(),
+        );
+        return Verification {
+            tests_pass: test_result,
+            check_pass: None,
+            build_pass: None,
+        };
+    }
+
+    // TypeScript-only fixtures: tsconfig.json present, no Cargo.toml. Gate is
+    // `tsc --noEmit` — covers type-level bugs. Reuses `tests_pass` as the
+    // single success signal per design (scenario-fix-typescript.md).
+    if has_tsconfig && !has_cargo {
+        let test_result = Some(
+            Command::new("tsc")
+                .args(["--noEmit"])
+                .current_dir(project)
+                .output()
+                .expect("[benchmark] failed to spawn `tsc --noEmit` — is typescript installed (tsc on PATH)?")
                 .status
                 .success(),
         );
@@ -373,7 +510,11 @@ pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
     );
 
     let check_result = Some(
-        match Command::new("cargo").args(["clippy", "--", "-D", "warnings"]).current_dir(project).output() {
+        match Command::new("cargo")
+            .args(["clippy", "--", "-D", "warnings"])
+            .current_dir(project)
+            .output()
+        {
             Ok(out) => out,
             Err(e) => panic!("[benchmark] failed to spawn `cargo clippy -- -D warnings`: {e}"),
         }
@@ -382,7 +523,11 @@ pub(super) fn run_verification(project: &Path, _binary: &str) -> Verification {
     );
 
     let build_result = Some(
-        match Command::new("cargo").args(["build"]).current_dir(project).output() {
+        match Command::new("cargo")
+            .args(["build"])
+            .current_dir(project)
+            .output()
+        {
             Ok(out) => out,
             Err(e) => panic!("[benchmark] failed to spawn `cargo build`: {e}"),
         }
@@ -435,7 +580,10 @@ fn print_summary(name: &str, agent: &AgentResult, record: &Observation) {
     for (i, detail) in record.tool_calls_detail.iter().enumerate() {
         let err = if detail.is_error { " [ERROR]" } else { "" };
         let input_preview: String = detail.input.chars().take(120).collect();
-        eprintln!("  tool[{i}]:         {} → {}{} ({} bytes out)", detail.name, input_preview, err, detail.output_bytes);
+        eprintln!(
+            "  tool[{i}]:         {} → {}{} ({} bytes out)",
+            detail.name, input_preview, err, detail.output_bytes
+        );
     }
     if let Some(name) = &record.agent_name {
         let ver = record.agent_version.as_deref().unwrap_or("?");

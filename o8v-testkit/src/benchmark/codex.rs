@@ -8,11 +8,11 @@
 //! benchmark pipeline, experiment runner, and report builder work
 //! unchanged.
 
-use std::path::Path;
-use std::process::{Command, Stdio};
-use serde::Deserialize;
 use super::claude::{AgentResult, ToolCall, TurnUsage};
 use super::types::ToolCallDetail;
+use serde::Deserialize;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
 // ── Codex JSONL stream types ────────────────────────────────────────────────
 
@@ -154,7 +154,8 @@ impl CodexDriver {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| format!("failed to spawn codex: {e} (is `codex` in PATH?)"))?;
 
         let output = child.wait_with_output().map_err(|e| format!("wait: {e}"))?;
@@ -167,11 +168,17 @@ impl CodexDriver {
                 eprintln!("  [codex stderr] {line}");
             }
             if stderr_lines.len() > 30 {
-                eprintln!("  [codex stderr] ... ({} more lines)", stderr_lines.len() - 30);
+                eprintln!(
+                    "  [codex stderr] ... ({} more lines)",
+                    stderr_lines.len() - 30
+                );
             }
         }
 
-        Self::parse_output(&output.stdout, output.status.code().unwrap_or(SIGNAL_KILLED))
+        Self::parse_output(
+            &output.stdout,
+            output.status.code().unwrap_or(SIGNAL_KILLED),
+        )
     }
 
     fn parse_output(stdout: &[u8], exit_code: i32) -> Result<AgentResult, String> {
@@ -195,7 +202,10 @@ impl CodexDriver {
                 Ok(e) => e,
                 Err(e) => {
                     parse_errors += 1;
-                    eprintln!("  [codex] parse error #{parse_errors}: {e} — line: {}", &line[..line.len().min(200)]);
+                    eprintln!(
+                        "  [codex] parse error #{parse_errors}: {e} — line: {}",
+                        &line[..line.len().min(200)]
+                    );
                     continue;
                 }
             };
@@ -231,9 +241,12 @@ impl CodexDriver {
                             }
                             CodexItemType::CommandExecution => {
                                 let name = "shell".to_string();
-                                let input = item.command.clone()
+                                let input = item
+                                    .command
+                                    .clone()
                                     .unwrap_or_else(|| "[no command]".to_string());
-                                let output_bytes = item.aggregated_output
+                                let output_bytes = item
+                                    .aggregated_output
                                     .as_ref()
                                     .map(|s| s.len() as u64)
                                     .unwrap_or(0);
@@ -254,15 +267,21 @@ impl CodexDriver {
                                     (Some(s), None) => format!("mcp__{s}"),
                                     _ => "mcp_unknown".to_string(),
                                 };
-                                let input = item.arguments
-                                    .map(|v| serde_json::to_string(&v)
-                                        .expect("serialize serde_json::Value"))
+                                let input = item
+                                    .arguments
+                                    .map(|v| {
+                                        serde_json::to_string(&v)
+                                            .expect("serialize serde_json::Value")
+                                    })
                                     .unwrap_or_default();
-                                let output_bytes = item.result
+                                let output_bytes = item
+                                    .result
                                     .as_ref()
-                                    .map(|v| serde_json::to_string(v)
-                                        .expect("serialize serde_json::Value")
-                                        .len() as u64)
+                                    .map(|v| {
+                                        serde_json::to_string(v)
+                                            .expect("serialize serde_json::Value")
+                                            .len() as u64
+                                    })
                                     .unwrap_or(0);
                                 let is_error = item.error.is_some()
                                     || item.status.as_deref() == Some("failed");
@@ -385,7 +404,7 @@ mod tests {
 {"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50,"cached_input_tokens":0}}"#;
 
         let result = CodexDriver::parse_output(jsonl.as_bytes(), 0).unwrap();
-        assert_eq!(result.tool_calls_detail[0].is_error, true);
+        assert!(result.tool_calls_detail[0].is_error);
     }
 
     #[test]
@@ -394,7 +413,7 @@ mod tests {
 {"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50,"cached_input_tokens":0}}"#;
 
         let result = CodexDriver::parse_output(jsonl.as_bytes(), 0).unwrap();
-        assert_eq!(result.tool_calls_detail[0].is_error, true);
+        assert!(result.tool_calls_detail[0].is_error);
         assert_eq!(result.tool_calls_detail[0].name, "mcp__8v__8v");
     }
 

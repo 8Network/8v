@@ -9,8 +9,7 @@
 //!
 //! Each scenario maps to a test in agent_benchmark.rs.
 
-use o8v_testkit::benchmark::{Agent, Environment, ExperimentConfig, Scenario, Task};
-use o8v_testkit::benchmark::PermissionMode;
+use o8v_testkit::benchmark::{ExperimentConfig, Scenario, Task};
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
 // Task prompts are what a real user would say. No tool names, no workflow
@@ -37,107 +36,55 @@ pub static FIX_PYTHON_TRAVERSAL: Task = Task {
     variables: &[],
 };
 
-pub static CHECK_POLYGLOT: Task = Task {
-    name: "check-polyglot",
-    fixture: "agent-benchmark/check-polyglot",
-    prompt: "The CI pipeline is failing across multiple components. The Rust backend has compiler warnings, the Go service has a type mismatch in a format call, the TypeScript frontend won't compile, the Python automation script fails the linter, the Dockerfile has a pinning warning, and the Terraform config is not properly formatted. Fix all of it so every check passes.",
+pub static FIX_GO: Task = Task {
+    name: "fix-go",
+    fixture: "agent-benchmark/fix-go",
+    prompt: "Some tests in this Go project are failing. Find the bugs and fix them.",
     variables: &[],
 };
 
-// ── Environments ─────────────────────────────────────────────────────────────
-
-/// Baseline: no 8v. Raw agent with default tools.
-const BASELINE_ENV: Environment = Environment {
-    agent: Agent::Claude,
-    setup_8v: false,
-    permission_mode: Some(PermissionMode::AcceptEdits),
-};
-
-/// With 8v: `8v init` writes .claude/settings.json (deny list) and CLAUDE.md.
-/// The agent picks up the deny list from settings.json — same as a real user.
-const WITH_8V_ENV: Environment = Environment {
-    agent: Agent::Claude,
-    setup_8v: true,
-    permission_mode: Some(PermissionMode::AcceptEdits),
-};
-
-// ── Codex environments ──────────────────────────────────────────────────────
-
-/// Codex baseline: no 8v. Raw agent with default tools.
-const CODEX_BASELINE_ENV: Environment = Environment {
-    agent: Agent::Codex,
-    setup_8v: false,
-    permission_mode: None,
-};
-
-/// Codex with 8v: `8v init` registers the MCP server and writes AGENTS.md.
-const CODEX_WITH_8V_ENV: Environment = Environment {
-    agent: Agent::Codex,
-    setup_8v: true,
-    permission_mode: None,
+pub static FIX_TYPESCRIPT: Task = Task {
+    name: "fix-typescript",
+    fixture: "agent-benchmark/fix-typescript",
+    prompt: "Some tests in this TypeScript project are failing. Find the bugs and fix them.",
+    variables: &[],
 };
 
 // ── Scenarios ────────────────────────────────────────────────────────────────
+// Scenarios are declared as (baseline, treatment) pairs using the const-fn
+// constructors on `Scenario`. This is the only environment knob — setup_8v
+// on/off — because that is the only variable we measure.
 
-// Fix-failing-test scenarios
-pub static FIX_TEST_BASELINE: Scenario = Scenario {
-    name: "fix-test-baseline",
-    description: "Native",
-    task: &FIX_FAILING_TEST,
-    env: BASELINE_ENV,
-};
+// Fix-failing-test
+pub static FIX_TEST_BASELINE: Scenario =
+    Scenario::claude_baseline("fix-test-baseline", &FIX_FAILING_TEST);
+pub static FIX_TEST_8V: Scenario = Scenario::claude_with_8v("fix-test-8v", &FIX_FAILING_TEST);
 
-pub static FIX_TEST_8V: Scenario = Scenario {
-    name: "fix-test-8v",
-    description: "With 8v",
-    task: &FIX_FAILING_TEST,
-    env: WITH_8V_ENV,
-};
+// Diagnose-issues
+pub static DIAGNOSE_BASELINE: Scenario =
+    Scenario::claude_baseline("diagnose-baseline", &DIAGNOSE_ISSUES);
+pub static DIAGNOSE_8V: Scenario = Scenario::claude_with_8v("diagnose-8v", &DIAGNOSE_ISSUES);
 
-// Diagnose-issues scenarios
-pub static DIAGNOSE_BASELINE: Scenario = Scenario {
-    name: "diagnose-baseline",
-    description: "Native",
-    task: &DIAGNOSE_ISSUES,
-    env: BASELINE_ENV,
-};
+// Fix-python-traversal
+pub static FIX_PYTHON_BASELINE: Scenario =
+    Scenario::claude_baseline("fix-python-baseline", &FIX_PYTHON_TRAVERSAL);
+pub static FIX_PYTHON_8V: Scenario =
+    Scenario::claude_with_8v("fix-python-8v", &FIX_PYTHON_TRAVERSAL);
 
-pub static DIAGNOSE_8V: Scenario = Scenario {
-    name: "diagnose-8v",
-    description: "With 8v",
-    task: &DIAGNOSE_ISSUES,
-    env: WITH_8V_ENV,
-};
+// Fix-go
+pub static FIX_GO_BASELINE: Scenario = Scenario::claude_baseline("fix-go-baseline", &FIX_GO);
+pub static FIX_GO_8V: Scenario = Scenario::claude_with_8v("fix-go-8v", &FIX_GO);
 
-// Fix-python-traversal scenarios
-pub static FIX_PYTHON_BASELINE: Scenario = Scenario {
-    name: "fix-python-baseline",
-    description: "Native",
-    task: &FIX_PYTHON_TRAVERSAL,
-    env: BASELINE_ENV,
-};
+// Fix-typescript
+pub static FIX_TS_BASELINE: Scenario =
+    Scenario::claude_baseline("fix-ts-baseline", &FIX_TYPESCRIPT);
+pub static FIX_TS_8V: Scenario = Scenario::claude_with_8v("fix-ts-8v", &FIX_TYPESCRIPT);
 
-pub static FIX_PYTHON_8V: Scenario = Scenario {
-    name: "fix-python-8v",
-    description: "With 8v",
-    task: &FIX_PYTHON_TRAVERSAL,
-    env: WITH_8V_ENV,
-};
-
-// Check-polyglot scenarios
-pub static CHECK_POLYGLOT_BASELINE: Scenario = Scenario {
-    name: "check-polyglot-baseline",
-    description: "Native",
-    task: &CHECK_POLYGLOT,
-    env: BASELINE_ENV,
-};
-
-pub static CHECK_POLYGLOT_8V: Scenario = Scenario {
-    name: "check-polyglot-8v",
-    description: "With 8v",
-    task: &CHECK_POLYGLOT,
-    env: WITH_8V_ENV,
-};
+// Codex
+pub static FIX_TEST_CODEX_BASELINE: Scenario =
+    Scenario::codex_baseline("fix-test-codex-baseline", &FIX_FAILING_TEST);
+pub static FIX_TEST_CODEX_8V: Scenario =
+    Scenario::codex_with_8v("fix-test-codex-8v", &FIX_FAILING_TEST);
 
 // ── Experiments ──────────────────────────────────────────────────────────────
 
@@ -165,31 +112,21 @@ pub static EXPERIMENT_FIX_PYTHON: ExperimentConfig = ExperimentConfig {
     n: 6,
 };
 
-pub static EXPERIMENT_CHECK_POLYGLOT: ExperimentConfig = ExperimentConfig {
-    name: "check-polyglot",
-    task: &CHECK_POLYGLOT,
-    control: &CHECK_POLYGLOT_BASELINE,
-    treatments: &[&CHECK_POLYGLOT_8V],
+pub static EXPERIMENT_FIX_GO: ExperimentConfig = ExperimentConfig {
+    name: "fix-go",
+    task: &FIX_GO,
+    control: &FIX_GO_BASELINE,
+    treatments: &[&FIX_GO_8V],
     n: 6,
 };
 
-// ── Codex scenarios ────────────────────────────────────────────────────────
-
-pub static FIX_TEST_CODEX_BASELINE: Scenario = Scenario {
-    name: "fix-test-codex-baseline",
-    description: "Codex Native",
-    task: &FIX_FAILING_TEST,
-    env: CODEX_BASELINE_ENV,
+pub static EXPERIMENT_FIX_TS: ExperimentConfig = ExperimentConfig {
+    name: "fix-typescript",
+    task: &FIX_TYPESCRIPT,
+    control: &FIX_TS_BASELINE,
+    treatments: &[&FIX_TS_8V],
+    n: 6,
 };
-
-pub static FIX_TEST_CODEX_8V: Scenario = Scenario {
-    name: "fix-test-codex-8v",
-    description: "Codex + 8v",
-    task: &FIX_FAILING_TEST,
-    env: CODEX_WITH_8V_ENV,
-};
-
-// ── Codex experiments ──────────────────────────────────────────────────────
 
 pub static EXPERIMENT_FIX_TEST_CODEX: ExperimentConfig = ExperimentConfig {
     name: "fix-failing-test-codex",

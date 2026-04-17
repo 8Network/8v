@@ -13,16 +13,19 @@
 //! 6. Persists the ExperimentResult
 //! 7. Returns the result for assertions
 
-use comfy_table::{Table, ContentArrangement, presets::UTF8_FULL};
+use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 
-use super::pipeline::{run_scenario, unix_ms, current_git_commit, events_ndjson_path};
+use super::pipeline::{current_git_commit, events_ndjson_path, run_scenario, unix_ms};
 use super::preflight::preflight_fixture;
 use super::store::BenchmarkStore;
 use super::types::*;
 
 /// Run an experiment: N observations per scenario, compare treatments against control.
 pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResult {
-    assert!(config.n >= 1, "experiment requires at least 1 observation per scenario");
+    assert!(
+        config.n >= 1,
+        "experiment requires at least 1 observation per scenario"
+    );
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("EXPERIMENT: {} (N={})", config.name, config.n);
     eprintln!("Task: {}", config.task.name);
@@ -41,7 +44,9 @@ pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResu
     let control = run_sample(config.control, config.n, binary);
 
     // ── Run treatments ──────────────────────────────────────────────────
-    let treatments: Vec<Sample> = config.treatments.iter()
+    let treatments: Vec<Sample> = config
+        .treatments
+        .iter()
         .map(|scenario| run_sample(scenario, config.n, binary))
         .collect();
 
@@ -64,9 +69,13 @@ pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResu
     render_table(&result);
 
     // ── Open store once for report + persist ────────────────────────────
-    let store = BenchmarkStore::open()
-        .map_err(|e| eprintln!("  [benchmark] warning: failed to open benchmark store: {e}"))
-        .ok();
+    let store = match BenchmarkStore::open() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("  [benchmark] warning: failed to open benchmark store: {e}");
+            None
+        }
+    };
 
     // ── Structured report ───────────────────────────────────────────────
     let report = super::report::build_report(&result);
@@ -101,7 +110,9 @@ fn run_sample(scenario: &Scenario, n: usize, binary: &str) -> Sample {
 
 /// Compute effects: each treatment compared against the control.
 fn mean_cost(sample: &Sample) -> Option<f64> {
-    let costs: Vec<f64> = sample.observations.iter()
+    let costs: Vec<f64> = sample
+        .observations
+        .iter()
         .filter_map(|o| o.cost_usd)
         .collect();
     if costs.is_empty() {
@@ -116,38 +127,41 @@ fn compute_effects(control: &Sample, treatments: &[Sample], n: usize) -> Vec<Eff
     let control_cost = mean_cost(control);
     let control_tools = control.require_mean(|o| o.tool_names.len() as f64);
 
-    treatments.iter().map(|treatment| {
-        let t_tokens = treatment.require_mean(|o| o.total_tokens as f64);
-        let t_cost = mean_cost(treatment);
-        let t_tools = treatment.require_mean(|o| o.tool_names.len() as f64);
+    treatments
+        .iter()
+        .map(|treatment| {
+            let t_tokens = treatment.require_mean(|o| o.total_tokens as f64);
+            let t_cost = mean_cost(treatment);
+            let t_tools = treatment.require_mean(|o| o.tool_names.len() as f64);
 
-        let token_delta_pct = if control_tokens > 0.0 {
-            ((t_tokens - control_tokens) / control_tokens) * 100.0
-        } else {
-            0.0
-        };
+            let token_delta_pct = if control_tokens > 0.0 {
+                ((t_tokens - control_tokens) / control_tokens) * 100.0
+            } else {
+                0.0
+            };
 
-        let cost_delta_pct = match (control_cost, t_cost) {
-            (Some(c), Some(t)) if c > 0.0 => Some(((t - c) / c) * 100.0),
-            _ => None,
-        };
+            let cost_delta_pct = match (control_cost, t_cost) {
+                (Some(c), Some(t)) if c > 0.0 => Some(((t - c) / c) * 100.0),
+                _ => None,
+            };
 
-        let tool_call_delta_pct = if control_tools > 0.0 {
-            ((t_tools - control_tools) / control_tools) * 100.0
-        } else {
-            0.0
-        };
+            let tool_call_delta_pct = if control_tools > 0.0 {
+                ((t_tools - control_tools) / control_tools) * 100.0
+            } else {
+                0.0
+            };
 
-        Effect {
-            name: format!("{} vs {}", treatment.description, control.description),
-            treatment: treatment.scenario.clone(),
-            control: control.scenario.clone(),
-            token_delta_pct,
-            cost_delta_pct,
-            tool_call_delta_pct,
-            sufficient_n: n >= 5,
-        }
-    }).collect()
+            Effect {
+                name: format!("{} vs {}", treatment.description, control.description),
+                treatment: treatment.scenario.clone(),
+                control: control.scenario.clone(),
+                token_delta_pct,
+                cost_delta_pct,
+                tool_call_delta_pct,
+                sufficient_n: n >= 5,
+            }
+        })
+        .collect()
 }
 
 /// Render the comparison table to stderr.
@@ -165,7 +179,9 @@ fn render_table(result: &ExperimentResult) {
 
     // Tokens (mean)
     let mut row = vec!["Tokens (mean)".to_string()];
-    row.push(format_tokens(result.control.require_mean(|o| o.total_tokens as f64)));
+    row.push(format_tokens(
+        result.control.require_mean(|o| o.total_tokens as f64),
+    ));
     for t in &result.treatments {
         row.push(format_tokens(t.require_mean(|o| o.total_tokens as f64)));
     }
@@ -173,9 +189,16 @@ fn render_table(result: &ExperimentResult) {
 
     // Tokens (stddev)
     let mut row = vec!["Tokens (stddev)".to_string()];
-    row.push(format_tokens(result.control.stddev(|o| o.total_tokens as f64).unwrap_or(0.0)));
+    row.push(format_tokens(
+        result
+            .control
+            .stddev(|o| o.total_tokens as f64)
+            .unwrap_or(0.0),
+    ));
     for t in &result.treatments {
-        row.push(format_tokens(t.stddev(|o| o.total_tokens as f64).unwrap_or(0.0)));
+        row.push(format_tokens(
+            t.stddev(|o| o.total_tokens as f64).unwrap_or(0.0),
+        ));
     }
     table.add_row(row);
 
@@ -195,15 +218,24 @@ fn render_table(result: &ExperimentResult) {
 
     // Tool calls (mean)
     let mut row = vec!["Tool calls (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.require_mean(|o| o.tool_names.len() as f64)));
+    row.push(format!(
+        "{:.1}",
+        result.control.require_mean(|o| o.tool_names.len() as f64)
+    ));
     for t in &result.treatments {
-        row.push(format!("{:.1}", t.require_mean(|o| o.tool_names.len() as f64)));
+        row.push(format!(
+            "{:.1}",
+            t.require_mean(|o| o.tool_names.len() as f64)
+        ));
     }
     table.add_row(row);
 
     // 8v events (mean)
     let mut row = vec!["8v events (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.require_mean(|o| o.event_count as f64)));
+    row.push(format!(
+        "{:.1}",
+        result.control.require_mean(|o| o.event_count as f64)
+    ));
     for t in &result.treatments {
         row.push(format!("{:.1}", t.require_mean(|o| o.event_count as f64)));
     }
@@ -211,7 +243,10 @@ fn render_table(result: &ExperimentResult) {
 
     // Input Tokens (mean)
     let mut row = vec!["Input Tokens (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.require_mean(|o| o.input_tokens as f64)));
+    row.push(format!(
+        "{:.0}",
+        result.control.require_mean(|o| o.input_tokens as f64)
+    ));
     for t in &result.treatments {
         row.push(format!("{:.0}", t.require_mean(|o| o.input_tokens as f64)));
     }
@@ -219,7 +254,10 @@ fn render_table(result: &ExperimentResult) {
 
     // Output Tokens (mean)
     let mut row = vec!["Output Tokens (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.require_mean(|o| o.output_tokens as f64)));
+    row.push(format!(
+        "{:.0}",
+        result.control.require_mean(|o| o.output_tokens as f64)
+    ));
     for t in &result.treatments {
         row.push(format!("{:.0}", t.require_mean(|o| o.output_tokens as f64)));
     }
@@ -227,39 +265,70 @@ fn render_table(result: &ExperimentResult) {
 
     // Cache Read (mean)
     let mut row = vec!["Cache Read (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.require_mean(|o| o.cache_read_input_tokens as f64)));
+    row.push(format!(
+        "{:.0}",
+        result
+            .control
+            .require_mean(|o| o.cache_read_input_tokens as f64)
+    ));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.require_mean(|o| o.cache_read_input_tokens as f64)));
+        row.push(format!(
+            "{:.0}",
+            t.require_mean(|o| o.cache_read_input_tokens as f64)
+        ));
     }
     table.add_row(row);
 
     // Cache Creation (mean)
     let mut row = vec!["Cache Creation (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.require_mean(|o| o.cache_creation_input_tokens as f64)));
+    row.push(format!(
+        "{:.0}",
+        result
+            .control
+            .require_mean(|o| o.cache_creation_input_tokens as f64)
+    ));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.require_mean(|o| o.cache_creation_input_tokens as f64)));
+        row.push(format!(
+            "{:.0}",
+            t.require_mean(|o| o.cache_creation_input_tokens as f64)
+        ));
     }
     table.add_row(row);
 
     // Turns (mean)
     let mut row = vec!["Turns (mean)".to_string()];
-    row.push(format!("{:.1}", result.control.require_mean(|o| o.turn_count as f64)));
+    row.push(format!(
+        "{:.1}",
+        result.control.require_mean(|o| o.turn_count as f64)
+    ));
     for t in &result.treatments {
         row.push(format!("{:.1}", t.require_mean(|o| o.turn_count as f64)));
     }
     table.add_row(row);
 
-    // Init Bytes (mean)
-    let mut row = vec!["Init Bytes (mean)".to_string()];
-    row.push(format!("{:.0}", result.control.require_mean(|o| o.init_message_bytes as f64)));
+    // Schema Tax (init bytes) — system message size, which carries every MCP
+    // tool's schema. Baseline (no MCP) shows bare cost; 8v conditions show
+    // the tax the 8v MCP server adds on top.
+    let mut row = vec!["Schema Tax (init bytes)".to_string()];
+    row.push(format!(
+        "{:.0}",
+        result.control.require_mean(|o| o.init_message_bytes as f64)
+    ));
     for t in &result.treatments {
-        row.push(format!("{:.0}", t.require_mean(|o| o.init_message_bytes as f64)));
+        row.push(format!(
+            "{:.0}",
+            t.require_mean(|o| o.init_message_bytes as f64)
+        ));
     }
     table.add_row(row);
 
     // Success rate
     let mut row = vec!["Tests Pass".to_string()];
-    row.push(format!("{}/{}", result.control.tests_pass_count(), result.control.n()));
+    row.push(format!(
+        "{}/{}",
+        result.control.tests_pass_count(),
+        result.control.n()
+    ));
     for t in &result.treatments {
         row.push(format!("{}/{}", t.tests_pass_count(), t.n()));
     }
@@ -267,7 +336,11 @@ fn render_table(result: &ExperimentResult) {
 
     // Check Pass
     let mut row = vec!["Check Pass".to_string()];
-    row.push(format!("{}/{}", result.control.check_pass_count(), result.control.n()));
+    row.push(format!(
+        "{}/{}",
+        result.control.check_pass_count(),
+        result.control.n()
+    ));
     for t in &result.treatments {
         row.push(format!("{}/{}", t.check_pass_count(), t.n()));
     }
@@ -275,7 +348,11 @@ fn render_table(result: &ExperimentResult) {
 
     // Build Pass
     let mut row = vec!["Build Pass".to_string()];
-    row.push(format!("{}/{}", result.control.build_pass_count(), result.control.n()));
+    row.push(format!(
+        "{}/{}",
+        result.control.build_pass_count(),
+        result.control.n()
+    ));
     for t in &result.treatments {
         row.push(format!("{}/{}", t.build_pass_count(), t.n()));
     }
@@ -331,7 +408,11 @@ fn render_table(result: &ExperimentResult) {
     // Confidence row
     let mut row = vec!["Confidence".to_string(), "—".to_string()];
     for effect in &result.effects {
-        row.push(if effect.sufficient_n { "N≥5".to_string() } else { "N<5".to_string() });
+        row.push(if effect.sufficient_n {
+            "N≥5".to_string()
+        } else {
+            "N<5".to_string()
+        });
     }
     while row.len() < col_count {
         row.push(String::new());
@@ -369,7 +450,11 @@ fn clean_events() {
     }
 }
 
-fn write_structured_report(report: &super::report::ReportJson, experiment_name: &str, store: Option<&BenchmarkStore>) {
+fn write_structured_report(
+    report: &super::report::ReportJson,
+    experiment_name: &str,
+    store: Option<&BenchmarkStore>,
+) {
     let Some(store) = store else { return };
     match store.write_report(experiment_name, report) {
         Ok(path) => eprintln!("  [benchmark] report: {}", path.display()),
@@ -397,4 +482,3 @@ fn persist_experiment(result: &ExperimentResult, store: Option<&BenchmarkStore>)
         eprintln!("  [benchmark] warning: failed to persist experiment result: {e}");
     }
 }
-
