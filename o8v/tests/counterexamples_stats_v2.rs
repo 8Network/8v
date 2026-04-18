@@ -637,3 +637,65 @@ fn failure_hotspots_capped_at_ten() {
         hotspots.len()
     );
 }
+
+// ── Attack #F3: flag-value content appears verbatim in argv_shape ─────────────
+// §6.1 contract: tokens following content-carrying flags (--insert, --find,
+// --replace, --append) are user-supplied strings and MUST normalize to `<str>`.
+// BUG: `normalize_argv` returns `tok.clone()` for flag-value tokens instead of
+// `"<str>".to_string()`, leaking arbitrary content (e.g. large markdown text)
+// into argv_shape stored in failure_hotspots output.
+#[test]
+fn flag_value_after_append_normalizes_to_str_in_hotspot() {
+    let now_ms = now_ms();
+    let session = "ses_FLAGVAL1AAAAAAAAAAAAAAAAAAA";
+
+    // argv: write README.md --append <large content that must not leak>
+    let ndjson = ndjson_pair(
+        "run_flag_val",
+        session,
+        "write",
+        &[
+            "README.md",
+            "--append",
+            "lots of text here that should be stripped — never appear verbatim",
+        ],
+        false,
+        now_ms,
+        10,
+    );
+
+    let home = home_with_events(&ndjson);
+
+    let out = bin()
+        .args(["stats", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v stats --json");
+
+    assert!(out.status.success(), "8v stats must exit 0");
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+
+    let hotspots = v["failure_hotspots"]
+        .as_array()
+        .expect("failure_hotspots must be array");
+    assert!(
+        !hotspots.is_empty(),
+        "expected at least one failure hotspot"
+    );
+
+    let argv_shape = hotspots[0]["argv_shape"]
+        .as_str()
+        .expect("argv_shape must be a string");
+
+    // §6.1: flag value must be replaced with <str>
+    assert!(
+        argv_shape.contains("<str>"),
+        "flag value must normalize to <str>; got: {argv_shape:?}"
+    );
+    // The verbatim content must NOT appear in argv_shape
+    assert!(
+        !argv_shape.contains("lots of text"),
+        "raw flag value must not appear in argv_shape; got: {argv_shape:?}"
+    );
+}

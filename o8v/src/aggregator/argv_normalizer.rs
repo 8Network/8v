@@ -115,7 +115,7 @@ impl ArgvNormalizer {
             .map(|tok| {
                 if next_is_flag_value {
                     next_is_flag_value = false;
-                    return tok.clone();
+                    return "<str>".to_string();
                 }
                 if is_content_flag(tok) {
                     next_is_flag_value = true;
@@ -331,10 +331,14 @@ mod tests {
             "flag value should not produce CanonicalizeFailed; got: {:?}",
             canon_warns
         );
-        // The flag value itself must appear verbatim (not mangled to <abs> etc.)
+        // §6.1: flag value must be normalized to <str>, not appear verbatim.
         assert!(
-            shape.contains("// crate entry"),
-            "flag value should appear verbatim in shape; got: {shape}"
+            shape.contains("<str>"),
+            "flag value should become <str>; got: {shape}"
+        );
+        assert!(
+            !shape.contains("// crate entry"),
+            "raw flag value must not appear in shape; got: {shape}"
         );
     }
 }
