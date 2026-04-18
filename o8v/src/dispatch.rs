@@ -37,23 +37,23 @@ pub fn build_context(interrupted: &'static AtomicBool) -> CommandContext {
     match std::env::current_dir() {
         Ok(cwd) => {
             match resolve_workspace(cwd.to_string_lossy().as_ref()) {
-                Ok((project_root, storage, config)) => {
+                Ok(ws) => {
                     // Subscribe StorageSubscriber before any events are emitted.
                     let sub = Arc::new(crate::storage_subscriber::StorageSubscriber::new(
-                        storage.clone(),
+                        ws.storage.clone(),
                     ));
                     bus.subscribe(sub);
 
                     // Insert WorkspaceRoot — the trust boundary for all file I/O in commands.
                     if let Ok(workspace_root) =
-                        crate::workspace::WorkspaceRoot::new(project_root.to_string())
+                        crate::workspace::WorkspaceRoot::new(ws.root.to_string())
                     {
                         extensions.insert(workspace_root);
                     }
 
-                    extensions.insert(project_root);
-                    extensions.insert(storage);
-                    extensions.insert(config);
+                    extensions.insert(ws.root);
+                    extensions.insert(ws.storage);
+                    extensions.insert(ws.config);
                 }
                 Err(e) => {
                     tracing::warn!(

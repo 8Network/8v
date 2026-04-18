@@ -17,7 +17,7 @@ pub struct OutputFormat {
     #[arg(long, conflicts_with_all = ["plain", "human"])]
     pub json: bool,
 
-    /// Human-readable output (overrides _8V_AGENT env var).
+    /// Human-readable output (escape hatch; overrides agent-mode default).
     #[arg(long, conflicts_with_all = ["json", "plain"])]
     pub human: bool,
 
@@ -26,45 +26,22 @@ pub struct OutputFormat {
     pub no_color: bool,
 }
 
-/// Returns true when `val` is a truthy agent-mode value.
-///
-/// Truthy values: `1`, `true`, `yes`. Everything else (including empty string,
-/// `0`, `false`, `no`, unset) is falsy.
-///
-/// Test-only helper: allows unit tests to inject the env value directly
-/// without mutating the process environment.
-#[cfg(test)]
-pub(crate) fn is_agent_mode_from(val: Option<String>) -> bool {
-    match val {
-        Some(v) => matches!(v.as_str(), "1" | "true" | "yes"),
-        None => false,
-    }
-}
-
-/// Returns true when the `_8V_AGENT` environment variable is set to a truthy value.
-fn is_agent_mode() -> bool {
-    matches!(
-        std::env::var("_8V_AGENT").as_deref(),
-        Ok("1") | Ok("true") | Ok("yes")
-    )
-}
-
 impl OutputFormat {
     /// Resolve audience, using `default` when no explicit flag was passed.
     ///
-    /// Precedence: `--json` > `--human` > `--plain` > `_8V_AGENT` > `default`
+    /// Precedence: `--json` > `--human` > `--plain` > `default`
     ///
     /// - `--json` → `Audience::Machine` (always, regardless of caller)
-    /// - `--human` → `Audience::Human` (escape hatch overriding _8V_AGENT)
+    /// - `--human` → `Audience::Human` (escape hatch for CLI users in agent mode)
     /// - `--plain` → `Audience::Agent` (always, regardless of caller)
-    /// - `_8V_AGENT` truthy + no explicit flag → `Audience::Agent`
-    /// - no flag + no env → `default` (caller decides: Human for CLI, Agent for MCP)
+    /// - no flag → `default` (resolved once at process entry: `Human` for CLI,
+    ///   `Agent` for MCP; `_8V_AGENT` env var is read there, not here)
     pub fn audience_with_default(&self, default: Audience) -> Audience {
         if self.json {
             Audience::Machine
         } else if self.human {
             Audience::Human
-        } else if self.plain || is_agent_mode() {
+        } else if self.plain {
             Audience::Agent
         } else {
             default
@@ -183,79 +160,42 @@ mod tests {
         assert_eq!(f.audience_with_default(Audience::Human), Audience::Agent);
     }
 
-    // --- is_agent_mode_from tests (dependency injection, no env mutation) ---
-
-    // 9. is_agent_mode_from(Some("1")) → true
+    // 9. _8V_AGENT=1 at entry resolves to Agent default; --plain is NOT needed
+    //    Entry point passes Audience::Agent as default — no flags → Agent
     #[test]
-    fn agent_mode_from_1_is_true() {
-        assert!(is_agent_mode_from(Some("1".to_string())));
-    }
-
-    // 10. is_agent_mode_from(Some("true")) → true
-    #[test]
-    fn agent_mode_from_true_is_true() {
-        assert!(is_agent_mode_from(Some("true".to_string())));
-    }
-
-    // 11. is_agent_mode_from(Some("yes")) → true
-    #[test]
-    fn agent_mode_from_yes_is_true() {
-        assert!(is_agent_mode_from(Some("yes".to_string())));
-    }
-
-    // 12. is_agent_mode_from(Some("0")) → false
-    #[test]
-    fn agent_mode_from_0_is_false() {
-        assert!(!is_agent_mode_from(Some("0".to_string())));
-    }
-
-    // 13. is_agent_mode_from(Some("false")) → false
-    #[test]
-    fn agent_mode_from_false_is_false() {
-        assert!(!is_agent_mode_from(Some("false".to_string())));
-    }
-
-    // 14. is_agent_mode_from(Some("")) → false (empty string is falsy)
-    #[test]
-    fn agent_mode_from_empty_is_false() {
-        assert!(!is_agent_mode_from(Some(String::new())));
-    }
-
-    // 15. is_agent_mode_from(None) → false (unset)
-    #[test]
-    fn agent_mode_from_none_is_false() {
-        assert!(!is_agent_mode_from(None));
-    }
-
-    // 16. audience_with_default honours agent mode via is_agent_mode_from
-    #[test]
-    fn agent_mode_from_1_audience_is_agent() {
-        // Simulate _8V_AGENT=1 via dependency injection — no env mutation
-        assert!(is_agent_mode_from(Some("1".to_string())));
-        // With no flags set, plain path is false; but we test is_agent_mode_from directly.
-        // The full audience_with_default path calls is_agent_mode() (live env),
-        // so we verify the logic component independently.
+    fn agent_default_no_flags_returns_agent() {
         let f = fmt(false, false, false);
-        // --plain flag triggers the same branch as agent mode
-        let f_plain = fmt(false, true, false);
+        // Simulates: entry resolved _8V_AGENT=1 → default = Audience::Agent
         assert_eq!(
-            f_plain.audience_with_default(Audience::Human),
-            Audience::Agent
+            f.audience_with_default(Audience::Agent),
+            Audience::Agent,
+            "_8V_AGENT=1 resolved at entry → Agent default → Agent"
         );
-        // no flags → falls through to default
-        assert_eq!(f.audience_with_default(Audience::Human), Audience::Human);
+    }
+
+    // 10. _8V_AGENT=1 at entry + --human flag → Human (escape hatch wins)
+    #[test]
+    fn agent_default_human_flag_returns_human() {
+        let f = fmt_human(true);
+        // Simulates: entry resolved _8V_AGENT=1 → default = Audience::Agent,
+        // but user passed --human explicitly
+        assert_eq!(
+            f.audience_with_default(Audience::Agent),
+            Audience::Human,
+            "_8V_AGENT=1 resolved at entry + --human flag → Human"
+        );
     }
 
     // --- --human flag tests ---
 
-    // 17. --human + no env → Human
+    // 11. --human + Human default → Human
     #[test]
     fn human_flag_no_env_returns_human() {
         let f = fmt_human(true);
         assert_eq!(f.audience_with_default(Audience::Agent), Audience::Human);
     }
 
-    // 18. --human overrides --plain branch (human takes precedence)
+    // 12. --human overrides agent default (human takes precedence)
     #[test]
     fn human_flag_overrides_default() {
         let f = fmt_human(true);

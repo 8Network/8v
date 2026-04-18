@@ -40,6 +40,18 @@ impl std::error::Error for ContextError {
     }
 }
 
+// ─── WorkspaceContext ────────────────────────────────────────────────────────
+
+/// Named result of workspace resolution.
+///
+/// Returned by [`resolve_workspace`] so callers use field names instead of
+/// positional tuple destructuring.
+pub struct WorkspaceContext {
+    pub root: o8v_core::project::ProjectRoot,
+    pub storage: StorageDir,
+    pub config: Option<ConfigDir>,
+}
+
 // ─── resolve_workspace ───────────────────────────────────────────────────────
 
 /// Resolve a path to project root, storage, and config.
@@ -54,16 +66,7 @@ impl std::error::Error for ContextError {
 /// Returns an error if the path cannot be resolved, if no project root is
 /// found, or if storage cannot be opened. Every error is visible — no
 /// silent fallbacks.
-pub fn resolve_workspace(
-    path: impl AsRef<Path>,
-) -> Result<
-    (
-        o8v_core::project::ProjectRoot,
-        StorageDir,
-        Option<ConfigDir>,
-    ),
-    ContextError,
-> {
+pub fn resolve_workspace(path: impl AsRef<Path>) -> Result<WorkspaceContext, ContextError> {
     // 1. Resolve to absolute path.
     let abs = std::fs::canonicalize(path.as_ref()).map_err(|e| {
         ContextError::PathResolution(std::io::Error::other(format!(
@@ -75,16 +78,20 @@ pub fn resolve_workspace(
 
     // 2. Detect ProjectRoot.
     let path_str = abs.to_string_lossy();
-    let project_root = o8v_core::project::ProjectRoot::new(path_str.as_ref())
+    let root = o8v_core::project::ProjectRoot::new(path_str.as_ref())
         .map_err(|e| ContextError::NoProjectRoot(e.to_string()))?;
 
     // 3. Open StorageDir at ~/.8v/.
     let storage = StorageDir::open().map_err(ContextError::Storage)?;
 
     // 4. Open ConfigDir — Ok(None) if .8v/ doesn't exist.
-    let config = ConfigDir::open(&project_root).map_err(ContextError::Storage)?;
+    let config = ConfigDir::open(&root).map_err(ContextError::Storage)?;
 
-    Ok((project_root, storage, config))
+    Ok(WorkspaceContext {
+        root,
+        storage,
+        config,
+    })
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -100,14 +107,7 @@ mod tests {
     fn resolve_workspace_with_home(
         path: impl AsRef<Path>,
         home: &Path,
-    ) -> Result<
-        (
-            o8v_core::project::ProjectRoot,
-            StorageDir,
-            Option<ConfigDir>,
-        ),
-        ContextError,
-    > {
+    ) -> Result<WorkspaceContext, ContextError> {
         let abs = std::fs::canonicalize(path.as_ref()).map_err(|e| {
             ContextError::PathResolution(std::io::Error::other(format!(
                 "{}: {}",
@@ -116,11 +116,15 @@ mod tests {
             )))
         })?;
         let path_str = abs.to_string_lossy();
-        let project_root = o8v_core::project::ProjectRoot::new(path_str.as_ref())
+        let root = o8v_core::project::ProjectRoot::new(path_str.as_ref())
             .map_err(|e| ContextError::NoProjectRoot(e.to_string()))?;
         let storage = StorageDir::at(home).map_err(ContextError::Storage)?;
-        let config = ConfigDir::open(&project_root).map_err(ContextError::Storage)?;
-        Ok((project_root, storage, config))
+        let config = ConfigDir::open(&root).map_err(ContextError::Storage)?;
+        Ok(WorkspaceContext {
+            root,
+            storage,
+            config,
+        })
     }
 
     #[test]
@@ -157,15 +161,14 @@ mod tests {
         )
         .unwrap();
 
-        let (_project_root, storage, _config) =
-            resolve_workspace_with_home(tmp.path(), tmp.path()).unwrap();
+        let ws = resolve_workspace_with_home(tmp.path(), tmp.path()).unwrap();
         // Verify the storage root itself was created/accessible.
         assert!(
             tmp.path().is_dir(),
             "storage root was not created by StorageDir::at"
         );
         // Verify last-check path accessible via storage.
-        assert!(storage.last_check().ends_with("last-check.json"));
+        assert!(ws.storage.last_check().ends_with("last-check.json"));
     }
 
     #[test]
@@ -178,10 +181,9 @@ mod tests {
         )
         .unwrap();
 
-        let (_project_root, _storage, config) =
-            resolve_workspace_with_home(project.path(), home.path()).unwrap();
+        let ws = resolve_workspace_with_home(project.path(), home.path()).unwrap();
         assert!(
-            config.is_none(),
+            ws.config.is_none(),
             "expected config to be None when no .8v/ directory exists in project"
         );
     }

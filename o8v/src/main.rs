@@ -20,6 +20,15 @@ fn main() -> ExitCode {
     // flags, which paths) is reconstructable from the event log.
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
+    // Resolve the default audience ONCE at process entry.
+    // _8V_AGENT=1 (or any non-empty value) signals that this CLI invocation
+    // is inside an AI agent; default to Agent so all commands behave
+    // consistently without requiring --plain on every call.
+    let cli_default_audience = match std::env::var("_8V_AGENT") {
+        Ok(v) if !v.is_empty() => o8v_core::render::Audience::Agent,
+        _ => o8v_core::render::Audience::Human,
+    };
+
     use clap::Parser;
     let cli = cli::Cli::parse();
 
@@ -60,6 +69,7 @@ fn main() -> ExitCode {
                 o8v_core::caller::Caller::Cli,
                 argv,
                 interrupted,
+                cli_default_audience,
             )) {
                 Ok((output, exit_code, use_stderr)) => {
                     use std::io::Write;

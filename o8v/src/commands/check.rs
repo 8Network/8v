@@ -51,7 +51,7 @@ pub(crate) fn run(args: &Args, ctx: &CommandContext) -> Result<o8v_core::CheckRe
     // different from CWD, so we always resolve from args.path here.
     let project_root = if let Some(path_str) = args.path.as_deref() {
         match crate::workspace::resolve_workspace(path_str) {
-            Ok((root, _, _)) => root,
+            Ok(ws) => ws.root,
             Err(e) => {
                 let msg = o8v_core::render::sanitize_for_display(&e.to_string());
                 return Err(msg);
@@ -64,7 +64,7 @@ pub(crate) fn run(args: &Args, ctx: &CommandContext) -> Result<o8v_core::CheckRe
             None => {
                 // Last resort: resolve from CWD.
                 match crate::workspace::resolve_workspace(".") {
-                    Ok((root, _, _)) => root,
+                    Ok(ws) => ws.root,
                     Err(e) => {
                         let msg = o8v_core::render::sanitize_for_display(&e.to_string());
                         return Err(msg);

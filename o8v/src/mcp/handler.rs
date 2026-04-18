@@ -64,6 +64,7 @@ pub(super) async fn handle_command(
         argv,
         &super::INTERRUPTED,
         agent_info,
+        o8v_core::render::Audience::Agent,
     )
     .await
     {

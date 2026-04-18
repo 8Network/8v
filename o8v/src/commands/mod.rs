@@ -64,12 +64,12 @@ pub enum Command {
 }
 
 impl Command {
-    /// Resolve audience with a caller-specific default.
+    /// Apply per-command flag overrides on top of a pre-resolved `default` audience.
     ///
-    /// Explicit flags (`--json`, `--plain`) always win, regardless of caller.
-    /// When no flag is passed, `default` is used — callers set their own default:
-    /// - CLI → `Audience::Human`
-    /// - MCP → `Audience::Agent`
+    /// Explicit flags (`--json`, `--human`, `--plain`) always win.
+    /// When no flag is passed the caller-supplied `default` is returned unchanged.
+    /// The default is resolved once at process entry (main.rs for CLI, handler.rs
+    /// for MCP) — this function never reads environment variables.
     fn audience_with_default(&self, default: Audience) -> Audience {
         match self {
             Command::Build(a) => a.format.audience_with_default(default),
@@ -133,17 +133,21 @@ impl Command {
 /// Dispatch any command. One match, one place.
 /// Both CLI and MCP call this.
 ///
-/// Builds context, derives audience, dispatches. Interfaces provide only:
+/// Builds context, applies flag overrides on top of `default_audience`,
+/// dispatches. Interfaces provide:
 /// - The parsed command
-/// - Who they are (Caller)
+/// - Who they are (Caller) — used for event recording
+/// - The default audience resolved at process entry (`_8V_AGENT` is read there,
+///   not here — never inside command logic)
 /// - The interrupted flag
 pub async fn dispatch_command(
     command: Command,
     caller: Caller,
     argv: Vec<String>,
     interrupted: &'static AtomicBool,
+    default_audience: Audience,
 ) -> Result<(String, ExitCode, bool), CommandError> {
-    dispatch_command_with_agent(command, caller, argv, interrupted, None).await
+    dispatch_command_with_agent(command, caller, argv, interrupted, None, default_audience).await
 }
 
 pub async fn dispatch_command_with_agent(
@@ -152,16 +156,14 @@ pub async fn dispatch_command_with_agent(
     argv: Vec<String>,
     interrupted: &'static AtomicBool,
     agent_info: Option<o8v_core::caller::AgentInfo>,
+    default_audience: Audience,
 ) -> Result<(String, ExitCode, bool), CommandError> {
     interrupted.store(false, std::sync::atomic::Ordering::Release);
     let mut ctx = crate::dispatch::build_context(interrupted);
     if let Some(info) = agent_info {
         ctx.extensions.insert(info);
     }
-    let audience = match caller {
-        Caller::Mcp => command.audience_with_default(Audience::Agent),
-        Caller::Cli => command.audience_with_default(Audience::Human),
-    };
+    let audience = command.audience_with_default(default_audience);
     let command_name = command.name();
     // Exit codes are CLI-specific — reports describe what happened,
     // this layer decides how to signal it to the shell.
