@@ -268,6 +268,38 @@ fn mcp_hooks_help_returns_ok() {
     assert!(!is_error, "hooks --help should succeed, got: {resp}");
 }
 
+// ─── M-5: hooks isError fix ──────────────────────────────────────────────────
+//
+// Bug: o8v/src/commands/mod.rs hardcodes `use_stderr=true` for the hooks
+// command. The MCP handler maps `use_stderr=true` → `Err(out)` → isError=true,
+// so every successful hooks invocation appeared as a failure to MCP callers.
+//
+// Fix: hooks must use `audience == Audience::Human` like all other commands,
+// so that MCP callers (Audience::Agent) get isError=false on exit 0.
+//
+// PRE-FIX: isError=true even when hooks exits 0.
+// POST-FIX: isError=false when hooks exits 0.
+
+/// M-5: `hooks` invoked on a workspace with no hooks configured must return
+/// isError=false. A missing hooks section is not an error — it just means
+/// nothing ran.
+///
+/// PRE-FIX: fails because use_stderr is hardcoded to true for hooks.
+/// POST-FIX: passes because use_stderr follows audience (Agent → false).
+#[test]
+fn m5_hooks_successful_run_is_not_mcp_error() {
+    let ws = make_workspace();
+    let mut client = McpClient::spawn(&file_uri(&ws));
+    // `hooks claude post-tool-use` is a noop that always exits 0.
+    // This must not appear as an MCP error.
+    let resp = client.tools_call("hooks claude post-tool-use");
+    let (is_error, text) = parse_call_result(&resp);
+    assert!(
+        !is_error,
+        "M-5: hooks exit-0 must have isError=false, got isError=true\ncontent: {text}\nfull: {resp}"
+    );
+}
+
 #[test]
 fn mcp_upgrade_help_returns_ok() {
     let ws = make_workspace();

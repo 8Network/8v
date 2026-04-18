@@ -232,7 +232,7 @@ pub async fn dispatch_command_with_agent(
             } else {
                 ExitCode::from(report.exit_code)
             };
-            Ok((output, exit, true))
+            Ok((output, exit, audience == Audience::Human))
         }
         Command::Upgrade(args) => {
             let cmd = upgrade::UpgradeCommand { args };

@@ -18,5 +18,6 @@ pub fn init() {
         .with_env_filter(filter)
         .with_target(false)
         .without_time()
+        .with_writer(std::io::stderr)
         .init();
 }
