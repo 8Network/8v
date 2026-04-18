@@ -127,7 +127,10 @@ mod tests {
             .expect("write package.json");
 
         let result = typescript_extract("", "", dir.path(), RunKind::Test);
-        assert!(result.is_empty(), "jest runner should yield no diagnostics; got {result:?}");
+        assert!(
+            result.is_empty(),
+            "jest runner should yield no diagnostics; got {result:?}"
+        );
     }
 
     /// RunKind::Test with a tsc-based package.json → delegates to tsc parser.

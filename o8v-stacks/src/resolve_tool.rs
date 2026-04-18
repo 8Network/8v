@@ -787,7 +787,10 @@ mod tests {
         let v2 = is_nightly(tmp2.path());
         // Second call uses the cache — must match the first result for the same path.
         let v1_cached = is_nightly(tmp1.path());
-        assert_eq!(v1, v1_cached, "cached value must equal first probe for same path");
+        assert_eq!(
+            v1, v1_cached,
+            "cached value must equal first probe for same path"
+        );
         // The values themselves are determined by the host toolchain; we only assert
         // they are booleans (the type system guarantees this) and that both paths
         // independently resolved without panic.

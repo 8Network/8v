@@ -95,7 +95,7 @@ pub fn on_commit(interrupted: &'static AtomicBool) -> ExitCode {
     };
 
     // Build context (resolves workspace from CWD, wires StorageSubscriber).
-    let ctx = o8v::dispatch::build_context(interrupted);
+    let ctx = crate::dispatch::build_context(interrupted);
 
     // Run check and get report.
     let report = crate::commands::check::run(&check_args, &ctx);

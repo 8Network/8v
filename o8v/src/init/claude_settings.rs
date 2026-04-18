@@ -9,11 +9,41 @@
 //! commands 8v does not wrap. This module sets up permissions.allow for the
 //! 8v tool and permissions.deny for the native tools it replaces.
 
-use o8v::workspace::to_io;
+use crate::workspace::to_io;
 use o8v_fs::FsConfig;
 use serde::{Deserialize, Serialize};
 
 const MCP_TOOL_PERMISSION: &str = "mcp__8v__8v";
+
+// ─── ClaudeDir — path value object for .claude/ files ───────────────────────
+
+/// Owns path knowledge for files written under `.claude/` during `8v init`.
+/// All `.join(literal)` calls live here; callers use named methods.
+struct ClaudeDir {
+    dir: std::path::PathBuf,
+    settings_json: std::path::PathBuf,
+}
+
+impl ClaudeDir {
+    const DIR: &'static str = ".claude";
+    const SETTINGS_JSON: &'static str = ".claude/settings.json";
+
+    fn new(root: &o8v_fs::ContainmentRoot) -> Self {
+        let base = root.as_path();
+        Self {
+            dir: base.join(Self::DIR),
+            settings_json: base.join(Self::SETTINGS_JSON),
+        }
+    }
+
+    fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+
+    fn settings_json(&self) -> &std::path::Path {
+        &self.settings_json
+    }
+}
 
 /// Native file tools that 8v replaces. Denied so the agent uses 8v instead.
 /// Bash is intentionally omitted — agents need it to run commands 8v does
@@ -50,28 +80,27 @@ struct Permissions {
 /// - `permissions.allow`: `["mcp__8v__8v"]`
 /// - `permissions.deny`: `["Read", "Edit", "Write", "Bash", "Grep", "Glob"]`
 pub(super) fn setup_claude_settings(root: &o8v_fs::ContainmentRoot) -> std::io::Result<()> {
-    let claude_dir = root.as_path().join(".claude");
-    let settings_path = claude_dir.join("settings.json");
+    let claude = ClaudeDir::new(root);
 
-    o8v_fs::safe_create_dir(&claude_dir, root).map_err(to_io)?;
+    o8v_fs::safe_create_dir(claude.dir(), root).map_err(to_io)?;
 
-    match o8v_fs::safe_exists(&settings_path, root) {
+    match o8v_fs::safe_exists(claude.settings_json(), root) {
         Err(e) => return Err(to_io(e)),
         Ok(true) => {
-            let existing =
-                o8v_fs::safe_read(&settings_path, root, &FsConfig::default()).map_err(to_io)?;
+            let existing = o8v_fs::safe_read(claude.settings_json(), root, &FsConfig::default())
+                .map_err(to_io)?;
             let existing = existing.content();
 
             if existing.trim().is_empty() {
                 let settings = create_default_settings();
-                write_settings(&settings_path, root, &settings)?;
+                write_settings(claude.settings_json(), root, &settings)?;
                 return Ok(());
             }
 
             match serde_json::from_str::<ClaudeSettings>(existing) {
                 Ok(mut settings) => {
                     merge_permissions(&mut settings);
-                    write_settings(&settings_path, root, &settings)?;
+                    write_settings(claude.settings_json(), root, &settings)?;
                 }
                 Err(e) => {
                     return Err(std::io::Error::new(
@@ -83,7 +112,7 @@ pub(super) fn setup_claude_settings(root: &o8v_fs::ContainmentRoot) -> std::io::
         }
         Ok(false) => {
             let settings = create_default_settings();
-            write_settings(&settings_path, root, &settings)?;
+            write_settings(claude.settings_json(), root, &settings)?;
         }
     }
 

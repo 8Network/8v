@@ -212,9 +212,8 @@ fn parse_build_line(line: &str, tool: &str, stack: &str) -> Option<Diagnostic> {
         // Guard: file_path must look like a real file path — ends with ".go", or
         // contains a path separator. This prevents false positives when a colon
         // appears inside the error message (e.g. `foo.go:12:5: msg at a:1: hint`).
-        let looks_like_path = file_path.ends_with(".go")
-            || file_path.contains('/')
-            || file_path.contains('\\');
+        let looks_like_path =
+            file_path.ends_with(".go") || file_path.contains('/') || file_path.contains('\\');
         if !looks_like_path {
             continue;
         }
@@ -439,6 +438,9 @@ mod tests {
     #[test]
     fn build_line_no_path_prefix() {
         let d = parse_build_line("random text: 1:2: nope", "go build", "go");
-        assert!(d.is_none(), "expected None for line without path, got {d:?}");
+        assert!(
+            d.is_none(),
+            "expected None for line without path, got {d:?}"
+        );
     }
 }

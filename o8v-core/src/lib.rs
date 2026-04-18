@@ -29,6 +29,7 @@ pub mod events;
 pub mod extensions;
 pub mod process_report;
 pub mod render;
+pub mod stats;
 pub mod symbols;
 pub mod task;
 pub mod timeout;
@@ -38,6 +39,7 @@ pub mod diagnostic;
 pub mod diagnostic_builder;
 pub mod display_str;
 pub mod fmt;
+pub mod types;
 
 pub use check::{
     Check, CheckConfig, CheckContext, CheckEntry, CheckEvent, CheckOutcome, CheckReport,

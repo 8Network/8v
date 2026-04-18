@@ -7,7 +7,20 @@
 //! Primarily exports event tracking and observation APIs used by integration tests
 //! and external tools.
 
+pub mod aggregator;
 pub mod dispatch;
 pub mod event_reader;
+pub mod stats_histogram;
 pub(crate) mod storage_subscriber;
 pub mod workspace;
+
+// Application modules — declared here so commands/ can use `crate::` paths
+// instead of `o8v::`, allowing aggregator internals to stay `pub(crate)`.
+pub mod cli;
+pub mod commands;
+pub(crate) mod hooks;
+pub mod init;
+pub mod mcp;
+pub mod signal;
+pub mod tracing;
+pub(crate) mod util;

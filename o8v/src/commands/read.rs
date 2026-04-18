@@ -15,7 +15,8 @@ use std::path::Path;
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
-    /// File path(s), optionally with line range (path:start-end). Multiple paths allowed.
+    /// File path(s), optionally with line range (path:start-end). Pass any combination in one
+    /// call: distinct files, multiple ranges of the same file, or a mix.
     #[arg(required = true)]
     pub paths: Vec<String>,
 
@@ -56,7 +57,7 @@ fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
 fn read_one(
     label: &str,
     full: bool,
-    workspace: &o8v::workspace::WorkspaceRoot,
+    workspace: &crate::workspace::WorkspaceRoot,
 ) -> Result<o8v_core::render::read_report::ReadReport, String> {
     use o8v_core::render::read_report::{LineEntry, ReadReport, SymbolEntry};
 
@@ -179,7 +180,7 @@ pub fn read_to_report(
 
     let workspace = ctx
         .extensions
-        .get::<o8v::workspace::WorkspaceRoot>()
+        .get::<crate::workspace::WorkspaceRoot>()
         .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
     if args.paths.len() == 1 {

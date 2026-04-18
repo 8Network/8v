@@ -230,7 +230,7 @@ pub(crate) fn do_ls(
 ) -> Result<LsResult, String> {
     let workspace = ctx
         .extensions
-        .get::<o8v::workspace::WorkspaceRoot>()
+        .get::<crate::workspace::WorkspaceRoot>()
         .ok_or_else(|| "8v: no workspace — run 8v init first".to_string())?;
 
     // Validate and resolve the scan root.

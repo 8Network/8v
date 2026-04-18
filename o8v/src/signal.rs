@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// - First signal: sets `interrupted` flag, prints a message to stderr.
 ///   The check loop sees the flag and stops after the current check finishes.
 /// - Second signal: force-exits with code 130 (SIGINT convention).
-pub(crate) fn install(interrupted: &'static AtomicBool) {
+pub fn install(interrupted: &'static AtomicBool) {
     let result = ctrlc::set_handler(move || {
         if interrupted.swap(true, Ordering::Release) {
             let _ = write_stderr(b"\nforce exit\n");

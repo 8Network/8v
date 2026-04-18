@@ -7,8 +7,9 @@
 //! Both CLI and MCP get identical observability through the EventBus.
 
 use crate::caller::{AgentInfo, Caller};
+use crate::types::{SessionId, TimestampMs};
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
+use std::sync::OnceLock;
 
 /// The 8v version string embedded in every event.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -18,12 +19,10 @@ fn estimate_tokens(bytes: u64) -> u64 {
     bytes / 4
 }
 
-/// Unix milliseconds. Panics if the system clock is before Unix epoch.
-fn unix_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .expect("system clock is before Unix epoch")
+/// Returns the process-lifetime session ID, minted on first call.
+fn process_session_id() -> SessionId {
+    static SESSION: OnceLock<SessionId> = OnceLock::new();
+    SESSION.get_or_init(SessionId::new).clone()
 }
 
 /// Emitted before a command executes.
@@ -33,19 +32,17 @@ pub struct CommandStarted {
     pub event: String,
     /// UUID scoped to this command invocation.
     pub run_id: String,
-    /// Unix milliseconds.
-    pub timestamp_ms: i64,
+    /// Unix milliseconds (typed to prevent signed/unsigned mixing downstream).
+    pub timestamp_ms: TimestampMs,
     /// 8v version.
     pub version: String,
     /// Who invoked the command.
     pub caller: Caller,
-    /// The subcommand category (e.g. "read", "check", "build"). Stable
-    /// across invocation flavors — use this for grouping in analytics.
+    /// The subcommand category (e.g. "read", "check", "build"). Kept as a
+    /// `String` on the wire for forward-compat; aggregation converts to the
+    /// typed [`crate::types::CommandName`] and warns on unknowns.
     pub command: String,
-    /// Full argument tail as captured at the entry point. CLI captures
-    /// `std::env::args().skip(1)`; the MCP tool handler reconstructs an
-    /// equivalent argv from the JSON payload. First element is the
-    /// subcommand so `argv` alone reproduces the invocation.
+    /// Full argument tail as captured at the entry point.
     pub argv: Vec<String>,
     /// Byte length of the command string.
     pub command_bytes: u64,
@@ -56,6 +53,11 @@ pub struct CommandStarted {
     /// MCP client identity from the initialize handshake, if available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_info: Option<AgentInfo>,
+    /// Process-lifetime session identifier. No `serde(default)` — every
+    /// event must carry it. Legacy events without it fail to deserialize
+    /// and surface a `MalformedEventLine` warning via `--strict` or are
+    /// skipped with a warning otherwise.
+    pub session_id: SessionId,
 }
 
 impl CommandStarted {
@@ -71,7 +73,7 @@ impl CommandStarted {
         Self {
             event: "CommandStarted".to_string(),
             run_id,
-            timestamp_ms: unix_ms(),
+            timestamp_ms: TimestampMs::now(),
             version: VERSION.to_string(),
             caller,
             command,
@@ -80,6 +82,7 @@ impl CommandStarted {
             command_token_estimate: estimate_tokens(command_bytes),
             project_path,
             agent_info: None,
+            session_id: process_session_id(),
         }
     }
 
@@ -97,7 +100,7 @@ pub struct CommandCompleted {
     /// Matches the [`CommandStarted`] for this invocation.
     pub run_id: String,
     /// Unix milliseconds.
-    pub timestamp_ms: i64,
+    pub timestamp_ms: TimestampMs,
     /// Byte length of the rendered output.
     pub output_bytes: u64,
     /// Estimated token count: output_bytes / 4.
@@ -106,6 +109,8 @@ pub struct CommandCompleted {
     pub duration_ms: u64,
     /// Whether the command succeeded.
     pub success: bool,
+    /// Process-lifetime session identifier. See [`CommandStarted::session_id`].
+    pub session_id: SessionId,
 }
 
 impl CommandCompleted {
@@ -113,11 +118,12 @@ impl CommandCompleted {
         Self {
             event: "CommandCompleted".to_string(),
             run_id,
-            timestamp_ms: unix_ms(),
+            timestamp_ms: TimestampMs::now(),
             output_bytes,
             token_estimate: estimate_tokens(output_bytes),
             duration_ms,
             success,
+            session_id: process_session_id(),
         }
     }
 }
@@ -155,7 +161,6 @@ mod tests {
 
     #[test]
     fn command_started_argv_serializes() {
-        // argv must round-trip through JSON so ndjson consumers can read it.
         let ev = CommandStarted::new(
             "r9".into(),
             Caller::Cli,
@@ -177,7 +182,7 @@ mod tests {
         let ev = CommandCompleted::new("r1".into(), 400, 50, true);
         assert_eq!(ev.event, "CommandCompleted");
         assert_eq!(ev.output_bytes, 400);
-        assert_eq!(ev.token_estimate, 100); // 400 / 4
+        assert_eq!(ev.token_estimate, 100);
         assert_eq!(ev.duration_ms, 50);
         assert!(ev.success);
     }
@@ -244,5 +249,37 @@ mod tests {
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("CommandCompleted"));
         assert!(json.contains("\"success\":true"));
+    }
+
+    #[test]
+    fn session_id_is_stamped() {
+        let ev = CommandStarted::new(
+            "r_s1".into(),
+            Caller::Cli,
+            "check",
+            vec!["check".into()],
+            None,
+        );
+        assert!(
+            ev.session_id.as_str().starts_with("ses_"),
+            "session_id must start with 'ses_'; got: {}",
+            ev.session_id
+        );
+    }
+
+    #[test]
+    fn session_id_is_stable_within_process() {
+        let ev1 = CommandStarted::new(
+            "r_stable1".into(),
+            Caller::Cli,
+            "check",
+            vec!["check".into()],
+            None,
+        );
+        let ev2 = CommandCompleted::new("r_stable2".into(), 200, 10, true);
+        assert_eq!(
+            ev1.session_id, ev2.session_id,
+            "all events in the same process must share a session_id"
+        );
     }
 }

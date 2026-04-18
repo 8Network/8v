@@ -2,7 +2,7 @@
 // Licensed under the Business Source License 1.1 (BSL-1.1).
 // See LICENSE file in the project root.
 
-use o8v::workspace::to_io;
+use crate::workspace::to_io;
 use o8v_fs::FsConfig;
 use std::path::Path;
 
@@ -33,6 +33,18 @@ impl std::fmt::Display for SentinelError {
 /// Returns `Some((begin_byte, end_byte, version))` where `begin_byte..end_byte` covers the entire
 /// block including both sentinels and a trailing newline (if present), or `None` if no begin
 /// sentinel is found. Returns `Err(SentinelError::MissingEnd)` if begin is found but end is not.
+fn find_legacy_marker_bounds(text: &str) -> Option<(usize, usize)> {
+    let marker = "# 8v\n";
+    let start = text.find(marker)?;
+    let rest_start = start + marker.len();
+    let rest = &text[rest_start..];
+    let end = rest
+        .find("\n#")
+        .map(|pos| rest_start + pos + 1)
+        .unwrap_or(text.len());
+    Some((start, end))
+}
+
 pub(super) fn find_sentinel_bounds(
     text: &str,
 ) -> Result<Option<(usize, usize, String)>, SentinelError> {
@@ -105,27 +117,27 @@ pub(super) fn upsert_versioned_block(
     let content = guarded.content().to_string();
 
     match find_sentinel_bounds(&content) {
-        Err(SentinelError::MissingEnd { version }) => {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "malformed 8v block in {}: found '<!-- 8v:begin v{version} -->' but no \
+        Err(SentinelError::MissingEnd { version }) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "malformed 8v block in {}: found '<!-- 8v:begin v{version} -->' but no \
                      '<!-- 8v:end -->' — file is in an inconsistent state. \
                      Remove the partial block manually and re-run `8v init`.",
-                    path.display()
-                ),
-            ))
-        }
+                path.display()
+            ),
+        )),
         Ok(None) => {
-            // No existing block — append
             let block = make_block(current_version, AI_SECTION);
-            // Ensure we start on a new line
-            let separator = if content.ends_with('\n') || content.is_empty() {
-                ""
+            let new_content = if let Some((start, end)) = find_legacy_marker_bounds(&content) {
+                format!("{}{}{}", &content[..start], block, &content[end..])
             } else {
-                "\n"
+                let separator = if content.ends_with('\n') || content.is_empty() {
+                    ""
+                } else {
+                    "\n"
+                };
+                format!("{content}{separator}{block}")
             };
-            let new_content = format!("{content}{separator}{block}");
             o8v_fs::safe_write(path, root, new_content.as_bytes()).map_err(to_io)?;
             Ok(UpsertOutcome::Written)
         }
@@ -218,7 +230,12 @@ mod tests {
     fn sentinel_bounds_error_on_missing_end() {
         let text = "# Pre\n\n<!-- 8v:begin v0.1.0 -->\ncontent\n# No end\n";
         let err = find_sentinel_bounds(text).unwrap_err();
-        assert_eq!(err, SentinelError::MissingEnd { version: "0.1.0".to_string() });
+        assert_eq!(
+            err,
+            SentinelError::MissingEnd {
+                version: "0.1.0".to_string()
+            }
+        );
     }
 
     #[test]
@@ -292,7 +309,9 @@ mod tests {
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
 
         let outcome = upsert_versioned_block(&path, &containment_root, "1.2.3").unwrap();
-        assert!(matches!(outcome, UpsertOutcome::Upgraded { old_version } if old_version == "0.0.1"));
+        assert!(
+            matches!(outcome, UpsertOutcome::Upgraded { old_version } if old_version == "0.0.1")
+        );
 
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.starts_with("# Pre\n\n"));
@@ -318,20 +337,40 @@ mod tests {
     }
 
     // ─── Legacy marker support (old "# 8v\n" marker) ────────────────────────
-    // Old files that have "# 8v\n" (not versioned) are treated as "no sentinel" → append.
+
     #[test]
-    fn upsert_treats_legacy_marker_as_no_sentinel() {
+    fn upsert_replaces_legacy_marker_with_versioned_block() {
         let dir = TempDir::new().unwrap();
         let root = canonical(&dir);
         let path = root.join("AGENTS.md");
-        // Old format: just "# 8v\n" without versioned sentinels
         fs::write(&path, "# 8v\n\nOld unversioned content.\n").unwrap();
         let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
 
         let outcome = upsert_versioned_block(&path, &containment_root, "1.0.0").unwrap();
-        // No versioned sentinel found → appends new block
         assert!(matches!(outcome, UpsertOutcome::Written));
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("<!-- 8v:begin v1.0.0 -->"));
+        // Old block must be gone — no duplicate
+        assert!(!content.contains("Old unversioned content."));
+        // No double-headings — exactly one # 8v (inside the new sentinel block)
+        assert_eq!(content.matches("# 8v").count(), 1);
+    }
+
+    #[test]
+    fn upsert_legacy_preserves_surrounding_content() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        let path = root.join("AGENTS.md");
+        fs::write(&path, "# Project\n\nSome intro.\n\n# 8v\n\nOld 8v stuff.\n").unwrap();
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        upsert_versioned_block(&path, &containment_root, "1.0.0").unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        // Prefix preserved
+        assert!(content.starts_with("# Project\n\nSome intro.\n\n"));
+        // New sentinel present
+        assert!(content.contains("<!-- 8v:begin v1.0.0 -->"));
+        // Old content gone
+        assert!(!content.contains("Old 8v stuff."));
     }
 }

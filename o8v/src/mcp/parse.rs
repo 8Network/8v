@@ -262,6 +262,8 @@ mod tests {
                 crate::commands::Command::Hooks(_) => "Hooks",
                 crate::commands::Command::Upgrade(_) => "Upgrade",
                 crate::commands::Command::Mcp => "Mcp",
+                crate::commands::Command::Log(_) => "Log",
+                crate::commands::Command::Stats(_) => "Stats",
             };
             assert_eq!(got, want, "wrong Command variant for `{cmd}`");
         }

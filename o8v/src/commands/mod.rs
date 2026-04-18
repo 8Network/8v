@@ -14,10 +14,12 @@ pub mod build;
 pub mod check;
 pub mod fmt;
 pub mod hooks;
+pub mod log;
 pub mod ls;
 pub mod output_format;
 pub mod read;
 pub mod search;
+pub mod stats;
 pub mod test;
 pub mod upgrade;
 pub mod write;
@@ -30,7 +32,7 @@ use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum Command {
+pub enum Command {
     /// Build the project
     Build(build::Args),
     /// Check a project directory
@@ -53,6 +55,10 @@ pub(crate) enum Command {
     Search(search::Args),
     /// List project files and directory structure
     Ls(ls::Args),
+    /// Show session history and command drill-down
+    Log(log::Args),
+    /// Analytical aggregates over events.ndjson
+    Stats(stats::Args),
     /// Start MCP server
     Mcp,
 }
@@ -74,6 +80,8 @@ impl Command {
             Command::Write(a) => a.format.audience_with_default(default),
             Command::Search(a) => a.format.audience_with_default(default),
             Command::Ls(a) => a.format.audience_with_default(default),
+            Command::Log(a) => a.format.audience_with_default(default),
+            Command::Stats(a) => a.format.audience_with_default(default),
             Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => default,
         }
     }
@@ -81,10 +89,7 @@ impl Command {
     /// Resolve each variant's path field(s) against an MCP containment root.
     /// Each variant declares its own path semantics via its `Args` fields — the
     /// entry-point layer walks the typed enum, never matches on string names.
-    pub(crate) fn resolve_mcp_paths(
-        &mut self,
-        root: &o8v_fs::ContainmentRoot,
-    ) -> Result<(), String> {
+    pub fn resolve_mcp_paths(&mut self, root: &o8v_fs::ContainmentRoot) -> Result<(), String> {
         use crate::mcp::path::{resolve_optional_path, resolve_path, resolve_paths};
         match self {
             Command::Build(a) => resolve_path(&mut a.path, root),
@@ -95,7 +100,12 @@ impl Command {
             Command::Write(a) => resolve_path(&mut a.path, root),
             Command::Search(a) => resolve_optional_path(&mut a.path, root),
             Command::Ls(a) => resolve_optional_path(&mut a.path, root),
-            Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => Ok(()),
+            Command::Init(_)
+            | Command::Hooks(_)
+            | Command::Upgrade(_)
+            | Command::Log(_)
+            | Command::Stats(_)
+            | Command::Mcp => Ok(()),
         }
     }
 
@@ -113,6 +123,8 @@ impl Command {
             Command::Write(_) => "write",
             Command::Search(_) => "search",
             Command::Ls(_) => "ls",
+            Command::Log(_) => "log",
+            Command::Stats(_) => "stats",
             Command::Mcp => "mcp",
         }
     }
@@ -125,7 +137,7 @@ impl Command {
 /// - The parsed command
 /// - Who they are (Caller)
 /// - The interrupted flag
-pub(crate) async fn dispatch_command(
+pub async fn dispatch_command(
     command: Command,
     caller: Caller,
     argv: Vec<String>,
@@ -134,7 +146,7 @@ pub(crate) async fn dispatch_command(
     dispatch_command_with_agent(command, caller, argv, interrupted, None).await
 }
 
-pub(crate) async fn dispatch_command_with_agent(
+pub async fn dispatch_command_with_agent(
     command: Command,
     caller: Caller,
     argv: Vec<String>,
@@ -142,7 +154,7 @@ pub(crate) async fn dispatch_command_with_agent(
     agent_info: Option<o8v_core::caller::AgentInfo>,
 ) -> Result<(String, ExitCode, bool), CommandError> {
     interrupted.store(false, std::sync::atomic::Ordering::Release);
-    let mut ctx = o8v::dispatch::build_context(interrupted);
+    let mut ctx = crate::dispatch::build_context(interrupted);
     if let Some(info) = agent_info {
         ctx.extensions.insert(info);
     }
@@ -157,7 +169,8 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Build(args) => {
             let cmd = build::BuildCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             let exit = if report.process.success {
                 ExitCode::SUCCESS
             } else {
@@ -168,7 +181,8 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Test(args) => {
             let cmd = test::TestCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             let exit = if report.process.success {
                 ExitCode::SUCCESS
             } else {
@@ -180,7 +194,8 @@ pub(crate) async fn dispatch_command_with_agent(
             let use_stderr = audience == Audience::Human;
             let cmd = check::CheckCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             let exit = if report.results().is_empty() && report.detection_errors().is_empty() {
                 ExitCode::from(2u8)
             } else if report.is_ok() {
@@ -194,7 +209,8 @@ pub(crate) async fn dispatch_command_with_agent(
             let use_stderr = audience == Audience::Human;
             let cmd = fmt::FmtCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             let exit = if report.entries.is_empty() && report.detection_errors.is_empty() {
                 ExitCode::from(2u8)
             } else if report.is_ok() {
@@ -207,7 +223,8 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Hooks(args) => {
             let cmd = hooks::HooksCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             let exit = if report.success {
                 ExitCode::SUCCESS
             } else {
@@ -218,14 +235,16 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Upgrade(args) => {
             let cmd = upgrade::UpgradeCommand { args };
             let (output, _, _) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Read(args) => {
             use o8v_core::render::read_report::{MultiResult, ReadReport};
             let cmd = read::ReadCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             // Batch-mode errors are inline in `Multi.entries`. The single-path
             // case already propagates errors via CommandError. Exit non-zero
             // if any entry failed, so agents can detect failure.
@@ -244,13 +263,15 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Write(args) => {
             let cmd = write::WriteCommand { args };
             let (output, _, _) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Search(args) => {
             let cmd = search::SearchCommand { args };
             let (output, _, report) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             // files_skipped counts files we couldn't read (permission, I/O);
             // binary content is filtered separately. Surface read failures via
             // exit code so agents notice instead of silently under-searching.
@@ -264,8 +285,27 @@ pub(crate) async fn dispatch_command_with_agent(
         Command::Ls(args) => {
             let cmd = ls::LsCommand { args };
             let (output, _, _) =
-                o8v::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv).await?;
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
             Ok((output, ExitCode::SUCCESS, false))
+        }
+        Command::Log(args) => {
+            let cmd = log::LogCommand { args };
+            let (output, _, _) =
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
+            Ok((output, ExitCode::SUCCESS, false))
+        }
+        Command::Stats(args) => {
+            let cmd = stats::StatsCommand { args };
+            let (output, _, report) =
+                crate::dispatch::dispatch(&cmd, &ctx, audience, caller, command_name, &argv)
+                    .await?;
+            if report.is_empty() {
+                Ok((output, ExitCode::from(2), false))
+            } else {
+                Ok((output, ExitCode::SUCCESS, false))
+            }
         }
         Command::Init(_) | Command::Mcp => {
             Err(CommandError::Execution("not a dispatchable command".into()))

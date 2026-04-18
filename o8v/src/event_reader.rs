@@ -9,6 +9,7 @@
 
 use crate::workspace::StorageDir;
 use o8v_core::events::Event;
+use o8v_core::types::{Warning, WarningSink};
 
 #[derive(Debug)]
 pub enum EventReadError {
@@ -49,6 +50,142 @@ pub fn read_events(storage: &StorageDir) -> Result<Vec<Event>, EventReadError> {
         .map_err(|e| EventReadError::Io(e.to_string()))?;
 
     parse_events(content.content())
+}
+
+/// Parse NDJSON content into typed events — lenient mode.
+///
+/// In lenient mode (`strict = false`): skips malformed lines, collecting a warning
+/// string per skipped line into the returned Vec<String>.
+/// In strict mode (`strict = true`): hard-fails on the first malformed line,
+/// identical to `parse_events`.
+///
+/// The existing `parse_events` keeps its hard-fail contract unchanged.
+pub fn parse_events_lenient(
+    content: &str,
+    strict: bool,
+    warnings: &mut WarningSink,
+) -> Result<Vec<Event>, EventReadError> {
+    let mut events = Vec::new();
+
+    for (i, line) in content.lines().enumerate() {
+        let line_num = i + 1;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let raw: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                let err = EventReadError::InvalidJson {
+                    line: line_num,
+                    source: e.to_string(),
+                };
+                if strict {
+                    return Err(err);
+                }
+                warnings.push(Warning::MalformedEventLine {
+                    line_no: line_num as u64,
+                    reason: err.to_string(),
+                });
+                continue;
+            }
+        };
+
+        let event_type = match raw.get("event") {
+            Some(v) => match v.as_str() {
+                Some(s) => s,
+                None => {
+                    let err = EventReadError::InvalidEventField { line: line_num };
+                    if strict {
+                        return Err(err);
+                    }
+                    warnings.push(Warning::MalformedEventLine {
+                        line_no: line_num as u64,
+                        reason: err.to_string(),
+                    });
+                    continue;
+                }
+            },
+            None => {
+                let err = EventReadError::MissingEventField { line: line_num };
+                if strict {
+                    return Err(err);
+                }
+                warnings.push(Warning::MalformedEventLine {
+                    line_no: line_num as u64,
+                    reason: err.to_string(),
+                });
+                continue;
+            }
+        };
+
+        let event = match event_type {
+            "CommandStarted" => {
+                match serde_json::from_str::<o8v_core::events::lifecycle::CommandStarted>(line) {
+                    Ok(started) => Event::CommandStarted(started),
+                    Err(e) => {
+                        let err = EventReadError::InvalidJson {
+                            line: line_num,
+                            source: e.to_string(),
+                        };
+                        if strict {
+                            return Err(err);
+                        }
+                        warnings.push(Warning::MalformedEventLine {
+                            line_no: line_num as u64,
+                            reason: err.to_string(),
+                        });
+                        continue;
+                    }
+                }
+            }
+            "CommandCompleted" => {
+                match serde_json::from_str::<o8v_core::events::lifecycle::CommandCompleted>(line) {
+                    Ok(completed) => Event::CommandCompleted(completed),
+                    Err(e) => {
+                        let err = EventReadError::InvalidJson {
+                            line: line_num,
+                            source: e.to_string(),
+                        };
+                        if strict {
+                            return Err(err);
+                        }
+                        warnings.push(Warning::MalformedEventLine {
+                            line_no: line_num as u64,
+                            reason: err.to_string(),
+                        });
+                        continue;
+                    }
+                }
+            }
+            other => Event::Unknown {
+                event_type: other.to_string(),
+                raw,
+            },
+        };
+
+        events.push(event);
+    }
+
+    Ok(events)
+}
+
+/// Read all events from the event store — lenient mode.
+///
+/// In lenient mode (`strict = false`): malformed lines are skipped with a
+/// warning string per line. In strict mode: hard-fails on first malformed line.
+pub fn read_events_lenient(
+    storage: &StorageDir,
+    strict: bool,
+    warnings: &mut WarningSink,
+) -> Result<Vec<Event>, EventReadError> {
+    let path = storage.events();
+    let config = o8v_fs::FsConfig::default();
+    let content = o8v_fs::safe_read(&path, storage.containment(), &config)
+        .map_err(|e| EventReadError::Io(e.to_string()))?;
+
+    parse_events_lenient(content.content(), strict, warnings)
 }
 
 /// Parse NDJSON content into typed events.
@@ -166,9 +303,9 @@ mod tests {
 
     #[test]
     fn parse_corrupt_json_errors() {
-        let content = r#"{"event":"CommandStarted","run_id":"r1","timestamp_ms":1000,"version":"0.1.0","caller":"cli","command":"check .","command_bytes":7,"command_token_estimate":1,"argv":["check","."],"project_path":null}
+        let content = r#"{"event":"CommandStarted","run_id":"r1","timestamp_ms":1000,"version":"0.1.0","caller":"cli","command":"check .","command_bytes":7,"command_token_estimate":1,"argv":["check","."],"project_path":null,"session_id":"ses_01HZZZZZZZZZZZZZZZZZZZZZZ"}
 not valid json
-{"event":"CommandCompleted","run_id":"r1","timestamp_ms":1050,"output_bytes":400,"token_estimate":100,"duration_ms":50,"success":true}"#;
+{"event":"CommandCompleted","run_id":"r1","timestamp_ms":1050,"output_bytes":400,"token_estimate":100,"duration_ms":50,"success":true,"session_id":"ses_01HZZZZZZZZZZZZZZZZZZZZZZ"}"#;
         let err = parse_events(content).unwrap_err();
         assert!(matches!(err, EventReadError::InvalidJson { line: 2, .. }));
     }
@@ -194,6 +331,174 @@ not valid json
         assert_eq!(events.len(), 1);
         assert!(
             matches!(&events[0], Event::Unknown { event_type, .. } if event_type == "FutureEvent")
+        );
+    }
+
+    // ─── Lenient parser tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn lenient_skips_corrupt_line() {
+        let started = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check .",
+            vec!["check".into(), ".".into()],
+            None,
+        );
+        let line1 = serde_json::to_string(&started).unwrap();
+        let content = format!("{line1}\nnot valid json\n");
+
+        let mut sink = WarningSink::new();
+        let events = parse_events_lenient(&content, false, &mut sink).unwrap();
+        let warnings = sink.into_inner();
+        assert_eq!(events.len(), 1, "good line must be kept");
+        assert_eq!(warnings.len(), 1, "corrupt line must produce one warning");
+        match &warnings[0] {
+            Warning::MalformedEventLine { line_no, .. } => assert_eq!(*line_no, 2),
+            other => panic!("expected MalformedEventLine, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_fails_on_corrupt_line() {
+        let content = r#"not valid json"#;
+        let mut sink = WarningSink::new();
+        let result = parse_events_lenient(content, true, &mut sink);
+        assert!(
+            matches!(result, Err(EventReadError::InvalidJson { line: 1, .. })),
+            "strict mode must hard-fail; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn lenient_skips_missing_event_field() {
+        let content = r#"{"run_id":"r1","timestamp_ms":1000}"#;
+        let mut sink = WarningSink::new();
+        let events = parse_events_lenient(content, false, &mut sink).unwrap();
+        let warnings = sink.into_inner();
+        assert!(events.is_empty());
+        assert_eq!(warnings.len(), 1);
+        match &warnings[0] {
+            Warning::MalformedEventLine { reason, .. } => {
+                assert!(reason.contains("missing \"event\" field"));
+            }
+            other => panic!("expected MalformedEventLine, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lenient_returns_warnings_for_multiple_bad_lines() {
+        let started = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check .",
+            vec!["check".into(), ".".into()],
+            None,
+        );
+        let good = serde_json::to_string(&started).unwrap();
+        let content = format!("bad1\n{good}\nbad2\n");
+
+        let mut sink = WarningSink::new();
+        let events = parse_events_lenient(&content, false, &mut sink).unwrap();
+        let warnings = sink.into_inner();
+        assert_eq!(events.len(), 1, "good line must be kept");
+        assert_eq!(warnings.len(), 2, "two bad lines → two warnings");
+        let lines: Vec<u64> = warnings
+            .iter()
+            .map(|w| match w {
+                Warning::MalformedEventLine { line_no, .. } => *line_no,
+                other => panic!("expected MalformedEventLine, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(lines, vec![1, 3]);
+    }
+
+    #[test]
+    fn lenient_strict_true_equals_parse_events_behavior() {
+        // strict=true must behave identically to parse_events for valid content
+        let started = CommandStarted::new(
+            "r1".into(),
+            Caller::Cli,
+            "check .",
+            vec!["check".into(), ".".into()],
+            None,
+        );
+        let content = serde_json::to_string(&started).unwrap();
+        let mut sink = WarningSink::new();
+        let events = parse_events_lenient(&content, true, &mut sink).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(
+            sink.is_empty(),
+            "no warnings on valid content in strict mode"
+        );
+    }
+
+    // ─── Counterexample tests (POC-regression pins) ───────────────────────────
+
+    #[test]
+    fn lenient_commandstarted_body_missing_required_fields_emits_warning_not_panic() {
+        // POC: serde deserialization of CommandStarted was called via unwrap(); a body
+        // with the correct "event" type but missing required fields caused a panic.
+        // Now: the Err arm emits Warning::MalformedEventLine and continues — no panic.
+        let content = r#"{"event":"CommandStarted","run_id":"r1"}"#;
+        let mut sink = WarningSink::new();
+        let result = parse_events_lenient(content, false, &mut sink);
+        assert!(result.is_ok(), "lenient mode must not return Err");
+        let events = result.unwrap();
+        let warnings = sink.into_inner();
+        assert!(
+            events.is_empty(),
+            "malformed body must not produce an Event"
+        );
+        assert_eq!(warnings.len(), 1, "must emit exactly one warning");
+        assert!(
+            matches!(&warnings[0], Warning::MalformedEventLine { line_no: 1, .. }),
+            "expected MalformedEventLine at line 1, got {:?}",
+            warnings[0]
+        );
+    }
+
+    #[test]
+    fn lenient_first_bad_line_reports_line_number_one_not_zero() {
+        // POC: line counter used the enumerate index `i` directly (0-based), so the
+        // first bad line was reported as line_no=0 instead of line_no=1.
+        // Now: line_num = i + 1, so the first line is always reported as 1.
+        let content = "not valid json\n";
+        let mut sink = WarningSink::new();
+        let _ = parse_events_lenient(content, false, &mut sink).unwrap();
+        let warnings = sink.into_inner();
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            matches!(&warnings[0], Warning::MalformedEventLine { line_no: 1, .. }),
+            "first bad line must be line_no=1, got {:?}",
+            warnings[0]
+        );
+    }
+
+    #[test]
+    fn lenient_blank_lines_do_not_shift_reported_line_numbers() {
+        // POC: blank lines were counted in the line index before being discarded,
+        // causing subsequent bad lines to be reported at the wrong (higher) line number.
+        // Now: blank lines are skipped with `continue` AFTER incrementing the counter,
+        // so the physical line position is still accurately reported for bad lines.
+        // Layout: line 1 = blank, line 2 = bad JSON, line 3 = blank, line 4 = bad JSON.
+        let content = "\nnot valid json\n\nalso bad\n";
+        let mut sink = WarningSink::new();
+        let _ = parse_events_lenient(content, false, &mut sink).unwrap();
+        let warnings = sink.into_inner();
+        assert_eq!(warnings.len(), 2, "two bad lines must produce two warnings");
+        let line_nos: Vec<u64> = warnings
+            .iter()
+            .map(|w| match w {
+                Warning::MalformedEventLine { line_no, .. } => *line_no,
+                other => panic!("expected MalformedEventLine, got {other:?}"),
+            })
+            .collect();
+        // Physical line positions: bad JSON is at line 2 and line 4.
+        assert_eq!(
+            line_nos,
+            vec![2, 4],
+            "blank lines must not shift the reported line numbers"
         );
     }
 }

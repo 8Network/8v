@@ -5,7 +5,7 @@
 //! Hooks module — installs and dispatches git and Claude Code hook events.
 //!
 //! CLI dispatch:
-//! ```
+//! ```text
 //! 8v hooks git on-commit              — called by .git/hooks/pre-commit
 //! 8v hooks git on-commit-msg <file>   — called by .git/hooks/commit-msg
 //! 8v hooks claude pre-tool-use        — called by Claude Code PreToolUse hook

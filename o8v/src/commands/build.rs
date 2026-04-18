@@ -53,7 +53,7 @@ impl Command for BuildCommand {
 
         let workspace = ctx
             .extensions
-            .get::<o8v::workspace::WorkspaceRoot>()
+            .get::<crate::workspace::WorkspaceRoot>()
             .ok_or_else(|| {
                 CommandError::Execution("8v: no workspace — run 8v init first".to_string())
             })?;

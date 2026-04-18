@@ -238,7 +238,10 @@ mod tests {
         let f = fmt(false, false, false);
         // --plain flag triggers the same branch as agent mode
         let f_plain = fmt(false, true, false);
-        assert_eq!(f_plain.audience_with_default(Audience::Human), Audience::Agent);
+        assert_eq!(
+            f_plain.audience_with_default(Audience::Human),
+            Audience::Agent
+        );
         // no flags → falls through to default
         assert_eq!(f.audience_with_default(Audience::Human), Audience::Human);
     }

@@ -16,10 +16,13 @@ pub mod stream_plain;
 // Report types — structured data for each command.
 pub mod build_report;
 pub mod hooks_report;
+pub mod log_report;
 pub mod ls_report;
 pub mod read_report;
 pub mod run_report;
 pub mod search_report;
+pub mod stats_report;
+pub mod stats_view;
 pub mod test_report;
 pub mod upgrade_report;
 pub mod write_report;

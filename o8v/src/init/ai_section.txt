@@ -18,7 +18,7 @@ Every command accepts `--json`. Run `8v <cmd> --help` for the full flag list.
 - `8v read <path>` — symbol map (functions, structs, classes).
 - `8v read <path>:<start>-<end>` — line range.
 - `8v read <path> --full` — entire file.
-- `8v read a.rs b.rs Cargo.toml` — batch multiple files in one call.
+- `8v read a.rs b.rs Cargo.toml` — batch any combination of paths and ranges in one call: distinct files, multiple ranges of the same file (`a.rs:1-200 a.rs:200-400`), or a mix. One call beats N sequential calls.
 
 ## Write
 - `8v write <path>:<line> "<content>"` — replace a single line.

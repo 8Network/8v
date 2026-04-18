@@ -10,14 +10,13 @@ mod mcp_setup;
 
 use crate::cli::common::{EXIT_FAIL, EXIT_OK};
 use crate::hooks::install::{install_claude_hooks, install_git_commit_msg, install_git_pre_commit};
+use crate::workspace::{register_workspace, WorkspaceDir};
 use ai_docs::{file_has_current_block, upsert_versioned_block, SentinelError, UpsertOutcome};
 use claude_settings::setup_claude_settings;
 use dialoguer::{Confirm, Select};
 use mcp_setup::setup_mcp_json;
-use o8v::workspace::{register_workspace, WorkspaceDir};
 use o8v_core::project::{ProjectKind, ProjectRoot};
 use o8v_stacks::detect_all;
-use std::fs;
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
@@ -36,12 +35,14 @@ struct InitDir {
     mcp_json: std::path::PathBuf,
     claude_md: std::path::PathBuf,
     agents_md: std::path::PathBuf,
+    config_toml: std::path::PathBuf,
 }
 
 impl InitDir {
     const MCP_JSON: &'static str = ".mcp.json";
     const CLAUDE_MD: &'static str = "CLAUDE.md";
     const AGENTS_MD: &'static str = "AGENTS.md";
+    const CONFIG_TOML: &'static str = ".8v/config.toml";
 
     fn new(root: &o8v_fs::ContainmentRoot) -> Self {
         let base = root.as_path();
@@ -49,6 +50,7 @@ impl InitDir {
             mcp_json: base.join(Self::MCP_JSON),
             claude_md: base.join(Self::CLAUDE_MD),
             agents_md: base.join(Self::AGENTS_MD),
+            config_toml: base.join(Self::CONFIG_TOML),
         }
     }
 
@@ -60,6 +62,9 @@ impl InitDir {
     }
     fn agents_md(&self) -> &std::path::Path {
         &self.agents_md
+    }
+    fn config_toml(&self) -> &std::path::Path {
+        &self.config_toml
     }
 }
 
@@ -78,6 +83,12 @@ pub struct Args {
     /// Defaults to `"8v"` (resolved via PATH). Used by the benchmark harness
     /// so the spawned MCP server is the same binary under test.
     #[arg(long = "mcp-command", value_name = "PATH")]
+
+    /// Override the `name` key written to `.mcp.json` for the 8v server entry.
+    /// Defaults to `"8v"`. Use `"8v-debug"` when registering a debug binary
+    /// alongside the released one so both coexist without overwriting each other.
+    #[arg(long = "mcp-name", value_name = "NAME", default_value = "8v")]
+    pub mcp_name: String,
     pub mcp_command: Option<String>,
 }
 
@@ -169,21 +180,33 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
     }
     eprintln!("✓ Created {}", location.display());
 
+    let project_root = &containment_root;
+    let init_dir = InitDir::new(project_root);
+
     // Run a baseline check so the first `8v check` has a prior snapshot.
-    if let Err(e) = run_baseline_check(&containment_root) {
+    if let Err(e) = run_baseline_check(project_root) {
         tracing::warn!("baseline check failed: {e}");
     }
 
     // Write default config.toml if it doesn't exist (local config only)
     if !location.is_home() {
-        let config_dir = containment_root.as_path().join(".8v");
-        let config_toml_path = config_dir.join("config.toml");
-        if !config_toml_path.exists() {
-            if let Err(e) = fs::write(&config_toml_path, DEFAULT_CONFIG) {
-                eprintln!("error: failed to write .8v/config.toml: {e}");
+        match o8v_fs::safe_exists(init_dir.config_toml(), project_root) {
+            Err(e) => {
+                eprintln!("error: failed to check .8v/config.toml: {e}");
                 return ExitCode::from(EXIT_FAIL);
             }
-            eprintln!("✓ Created .8v/config.toml");
+            Ok(false) => {
+                if let Err(e) = o8v_fs::safe_write(
+                    init_dir.config_toml(),
+                    project_root,
+                    DEFAULT_CONFIG.as_bytes(),
+                ) {
+                    eprintln!("error: failed to write .8v/config.toml: {e}");
+                    return ExitCode::from(EXIT_FAIL);
+                }
+                eprintln!("✓ Created .8v/config.toml");
+            }
+            Ok(true) => {}
         }
     }
 
@@ -207,13 +230,15 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
         eprintln!();
     }
 
-    let project_root = &containment_root;
-    let init_dir = InitDir::new(project_root);
-
     // Step 3: MCP
     if confirm("Set up MCP?", args.yes) {
         let mcp_command = args.mcp_command.as_deref().unwrap_or("8v");
-        if let Err(e) = setup_mcp_json(init_dir.mcp_json(), project_root, mcp_command) {
+        if let Err(e) = setup_mcp_json(
+            init_dir.mcp_json(),
+            project_root,
+            &args.mcp_name,
+            mcp_command,
+        ) {
             eprintln!("error: failed to setup .mcp.json: {e}");
             return ExitCode::from(EXIT_FAIL);
         }
@@ -223,21 +248,18 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
 
     // Step 4: CLAUDE.md — skip if AGENTS.md already has the current-version 8v block
     if confirm("Add 8v to CLAUDE.md?", args.yes) {
-        let agents_has_current = match file_has_current_block(
-            init_dir.agents_md(),
-            project_root,
-            CURRENT_VERSION,
-        ) {
-            Ok(has) => has,
-            Err(SentinelError::MissingEnd { version }) => {
-                eprintln!(
+        let agents_has_current =
+            match file_has_current_block(init_dir.agents_md(), project_root, CURRENT_VERSION) {
+                Ok(has) => has,
+                Err(SentinelError::MissingEnd { version }) => {
+                    eprintln!(
                     "error: malformed 8v block in AGENTS.md: found '<!-- 8v:begin v{version} -->' \
                      but no '<!-- 8v:end -->' — file is in an inconsistent state. \
                      Remove the partial block manually and re-run `8v init`."
                 );
-                return ExitCode::from(EXIT_FAIL);
-            }
-        };
+                    return ExitCode::from(EXIT_FAIL);
+                }
+            };
 
         if agents_has_current {
             eprintln!("  Skipped CLAUDE.md (AGENTS.md already has current 8v block)");

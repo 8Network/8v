@@ -7,5 +7,5 @@ pub mod types;
 
 pub use error::{DetectError, PathError, ProjectError};
 pub use path::ProjectRoot;
-pub use types::{Project, ProjectKind};
 pub use stack::Stack;
+pub use types::{Project, ProjectKind};

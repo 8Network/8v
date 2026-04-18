@@ -17,7 +17,7 @@ use clap::Parser;
     long_version = version::long(),
     about = "Code reliability tool — one command checks everything"
 )]
-pub(crate) struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    pub(crate) command: crate::commands::Command,
+    pub command: crate::commands::Command,
 }

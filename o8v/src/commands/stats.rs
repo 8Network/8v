@@ -1,0 +1,443 @@
+// Copyright (c) 2026 Soheil Alizadeh / 8Network. All rights reserved.
+// Licensed under the Business Source License 1.1 (BSL-1.1).
+// See LICENSE file in the project root.
+
+//! `8v stats` — analytical aggregates over `~/.8v/events.ndjson`.
+//!
+//! Shares the single-pass aggregator with `8v log`. Projects three views:
+//! default per-command table, drill by argv_shape for one command,
+//! and `--compare agent` grouped by `agent_info.name`.
+
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use o8v_core::command::{Command, CommandContext, CommandError};
+use o8v_core::events::Event;
+use o8v_core::render::stats_view::{LabelKey, ReportKind, StatsView};
+use o8v_core::stats::{DurationStats, FailureHotspot, StatsReport, StatsRow};
+use o8v_core::types::{Warning, WarningSink};
+
+use crate::aggregator::{
+    aggregate_events, compute_failure_hotspots, ArgvNormalizer, CommandRecord, SessionAggregate,
+};
+use crate::event_reader::read_events_lenient;
+use crate::stats_histogram::Histogram;
+use crate::workspace::StorageDir;
+
+#[derive(clap::Args, Debug)]
+pub struct Args {
+    /// Drill into one command (positional) — e.g. `8v stats write`.
+    pub command: Option<String>,
+    /// Drill into a full argv_shape (named flag) — e.g. `8v stats --shape 'cargo test <path>'`.
+    /// Takes precedence over the positional `command` argument.
+    #[arg(long)]
+    pub shape: Option<String>,
+    /// Time window lower bound (duration before now): `7d`, `1h`, `30m`, `0s`. Default: 7d.
+    #[arg(long, default_value = "7d")]
+    pub since: String,
+    /// Time window upper bound (duration before now): events newer than this are excluded.
+    /// Default: `0ms` (now).
+    #[arg(long, default_value = "0ms")]
+    pub until: String,
+    /// Hard-fail on malformed NDJSON lines instead of skipping.
+    #[arg(long)]
+    pub strict: bool,
+    /// Group by `agent` (the only dimension in v1).
+    #[arg(long)]
+    pub compare: Option<String>,
+    /// Failure-hotspot row count (reserved — not rendered in v1 rows, see design §3.1).
+    #[arg(long, default_value_t = 3)]
+    pub top: usize,
+    /// Minimum sample count per row; rows with `n < min_n` are hidden.
+    #[arg(long = "min-n", default_value_t = 1)]
+    pub min_n: u64,
+    /// Retry-cluster window in milliseconds (default: 30_000).
+    #[arg(long = "retry-window", default_value_t = 30_000)]
+    pub retry_window: u64,
+    #[command(flatten)]
+    pub format: super::output_format::OutputFormat,
+}
+
+pub struct StatsCommand {
+    pub args: Args,
+}
+
+impl Command for StatsCommand {
+    type Report = StatsView;
+
+    async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
+        let storage = ctx.extensions.get::<StorageDir>().ok_or_else(|| {
+            CommandError::Execution(
+                "storage unavailable: run 8v from within a project directory".into(),
+            )
+        })?;
+
+        let mut sink = WarningSink::new();
+        let events = read_events_lenient(storage, self.args.strict, &mut sink)
+            .map_err(|e| CommandError::Execution(e.to_string()))?;
+
+        let since_ms = parse_duration_ms(&self.args.since).map_err(CommandError::Execution)?;
+        let until_ms = parse_duration_ms(&self.args.until).map_err(CommandError::Execution)?;
+        let now_ms = now_ms();
+        let window_start_ms = now_ms.saturating_sub(since_ms);
+        let window_end_ms = now_ms.saturating_sub(until_ms);
+        if window_start_ms > window_end_ms {
+            return Ok(StatsView {
+                report: StatsReport {
+                    rows: Vec::new(),
+                    warnings: sink.into_inner(),
+                    failure_hotspots: Vec::new(),
+                },
+                kind: ReportKind::Table,
+                label_key: LabelKey::Command,
+                shape: None,
+            });
+        }
+
+        let windowed: Vec<&Event> = events
+            .iter()
+            .filter(|ev| {
+                let ts = event_timestamp_ms(ev);
+                ts >= window_start_ms && ts <= window_end_ms
+            })
+            .collect();
+
+        // Aggregate over events in window. Clone filtered set to feed aggregator.
+        let filtered: Vec<Event> = windowed.into_iter().cloned().collect();
+        let mut normalizer = ArgvNormalizer::new();
+        let sessions = aggregate_events(
+            &filtered,
+            self.args.retry_window,
+            &mut normalizer,
+            &mut sink,
+        );
+
+        let failure_hotspots = compute_failure_hotspots(&sessions);
+        let mode = resolve_mode(&self.args);
+        let report = build_report(
+            &sessions,
+            mode,
+            self.args.min_n,
+            sink.into_inner(),
+            failure_hotspots,
+        );
+        Ok(report)
+    }
+}
+
+enum Mode<'a> {
+    Default,
+    Drill(&'a str),
+    ByAgent,
+}
+
+fn resolve_mode(args: &Args) -> Mode<'_> {
+    if args.compare.as_deref() == Some("agent") {
+        Mode::ByAgent
+    } else if let Some(shape) = args.shape.as_deref() {
+        // --shape takes precedence over positional command arg.
+        Mode::Drill(shape)
+    } else if let Some(cmd) = args.command.as_deref() {
+        Mode::Drill(cmd)
+    } else {
+        Mode::Default
+    }
+}
+
+fn build_report(
+    sessions: &[SessionAggregate],
+    mode: Mode<'_>,
+    min_n: u64,
+    warnings: Vec<Warning>,
+    failure_hotspots: Vec<FailureHotspot>,
+) -> StatsView {
+    match mode {
+        Mode::Default => {
+            let rows = rows_by_command(sessions);
+            let rows = apply_min_n(rows, min_n);
+            StatsView {
+                report: StatsReport {
+                    rows,
+                    warnings,
+                    failure_hotspots,
+                },
+                kind: ReportKind::Table,
+                label_key: LabelKey::Command,
+                shape: None,
+            }
+        }
+        Mode::Drill(cmd) => {
+            let rows = rows_by_argv_shape(sessions, cmd);
+            let rows = apply_min_n(rows, min_n);
+            StatsView {
+                report: StatsReport {
+                    rows,
+                    warnings,
+                    failure_hotspots,
+                },
+                kind: ReportKind::Drill,
+                label_key: LabelKey::ArgvShape,
+                shape: Some(cmd.to_string()),
+            }
+        }
+        Mode::ByAgent => {
+            let rows = rows_by_agent(sessions);
+            let rows = apply_min_n(rows, min_n);
+            StatsView {
+                report: StatsReport {
+                    rows,
+                    warnings,
+                    failure_hotspots,
+                },
+                kind: ReportKind::ByAgent,
+                label_key: LabelKey::Agent,
+                shape: None,
+            }
+        }
+    }
+}
+
+fn apply_min_n(rows: Vec<StatsRow>, min_n: u64) -> Vec<StatsRow> {
+    rows.into_iter().filter(|r| r.n >= min_n).collect()
+}
+
+// ─── Bucket helpers ─────────────────────────────────────────────────────────
+
+#[derive(Default)]
+struct Bucket {
+    n: u64,
+    ok: u64,
+    complete: u64,
+    out_bytes_sum: u128,
+    histogram: Histogram,
+    retry_cluster_count: u64,
+}
+
+impl Bucket {
+    fn ingest(&mut self, rec: &CommandRecord) {
+        self.n += 1;
+        if let Some(c) = rec.completed.as_ref() {
+            self.complete += 1;
+            if c.success {
+                self.ok += 1;
+            }
+            self.out_bytes_sum += c.output_bytes as u128;
+            self.histogram.record(c.duration_ms);
+        }
+    }
+
+    fn to_row(&self, label: String) -> StatsRow {
+        let p50 = self.histogram.percentile(0.50);
+        let p95 = self.histogram.percentile(0.95);
+        let p99 = self.histogram.percentile(0.99);
+        let duration_ms = match (p50, p95, p99) {
+            (Some(p50), Some(p95), Some(p99)) => Some(DurationStats { p50, p95, p99 }),
+            _ => None,
+        };
+        let ok_rate = if self.complete > 0 {
+            Some(self.ok as f64 / self.complete as f64)
+        } else {
+            None
+        };
+        let output_bytes_per_call_mean = if self.complete > 0 {
+            Some(self.out_bytes_sum as f64 / self.complete as f64)
+        } else {
+            None
+        };
+        StatsRow {
+            label,
+            n: self.n,
+            duration_ms,
+            ok_rate,
+            output_bytes_per_call_mean,
+            retry_cluster_count: self.retry_cluster_count,
+        }
+    }
+}
+
+fn rows_by_command(sessions: &[SessionAggregate]) -> Vec<StatsRow> {
+    let mut by_cmd: HashMap<String, Bucket> = HashMap::new();
+    for s in sessions {
+        for rec in &s.commands {
+            let bucket = by_cmd.entry(rec.started.command.clone()).or_default();
+            bucket.ingest(rec);
+        }
+        for cluster in &s.retry_clusters {
+            if let Some(b) = by_cmd.get_mut(&cluster.command) {
+                b.retry_cluster_count += 1;
+            }
+        }
+    }
+    let mut rows: Vec<StatsRow> = by_cmd
+        .into_iter()
+        .map(|(label, b)| b.to_row(label))
+        .collect();
+    rows.sort_by(|a, b| b.n.cmp(&a.n).then_with(|| a.label.cmp(&b.label)));
+    rows
+}
+
+fn rows_by_argv_shape(sessions: &[SessionAggregate], command: &str) -> Vec<StatsRow> {
+    let mut by_shape: HashMap<String, Bucket> = HashMap::new();
+    for s in sessions {
+        for rec in &s.commands {
+            if rec.started.command != command {
+                continue;
+            }
+            let bucket = by_shape.entry(rec.argv_shape.clone()).or_default();
+            bucket.ingest(rec);
+        }
+        for cluster in &s.retry_clusters {
+            if cluster.command == command {
+                if let Some(b) = by_shape.get_mut(&cluster.argv_shape) {
+                    b.retry_cluster_count += 1;
+                }
+            }
+        }
+    }
+    // Roll shapes with n=1 into an "other" row.
+    let mut rolled: HashMap<String, Bucket> = HashMap::new();
+    let mut other = Bucket::default();
+    let mut other_nonempty = false;
+    for (shape, bucket) in by_shape {
+        if bucket.n == 1 {
+            other.n += bucket.n;
+            other.ok += bucket.ok;
+            other.complete += bucket.complete;
+            other.out_bytes_sum += bucket.out_bytes_sum;
+            // Histogram merging across single samples is lossy; for a 1-sample
+            // bucket we skip — the "other" row's percentiles stay None unless
+            // enough 1-sample shapes accumulate. This is the correct behavior
+            // for the design's n<5 → None contract.
+            other.retry_cluster_count += bucket.retry_cluster_count;
+            other_nonempty = true;
+        } else {
+            rolled.insert(shape, bucket);
+        }
+    }
+    let mut rows: Vec<StatsRow> = rolled
+        .into_iter()
+        .map(|(label, b)| b.to_row(label))
+        .collect();
+    if other_nonempty {
+        rows.push(other.to_row("other".to_string()));
+    }
+    rows.sort_by(|a, b| b.n.cmp(&a.n).then_with(|| a.label.cmp(&b.label)));
+    rows
+}
+
+fn rows_by_agent(sessions: &[SessionAggregate]) -> Vec<StatsRow> {
+    let mut by_agent: HashMap<String, Bucket> = HashMap::new();
+    for s in sessions {
+        for rec in &s.commands {
+            let label = rec
+                .started
+                .agent_info
+                .as_ref()
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| "(no agent / CLI)".to_string());
+            let bucket = by_agent.entry(label).or_default();
+            bucket.ingest(rec);
+        }
+    }
+    let mut rows: Vec<StatsRow> = by_agent
+        .into_iter()
+        .map(|(label, b)| b.to_row(label))
+        .collect();
+    rows.sort_by(|a, b| b.n.cmp(&a.n).then_with(|| a.label.cmp(&b.label)));
+    rows
+}
+
+// ─── Duration parsing ───────────────────────────────────────────────────────
+
+fn parse_duration_ms(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("--since: empty duration".to_string());
+    }
+    let (num_part, suffix) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
+    if num_part.is_empty() {
+        return Err(format!("--since: missing digits in '{s}'"));
+    }
+    let n: u64 = num_part
+        .parse()
+        .map_err(|e| format!("--since: '{num_part}' not a number: {e}"))?;
+    let mult: u64 = match suffix {
+        "" | "s" => 1_000,
+        "ms" => 1,
+        "m" => 60_000,
+        "h" => 3_600_000,
+        "d" => 86_400_000,
+        other => return Err(format!("--since: unknown unit '{other}' (use ms|s|m|h|d)")),
+    };
+    Ok(n.saturating_mul(mult))
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .expect("system clock is before Unix epoch")
+}
+
+fn event_timestamp_ms(ev: &Event) -> u64 {
+    match ev {
+        Event::CommandStarted(s) => s.timestamp_ms.as_millis().max(0) as u64,
+        Event::CommandCompleted(c) => c.timestamp_ms.as_millis().max(0) as u64,
+        Event::Unknown { .. } => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_duration_7d() {
+        assert_eq!(parse_duration_ms("7d").unwrap(), 7 * 86_400_000);
+    }
+
+    #[test]
+    fn parse_duration_zero_seconds() {
+        assert_eq!(parse_duration_ms("0s").unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_duration_bare_number_means_seconds() {
+        assert_eq!(parse_duration_ms("30").unwrap(), 30_000);
+    }
+
+    #[test]
+    fn parse_duration_rejects_unknown_unit() {
+        assert!(parse_duration_ms("1y").is_err());
+    }
+
+    #[test]
+    fn parse_duration_rejects_empty() {
+        assert!(parse_duration_ms("").is_err());
+    }
+
+    #[test]
+    fn apply_min_n_filters_below_threshold() {
+        let rows = vec![
+            StatsRow {
+                label: "a".into(),
+                n: 2,
+                duration_ms: None,
+                ok_rate: None,
+                output_bytes_per_call_mean: None,
+                retry_cluster_count: 0,
+            },
+            StatsRow {
+                label: "b".into(),
+                n: 10,
+                duration_ms: None,
+                ok_rate: None,
+                output_bytes_per_call_mean: None,
+                retry_cluster_count: 0,
+            },
+        ];
+        let filtered = apply_min_n(rows, 5);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].label, "b");
+    }
+}

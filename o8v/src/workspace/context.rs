@@ -160,7 +160,10 @@ mod tests {
         let (_project_root, storage, _config) =
             resolve_workspace_with_home(tmp.path(), tmp.path()).unwrap();
         // Verify the storage root itself was created/accessible.
-        assert!(tmp.path().is_dir(), "storage root was not created by StorageDir::at");
+        assert!(
+            tmp.path().is_dir(),
+            "storage root was not created by StorageDir::at"
+        );
         // Verify last-check path accessible via storage.
         assert!(storage.last_check().ends_with("last-check.json"));
     }

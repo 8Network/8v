@@ -4,7 +4,7 @@
 
 //! Tracing initialization — application infrastructure.
 
-pub(crate) fn init() {
+pub fn init() {
     let filter = match tracing_subscriber::EnvFilter::try_from_default_env() {
         Ok(f) => f,
         Err(e) => {

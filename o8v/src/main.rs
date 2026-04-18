@@ -4,15 +4,7 @@
 
 //! The 8v CLI — entry point. Parses input, forwards to dispatch. No logic here.
 
-pub(crate) mod cli;
-pub(crate) mod commands;
-mod hooks;
-mod init;
-mod mcp;
-pub(crate) mod util;
-
-mod signal;
-mod tracing;
+use o8v::{cli, commands, init, mcp, signal, tracing};
 
 use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;

@@ -140,9 +140,8 @@ fn init_skips_claude_md_when_agents_md_has_8v_block() {
     // file_has_current_block checks for the HTML comment sentinels, not the old "# 8v" marker.
     let agents_md = path.join("AGENTS.md");
     let version = env!("CARGO_PKG_VERSION");
-    let agents_sentinel = format!(
-        "<!-- 8v:begin v{version} -->\nAlready has 8v instructions.\n<!-- 8v:end -->\n"
-    );
+    let agents_sentinel =
+        format!("<!-- 8v:begin v{version} -->\nAlready has 8v instructions.\n<!-- 8v:end -->\n");
     std::fs::write(&agents_md, &agents_sentinel).expect("write AGENTS.md");
 
     // CLAUDE.md exists but does NOT have the 8v block
