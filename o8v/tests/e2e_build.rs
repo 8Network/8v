@@ -33,17 +33,10 @@ fn build_rust_project_succeeds() {
         "8v build should exit 0\nstdout: {stdout}\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    assert!(stdout.contains("rust"), "should show stack name: {stdout}");
     assert!(
-        stdout.contains("cargo build"),
-        "should show cargo build command: {stdout}"
-    );
-    assert!(
-        stdout.contains("exit: 0 (success)"),
+        stdout.contains("build success"),
         "should show success: {stdout}"
-    );
-    assert!(
-        stdout.contains("duration:"),
-        "should show duration: {stdout}"
     );
 }
 
@@ -65,8 +58,6 @@ fn build_rust_json_has_required_fields() {
 
     assert!(parsed.get("command").is_some(), "missing command field");
     assert!(parsed.get("exit_code").is_some(), "missing exit_code field");
-    assert!(parsed.get("stdout").is_some(), "missing stdout field");
-    assert!(parsed.get("stderr").is_some(), "missing stderr field");
     assert!(
         parsed.get("duration_ms").is_some(),
         "missing duration_ms field"
@@ -109,12 +100,9 @@ fn build_go_project_succeeds() {
         "8v build should exit 0 for go project\nstdout: {stdout}\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    assert!(stdout.contains("go"), "should show stack name: {stdout}");
     assert!(
-        stdout.contains("go build"),
-        "should show go build command: {stdout}"
-    );
-    assert!(
-        stdout.contains("exit: 0 (success)"),
+        stdout.contains("build success"),
         "should show success: {stdout}"
     );
 }
@@ -208,13 +196,10 @@ fn build_rust_broken_fails_with_compile_error() {
         !out.status.success(),
         "8v build should exit non-zero for broken rust project\nstdout: {stdout}\nstderr: {stderr}"
     );
+    assert!(stdout.contains("rust"), "should show stack name: {stdout}");
     assert!(
-        stdout.contains("cargo build"),
-        "should show cargo build command: {stdout}"
-    );
-    assert!(
-        stdout.contains("exit: 101 (failed)") || stdout.contains("failed"),
-        "should show failed exit: {stdout}"
+        stdout.contains("build failed"),
+        "should show build failed: {stdout}"
     );
     assert!(
         stdout.contains("mismatched types") || stdout.contains("E0308"),
@@ -269,13 +254,10 @@ fn build_go_broken_fails_with_compile_error() {
         !out.status.success(),
         "8v build should exit non-zero for broken go project\nstdout: {stdout}\nstderr: {stderr}"
     );
+    assert!(stdout.contains("go"), "should show stack name: {stdout}");
     assert!(
-        stdout.contains("go build"),
-        "should show go build command: {stdout}"
-    );
-    assert!(
-        stdout.contains("failed"),
-        "should show failed exit: {stdout}"
+        stdout.contains("build failed"),
+        "should show build failed: {stdout}"
     );
     assert!(
         stdout.contains("invalid operation") || stdout.contains("mismatched types"),
@@ -301,10 +283,10 @@ fn build_go_broken_json_has_nonzero_exit_code() {
 
     assert_eq!(parsed["stack"], "go", "stack should be go");
     assert_ne!(parsed["exit_code"], 0, "exit_code should be non-zero");
-    let stderr_field = parsed["stderr"].as_str().unwrap_or("");
+    // Raw stderr is not in JSON output; errors field contains structured diagnostics.
     assert!(
-        stderr_field.contains("invalid operation") || stderr_field.contains("mismatched types"),
-        "stderr field should contain compile error: {stderr_field}"
+        parsed.get("errors").is_some(),
+        "errors field should be present"
     );
 }
 
@@ -323,24 +305,16 @@ fn build_rust_broken_errors_first_renders_before_stderr() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
 
-    // errors-first preamble must appear
+    // Structured diagnostics appear inline after "build failed".
     assert!(
-        stdout.contains("errors ("),
-        "output should contain errors preamble: {stdout}"
+        stdout.contains("build failed"),
+        "output should show build failed: {stdout}"
     );
 
-    // at least one real rust compiler error code
+    // At least one rust compile error must be visible in output.
     assert!(
-        stdout.contains("error[E"),
-        "output should contain rust error code: {stdout}"
-    );
-
-    // preamble must appear before the raw stderr section
-    let preamble_pos = stdout.find("errors (").expect("preamble present");
-    let stderr_pos = stdout.find("stderr:").expect("stderr section present");
-    assert!(
-        preamble_pos < stderr_pos,
-        "errors preamble ({preamble_pos}) should appear before stderr section ({stderr_pos})"
+        stdout.contains("mismatched types") || stdout.contains("E0308"),
+        "output should contain rust compile error: {stdout}"
     );
 }
 
@@ -362,8 +336,13 @@ fn build_rust_broken_errors_first_false_omits_preamble() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !stdout.contains("errors ("),
-        "preamble should be absent when --errors-first false: {stdout}"
+        stdout.contains("build failed"),
+        "broken project output should show build failed: {stdout}"
+    );
+    // When errors-first is false, no structured inline diagnostics injected.
+    assert!(
+        !stdout.contains(": error["),
+        "structured diagnostics should be absent when --errors-first false: {stdout}"
     );
 }
 

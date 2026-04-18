@@ -141,7 +141,13 @@ impl Command for BuildCommand {
             vec![]
         };
 
+        let name = project_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
         Ok(BuildReport {
+            name,
             process: o8v_core::process_report::ProcessReport {
                 command: cmd_str,
                 exit_code: exit_code_number(&proc_result.outcome),

@@ -56,7 +56,13 @@ pub(super) async fn handle_command(
     })?;
 
     // Parse and dispatch.
-    let (parsed_command, argv) = super::parse::parse_mcp_command(command, &containment_root)?;
+    let (parsed_command, argv) = match super::parse::parse_mcp_command(command, &containment_root)?
+    {
+        super::parse::ParseOutcome::Parsed(cmd, argv) => (cmd, argv),
+        // Help and version output is success content — return it as Ok so the
+        // MCP caller does not wrap it in an error envelope.
+        super::parse::ParseOutcome::HelpOutput(text) => return Ok(text),
+    };
 
     match crate::commands::dispatch_command_with_agent(
         parsed_command,

@@ -91,6 +91,42 @@ enum WriteOperation {
     },
 }
 
+// ─── Escape Sequence Handling ────────────────────────────────────────────────
+
+/// Interpret standard escape sequences in write content arguments.
+///
+/// Recognised sequences: `\n` → newline, `\t` → tab, `\\` → backslash.
+/// Any other `\X` is passed through unchanged (the backslash is preserved).
+///
+/// This applies to all content arguments: `--append`, `--insert`, and
+/// positional content for line-replace and range-replace.
+fn unescape_content(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('n') => {
+                    chars.next();
+                    out.push('\n');
+                }
+                Some('t') => {
+                    chars.next();
+                    out.push('\t');
+                }
+                Some('\\') => {
+                    chars.next();
+                    out.push('\\');
+                }
+                _ => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 // ─── Path Parsing ────────────────────────────────────────────────────────────
 
 /// Parse `path:N-M` into (path, Some((N, M))) or `path:N` into (path, Some((N, N))) or (path, None).
@@ -209,10 +245,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
                  Usage: 8v write <path> --append \"content\""
                 .to_string());
         }
-        let content = args.content.clone().ok_or(
+        let raw = args.content.clone().ok_or(
             "Error: content required for --append\n\
-             Usage: 8v write <path> --append \"content\"",
+             Usage: 8v write <path> --append \"content\"\n\
+             Escape sequences are interpreted: \\n = newline, \\t = tab, \\\\ = backslash",
         )?;
+        let content = unescape_content(&raw);
         if content.is_empty() {
             return Err(
                 "error: content cannot be empty for --append — provide non-empty content or omit the command"
@@ -228,10 +266,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
             "Error: insert requires a line number\n\
              Usage: 8v write <path>:<line> --insert \"content\"",
         )?;
-        let content = args.content.clone().ok_or(
+        let raw = args.content.clone().ok_or(
             "Error: content required for --insert\n\
-             Usage: 8v write <path>:<line> --insert \"content\"",
+             Usage: 8v write <path>:<line> --insert \"content\"\n\
+             Escape sequences are interpreted: \\n = newline, \\t = tab, \\\\ = backslash",
         )?;
+        let content = unescape_content(&raw);
         if content.is_empty() {
             return Err(
                 "error: content cannot be empty for replace/insert — use --delete to remove lines, or provide non-empty content"
@@ -242,15 +282,17 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
     }
 
     // Replace or create mode
-    let content = args.content.clone().ok_or(
+    let raw = args.content.clone().ok_or(
         "Error: content required\n\
          Usage: 8v write <path>:<line> \"content\"   (replace line)\n\
          Usage: 8v write <path>:<start>-<end> \"content\"   (replace range)\n\
-         Usage: 8v write <path> \"content\"   (create file)",
+         Usage: 8v write <path> \"content\"   (create file)\n\
+         Escape sequences are interpreted: \\n = newline, \\t = tab, \\\\ = backslash",
     )?;
 
     match line_range {
         Some((start, end)) => {
+            let content = unescape_content(&raw);
             if content.is_empty() {
                 return Err(
                     "error: content cannot be empty for replace/insert — use --delete to remove lines, or provide non-empty content"
@@ -271,7 +313,7 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
             }
         }
         None => Ok(WriteOperation::CreateFile {
-            content,
+            content: raw,
             force: args.force,
         }),
     }
@@ -647,8 +689,24 @@ pub(crate) fn write_to_report(
         }
     };
 
+    // Relativize display path against workspace root so rendered headers show
+    // relative paths even when MCP resolution has made args.path absolute.
+    // Falls back to the user-supplied path_str if the file is outside the workspace.
+    // Canonicalize before strip_prefix to handle OS symlinks (e.g. macOS
+    // /var → /private/var) that cause prefix mismatch when workspace.resolve()
+    // returns the non-canonical form but ContainmentRoot stores the canonical form.
+    // Use non-canonical `path` for safe_write above; canonical only for display.
+    let path_canonical = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => path.clone(),
+    };
+    let display_path_str = match path_canonical.strip_prefix(workspace.as_path()) {
+        Ok(rel) => rel.to_string_lossy().into_owned(),
+        Err(_) => path_str.clone(),
+    };
+
     Ok(WriteReport {
-        path: path_str,
+        path: display_path_str,
         operation: report_op,
     })
 }
@@ -852,5 +910,142 @@ mod tests {
         );
         // And must mention the path.
         assert!(hint.contains("f.txt"), "must cite path; got:\n{hint}");
+    }
+
+    // ── F6: escape sequences in content arguments ────────────────────────────
+    //
+    // These tests verify that \n, \t, and \\ in content arguments are
+    // interpreted as their corresponding characters, not kept as literals.
+    // They FAIL on pre-fix code (content stored verbatim) and pass after the fix.
+
+    #[test]
+    fn unescape_newline() {
+        // \n must become an actual newline character
+        let result = unescape_content("line1\\nline2");
+        assert_eq!(result, "line1\nline2", "\\n must become a newline");
+    }
+
+    #[test]
+    fn unescape_tab() {
+        let result = unescape_content("col1\\tcol2");
+        assert_eq!(result, "col1\tcol2", "\\t must become a tab");
+    }
+
+    #[test]
+    fn unescape_backslash() {
+        let result = unescape_content("a\\\\b");
+        assert_eq!(result, "a\\b", "\\\\\\ must become a single backslash");
+    }
+
+    #[test]
+    fn unescape_unknown_escape_preserved() {
+        // \x is not a recognised sequence — backslash stays
+        let result = unescape_content("a\\xb");
+        assert_eq!(
+            result, "a\\xb",
+            "unknown escape must preserve the backslash"
+        );
+    }
+
+    #[test]
+    fn unescape_multiple_sequences() {
+        let result = unescape_content("fn foo()\\n{\\n\\treturn;\\n}");
+        assert_eq!(result, "fn foo()\n{\n\treturn;\n}");
+    }
+
+    #[test]
+    fn append_operation_unescapes_newline() {
+        // validate_args must unescape content for AppendToFile
+        let args = Args {
+            path: "f.txt".to_string(),
+            content: Some("line1\\nline2".to_string()),
+            insert: false,
+            delete: false,
+            append: true,
+            find: None,
+            replace: None,
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::AppendToFile { content } => {
+                assert_eq!(
+                    content, "line1\nline2",
+                    "AppendToFile content must have real newline, not \\\\n literal"
+                );
+            }
+            other => panic!("expected AppendToFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn insert_operation_unescapes_newline() {
+        let args = Args {
+            path: "f.txt:5".to_string(),
+            content: Some("a\\nb".to_string()),
+            insert: true,
+            delete: false,
+            append: false,
+            find: None,
+            replace: None,
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::InsertBefore { content, .. } => {
+                assert_eq!(content, "a\nb", "InsertBefore content must unescape \\n");
+            }
+            other => panic!("expected InsertBefore, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replace_line_operation_unescapes_newline() {
+        let args = Args {
+            path: "f.txt:3".to_string(),
+            content: Some("x\\ny".to_string()),
+            insert: false,
+            delete: false,
+            append: false,
+            find: None,
+            replace: None,
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::ReplaceLine { content, .. } => {
+                assert_eq!(content, "x\ny", "ReplaceLine content must unescape \\n");
+            }
+            other => panic!("expected ReplaceLine, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replace_range_operation_unescapes_newline() {
+        let args = Args {
+            path: "f.txt:2-4".to_string(),
+            content: Some("a\\nb\\nc".to_string()),
+            insert: false,
+            delete: false,
+            append: false,
+            find: None,
+            replace: None,
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::ReplaceRange { content, .. } => {
+                assert_eq!(content, "a\nb\nc", "ReplaceRange content must unescape \\n");
+            }
+            other => panic!("expected ReplaceRange, got {other:?}"),
+        }
     }
 }

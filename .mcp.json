@@ -10,7 +10,7 @@
       "args": [
         "mcp"
       ],
-      "command": "./target/debug/8v"
+      "command": "8v-debug"
     }
   }
 }

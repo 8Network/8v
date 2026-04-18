@@ -20,6 +20,69 @@ use o8v_core::task::TaskId;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+/// RAII guard that guarantees `CommandCompleted` is emitted even on panic.
+///
+/// Created after `CommandStarted` is emitted. Holds a weak reference to the
+/// bus (to avoid keeping the bus alive past its intended lifetime) and the
+/// `run_id`. On `drop()`, if `complete()` was never called, emits
+/// `CommandCompleted` with `success=false` and `output_bytes=0`.
+///
+/// Normal paths call `complete()` explicitly, which arms the guard's
+/// "already emitted" flag and emits the real `CommandCompleted` (with accurate
+/// output_bytes and success). The `Drop` impl then does nothing.
+struct CommandGuard {
+    run_id: String,
+    start_ms: u64,
+    bus: std::sync::Weak<EventBus>,
+    /// Set to true once `complete()` is called. If false at drop time, the
+    /// guard emits a synthetic CommandCompleted to prevent an orphan Started.
+    completed: bool,
+}
+
+impl CommandGuard {
+    fn new(run_id: String, start_ms: u64, bus: &Arc<EventBus>) -> Self {
+        Self {
+            run_id,
+            start_ms,
+            bus: Arc::downgrade(bus),
+            completed: false,
+        }
+    }
+
+    /// Emit the real `CommandCompleted` and mark the guard as complete so
+    /// `drop()` does not emit a duplicate.
+    fn complete(&mut self, output_bytes: u64, success: bool) {
+        let duration_ms = Self::elapsed_ms(self.start_ms);
+        if let Some(bus) = self.bus.upgrade() {
+            let ev = CommandCompleted::new(self.run_id.clone(), output_bytes, duration_ms, success);
+            bus.emit(&ev);
+        }
+        self.completed = true;
+    }
+
+    fn elapsed_ms(start_ms: u64) -> u64 {
+        match std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH) {
+            Ok(d) => (d.as_millis() as u64).saturating_sub(start_ms),
+            Err(_) => 0,
+        }
+    }
+}
+
+impl Drop for CommandGuard {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        // Panic path or early return without calling complete() — emit a
+        // synthetic CommandCompleted so the event log has a matching pair.
+        let duration_ms = Self::elapsed_ms(self.start_ms);
+        if let Some(bus) = self.bus.upgrade() {
+            let ev = CommandCompleted::new(self.run_id.clone(), 0, duration_ms, false);
+            bus.emit(&ev);
+        }
+    }
+}
+
 /// Build a fully-wired CommandContext.
 ///
 /// 1. Creates Extensions with EventBus
@@ -126,29 +189,23 @@ where
         bus.emit(&ev);
     }
 
+    // Arm the RAII guard immediately after CommandStarted is emitted.
+    // If execute() or render() panics, Drop fires and emits a synthetic
+    // CommandCompleted(success=false) so the event log always has a matching pair.
+    let mut guard = ctx
+        .extensions
+        .get::<Arc<EventBus>>()
+        .map(|bus| CommandGuard::new(run_id.clone(), start_ms, bus));
+
     // Execute the command.
     let result = command.execute(ctx).await;
-    let success = result.is_ok();
 
-    // Compute duration.
-    let end_ms = match std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-    {
-        Ok(d) => d.as_millis() as u64,
-        Err(e) => {
-            tracing::warn!(error = %e, "dispatch: system clock is before UNIX_EPOCH, using 0 for end_ms");
-            0
-        }
-    };
-    let duration_ms = end_ms.saturating_sub(start_ms);
-
-    // On failure: emit CommandCompleted with success=false, then propagate the error.
-    // On success: render first (to get output_len), then emit CommandCompleted.
+    // On failure: disarm via guard.complete(0, false), then propagate the error.
+    // On success: render first (to get output_len), then disarm via guard.complete.
     let report = match result {
         Err(e) => {
-            if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
-                let ev = CommandCompleted::new(run_id, 0, duration_ms, false);
-                bus.emit(&ev);
+            if let Some(ref mut g) = guard {
+                g.complete(0, false);
             }
             return Err(e);
         }
@@ -159,9 +216,8 @@ where
     let output = o8v_core::render::render(&report, audience).into_string();
 
     // Emit CommandCompleted with the real output length.
-    if let Some(bus) = ctx.extensions.get::<Arc<EventBus>>() {
-        let ev = CommandCompleted::new(run_id, output.len() as u64, duration_ms, success);
-        bus.emit(&ev);
+    if let Some(ref mut g) = guard {
+        g.complete(output.len() as u64, true);
     }
 
     Ok((output, task_id, report))
@@ -244,6 +300,68 @@ mod tests {
                 "intentional test failure".to_string(),
             ))
         }
+    }
+
+    /// A command that panics inside execute() — used to verify CommandCompleted
+    /// is still emitted by the CommandGuard RAII drop handler.
+    struct PanicCommand;
+    impl o8v_core::command::Command for PanicCommand {
+        type Report = ();
+        async fn execute(&self, _ctx: &CommandContext) -> Result<(), CommandError> {
+            panic!("intentional panic in PanicCommand");
+        }
+    }
+
+    /// F5 regression: CommandCompleted must be emitted even when execute() panics.
+    ///
+    /// Pre-fix behaviour: dispatch() called bus.emit(CommandCompleted) only on
+    /// explicit Err and Ok paths. A panic bypassed both branches, leaving an
+    /// orphan CommandStarted with no matching CommandCompleted in the event log.
+    /// Post-fix: CommandGuard::drop() fires on panic unwind and emits the event.
+    ///
+    /// Strategy: run dispatch on a dedicated thread with its own single-threaded
+    /// tokio runtime so we can catch the panic via std::thread::spawn's join handle
+    /// without fighting the outer test runtime's `block_on` restrictions.
+    #[test]
+    fn dispatch_emits_completed_on_panic() {
+        // Shared recorder — Arc so we can move into the thread and read after join.
+        let recorder = Arc::new(RecordingSubscriber::new());
+        let recorder_clone = recorder.clone();
+
+        static PANIC_INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+        let handle = std::thread::spawn(move || {
+            // Build a fresh single-threaded runtime for this thread.
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+
+            rt.block_on(async {
+                let ctx = build_context(&PANIC_INTERRUPTED);
+                let bus = ctx.extensions.get::<Arc<EventBus>>().unwrap().clone();
+                bus.subscribe(recorder_clone.clone());
+
+                let cmd = PanicCommand;
+                let _ = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "panic", &[]).await;
+            });
+        });
+
+        // join() returns Err if the thread panicked — that is expected here.
+        let _ = handle.join();
+
+        // After the panic + unwind, CommandGuard::drop() must have fired.
+        let events = recorder.events.lock().unwrap();
+        assert!(
+            events.contains(&"CommandStarted"),
+            "CommandStarted must be recorded; events: {:?}",
+            *events
+        );
+        assert!(
+            events.contains(&"CommandCompleted"),
+            "CommandCompleted must be emitted by guard drop on panic; events: {:?}",
+            *events
+        );
     }
 
     #[tokio::test]

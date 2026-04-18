@@ -992,3 +992,42 @@ fn append_with_empty_content_rejected() {
         "file must be untouched on rejected append"
     );
 }
+
+// ─── F1 regression: absolute path must not leak in rendered output ────────────
+
+/// Regression for F1: when an absolute path is passed (as MCP does after
+/// resolve_mcp_paths), the rendered output header must show the relative path,
+/// not the absolute path.
+#[test]
+fn write_absolute_path_renders_relative_in_header() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("src.txt");
+    std::fs::write(&file, "line1\nline2\nline3\n").unwrap();
+
+    // Simulate what MCP does: pass the absolute path directly to the binary.
+    let abs_path = file.to_str().unwrap();
+    let out = bin_in(tmp.path())
+        .args(["write", &format!("{abs_path}:2"), "replaced"])
+        .output()
+        .expect("run 8v write");
+
+    assert!(
+        out.status.success(),
+        "should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The absolute path prefix of the temp dir must NOT appear in any header.
+    let abs_prefix = tmp.path().to_str().unwrap();
+    assert!(
+        !stdout.contains(abs_prefix),
+        "absolute path leaked in write output header:\n{stdout}"
+    );
+    // The relative filename must appear instead.
+    assert!(
+        stdout.contains("src.txt"),
+        "relative filename missing from write output header:\n{stdout}"
+    );
+}

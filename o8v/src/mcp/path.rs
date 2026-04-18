@@ -30,7 +30,7 @@ pub(crate) fn resolve_path(
             *path = absolute.to_string_lossy().into_owned();
             Ok(())
         }
-        Err(e) => Err(path_validation_error(e)),
+        Err(e) => Err(path_validation_error(e, &absolute, containment_root)),
     }
 }
 
@@ -87,9 +87,17 @@ pub(crate) fn resolve_optional_path(
 }
 
 /// Return error for path validation failures with contextual messaging.
-fn path_validation_error(e: o8v_fs::FsError) -> String {
+fn path_validation_error(
+    e: o8v_fs::FsError,
+    requested: &std::path::Path,
+    containment_root: &o8v_fs::ContainmentRoot,
+) -> String {
     match e {
-        o8v_fs::FsError::SymlinkEscape { .. } => "error: path escapes root directory".to_string(),
+        o8v_fs::FsError::SymlinkEscape { .. } => format!(
+            "error: path must be inside the current workspace\n  requested: {}\n  workspace: {}\n  hint: cd into a workspace, or pass a path inside the current one",
+            requested.display(),
+            containment_root.as_path().display(),
+        ),
         o8v_fs::FsError::IsSymlink { .. } => "error: path is a symlink".to_string(),
         _ => format!("error: cannot validate path: {e}"),
     }
@@ -119,5 +127,79 @@ pub(super) async fn get_root_directory(client: &Peer<RoleServer>) -> Option<Stri
             tracing::debug!(error = ?e, "mcp path: could not list MCP roots");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn make_containment_root(dir: &TempDir) -> o8v_fs::ContainmentRoot {
+        let root_path = std::fs::canonicalize(dir.path()).unwrap();
+        o8v_fs::ContainmentRoot::new(&root_path).unwrap()
+    }
+
+    // --- F8 regression: path-outside-root error must be actionable ---
+
+    /// Before the F8 fix, passing a path outside the workspace returned the
+    /// cryptic message "error: path escapes root directory" with no context.
+    /// After the fix it must include "workspace", the requested path, and a
+    /// hint. This test FAILS on pre-fix code (old message lacked those fields)
+    /// and passes on fixed code.
+    #[test]
+    fn f8_outside_path_error_contains_workspace_hint() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+
+        // Use an absolute path that cannot be inside the temp dir workspace.
+        // On macOS /tmp is a symlink → /private/tmp, so any /tmp/… path from
+        // a differently-rooted workspace triggers FsError::SymlinkEscape.
+        // We use /nonexistent_8v_test_path which is guaranteed to be outside.
+        let mut path = "/nonexistent_8v_test_path_outside_workspace".to_string();
+        let result = resolve_path(&mut path, &root);
+
+        assert!(result.is_err(), "expected Err for out-of-root path");
+        let msg = result.unwrap_err();
+
+        assert!(
+            msg.contains("workspace"),
+            "error message missing 'workspace': {msg}"
+        );
+        assert!(
+            msg.contains("requested"),
+            "error message missing 'requested': {msg}"
+        );
+        assert!(msg.contains("hint"), "error message missing 'hint': {msg}");
+    }
+
+    #[test]
+    fn f8_outside_path_error_includes_paths() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        let mut path = "/nonexistent_8v_test_path_outside_workspace".to_string();
+        let result = resolve_path(&mut path, &root);
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        // The error must mention the requested path — so the user knows what
+        // they asked for.
+        assert!(
+            msg.contains("nonexistent_8v_test_path_outside_workspace"),
+            "error message should mention the requested path: {msg}"
+        );
+    }
+
+    #[test]
+    fn f8_inside_path_resolves_ok() {
+        let dir = TempDir::new().unwrap();
+        let root = make_containment_root(&dir);
+        std::fs::write(dir.path().join("hello.rs"), "fn main() {}").unwrap();
+        let mut path = "hello.rs".to_string();
+        let result = resolve_path(&mut path, &root);
+        assert!(
+            result.is_ok(),
+            "expected Ok for in-root path, got {result:?}"
+        );
     }
 }

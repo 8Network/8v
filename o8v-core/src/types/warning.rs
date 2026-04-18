@@ -64,6 +64,20 @@ pub enum Warning {
 }
 
 impl Warning {
+    /// Return the `SessionId` this warning is scoped to, if any.
+    ///
+    /// Returns `Some` only for variants that carry a session field
+    /// (`NormalizerBasenameFallback`, `ReversedTimestamps`).  All other
+    /// variants are considered global — they are not tied to a specific
+    /// session and are always included regardless of the rendering limit.
+    pub fn session_id(&self) -> Option<&SessionId> {
+        match self {
+            Warning::NormalizerBasenameFallback { session, .. } => Some(session),
+            Warning::ReversedTimestamps { session, .. } => Some(session),
+            _ => None,
+        }
+    }
+
     /// Short machine tag, matching the serde `kind` field.
     pub fn kind(&self) -> &'static str {
         match self {

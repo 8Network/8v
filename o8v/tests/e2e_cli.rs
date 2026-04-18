@@ -11,6 +11,21 @@ fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_8v"))
 }
 
+fn bin_in(dir: &std::path::Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_8v"));
+    cmd.current_dir(dir);
+    cmd
+}
+
+/// Create a minimal project root so `WorkspaceRoot` resolves from CWD.
+fn setup_project(tmp: &tempfile::TempDir) {
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+}
+
 // ─── Help and version ──────────────────────────────────────────────────────
 
 #[test]
@@ -149,5 +164,82 @@ fn no_subcommand_shows_help() {
     assert!(
         stderr.contains("Usage") || stderr.contains("check"),
         "expected usage info, got: {stderr}"
+    );
+}
+
+// ─── F1 regression: absolute path must not leak in read output headers ────────
+
+/// Regression for F1: when an absolute path is passed (as MCP does after
+/// resolve_mcp_paths), the rendered output header must show the relative path,
+/// not the absolute path.
+#[test]
+fn read_absolute_path_renders_relative_in_header() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    // Create a file inside the workspace.
+    std::fs::write(
+        tmp.path().join("example.txt"),
+        "fn hello() {}\nfn world() {}\n",
+    )
+    .unwrap();
+
+    // Simulate what MCP does: pass the absolute path directly.
+    let abs_path = tmp.path().join("example.txt");
+    let abs_path_str = abs_path.to_str().unwrap();
+    let out = bin_in(tmp.path())
+        .args(["read", "--full", abs_path_str])
+        .output()
+        .expect("run 8v read");
+
+    assert!(
+        out.status.success(),
+        "should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The absolute path prefix of the temp dir must NOT appear in any header.
+    let abs_prefix = tmp.path().to_str().unwrap();
+    assert!(
+        !stdout.contains(abs_prefix),
+        "absolute path leaked in read output header:\n{stdout}"
+    );
+    // The relative filename must appear instead.
+    assert!(
+        stdout.contains("example.txt"),
+        "relative filename missing from read output header:\n{stdout}"
+    );
+}
+
+/// Regression for F1 (range variant): line-range read with an absolute path
+/// must render only the relative path in its header.
+#[test]
+fn read_range_absolute_path_renders_relative_in_header() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    std::fs::write(tmp.path().join("example.txt"), "line1\nline2\nline3\n").unwrap();
+
+    let abs_path = tmp.path().join("example.txt");
+    let abs_range = format!("{}:1-2", abs_path.to_str().unwrap());
+    let out = bin_in(tmp.path())
+        .args(["read", &abs_range])
+        .output()
+        .expect("run 8v read");
+
+    assert!(
+        out.status.success(),
+        "should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let abs_prefix = tmp.path().to_str().unwrap();
+    assert!(
+        !stdout.contains(abs_prefix),
+        "absolute path leaked in range read output header:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("example.txt"),
+        "relative filename missing from range read output header:\n{stdout}"
     );
 }

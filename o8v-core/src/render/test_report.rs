@@ -10,10 +10,44 @@ use crate::render::RenderConfig;
 pub struct TestReport {
     pub process: ProcessReport,
     pub stack: String,
+    /// Short project name (directory basename).
+    pub name: String,
     pub detection_errors: Vec<String>,
     pub render_config: RenderConfig,
     /// Structured errors extracted from test output (errors-first rendering).
     pub errors: Vec<Diagnostic>,
+}
+
+/// Parsed summary from cargo test JSON output.
+struct SuiteSummary {
+    passed: u64,
+    failed: u64,
+    ignored: u64,
+}
+
+/// Parse the last `{"type":"suite","event":"ok"|"failed",...}` line from cargo's JSON output.
+fn parse_suite_summary(stdout: &str) -> Option<SuiteSummary> {
+    let mut last: Option<SuiteSummary> = None;
+    for line in stdout.lines() {
+        let line = line.trim();
+        if !line.starts_with('{') {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) == Some("suite") {
+            let event = v.get("event").and_then(|e| e.as_str()).unwrap_or("");
+            if event == "ok" || event == "failed" {
+                last = Some(SuiteSummary {
+                    passed: v.get("passed").and_then(|x| x.as_u64()).unwrap_or(0),
+                    failed: v.get("failed").and_then(|x| x.as_u64()).unwrap_or(0),
+                    ignored: v.get("ignored").and_then(|x| x.as_u64()).unwrap_or(0),
+                });
+            }
+        }
+    }
+    last
 }
 
 impl super::Renderable for TestReport {
@@ -25,24 +59,74 @@ impl super::Renderable for TestReport {
             buf.push_str(&format!("warning: {e}\n"));
         }
 
-        buf.push_str(&format!("$ {}\n", p.command));
-        buf.push_str(&format!("exit: {}\n", p.exit_label));
-        buf.push_str(&format!("duration: {}\n", p.duration_display));
+        // Progressive header: "{name} {stack}"
+        buf.push_str(&format!("{} {}\n", self.name, self.stack));
 
-        if self.render_config.errors_first && !self.errors.is_empty() {
-            const MAX_ERRORS: usize = 10;
-            let shown = self.errors.len().min(MAX_ERRORS);
-            buf.push_str(&format!("\nerrors ({}):\n", self.errors.len()));
-            for diag in self.errors.iter().take(MAX_ERRORS) {
-                buf.push_str(&format!("  {}\n", diag.message));
+        if p.success {
+            // Parse cargo JSON to get counts.
+            if let Some(s) = parse_suite_summary(&p.stdout) {
+                buf.push_str(&format!(
+                    "tests {} passed {} failed {} ignored {}\n",
+                    s.passed, s.failed, s.ignored, p.duration_display
+                ));
+            } else {
+                buf.push_str(&format!("tests passed {}\n", p.duration_display));
             }
-            if self.errors.len() > shown {
-                let remaining = self.errors.len() - shown;
-                buf.push_str(&format!("  ... and {} more\n", remaining));
+        } else {
+            // Show summary line.
+            if let Some(s) = parse_suite_summary(&p.stdout) {
+                buf.push_str(&format!(
+                    "tests {} passed {} failed {} ignored {}\n",
+                    s.passed, s.failed, s.ignored, p.duration_display
+                ));
+            } else {
+                buf.push_str(&format!("tests failed {}\n", p.duration_display));
+            }
+
+            // Show structured diagnostics when available.
+            if !self.errors.is_empty() {
+                const MAX_ERRORS: usize = 10;
+                for diag in self.errors.iter().take(MAX_ERRORS) {
+                    let file = match &diag.location {
+                        crate::diagnostic::Location::File(f)
+                        | crate::diagnostic::Location::Absolute(f) => f.as_str(),
+                    };
+                    let location = match diag.span.as_ref().map(|s| s.line) {
+                        Some(l) => format!("{}:{}: ", file, l),
+                        None => format!("{}: ", file),
+                    };
+                    buf.push_str(&format!("  {}{}\n", location, diag.message));
+                }
+                if self.errors.len() > MAX_ERRORS {
+                    let remaining = self.errors.len() - MAX_ERRORS;
+                    buf.push_str(&format!("  ... and {} more\n", remaining));
+                }
+            } else {
+                // Parse failed test names from JSON output.
+                let mut showed_failure = false;
+                for line in p.stdout.lines() {
+                    let line = line.trim();
+                    if !line.starts_with('{') {
+                        continue;
+                    }
+                    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                        continue;
+                    };
+                    if v.get("type").and_then(|t| t.as_str()) == Some("test")
+                        && v.get("event").and_then(|e| e.as_str()) == Some("failed")
+                    {
+                        if let Some(name) = v.get("name").and_then(|n| n.as_str()) {
+                            buf.push_str(&format!("  FAILED {}\n", name));
+                            showed_failure = true;
+                        }
+                    }
+                }
+                if !showed_failure && !p.stderr.trim().is_empty() {
+                    buf.push_str(&format!("{}\n", p.stderr.trim()));
+                }
             }
         }
 
-        super::run_report::render_process_output(&mut buf, p, &self.render_config);
         Output::new(buf)
     }
 
@@ -50,19 +134,25 @@ impl super::Renderable for TestReport {
         let p = &self.process;
         let errors_json = serde_json::to_value(&self.errors)
             .expect("BUG: Vec<Diagnostic> is always serializable");
+
+        // Parse suite summary for structured counts.
+        let suite = parse_suite_summary(&p.stdout);
         let json = serde_json::json!({
-            "command": p.command,
+            "name": self.name,
+            "stack": self.stack,
+            "success": p.success,
             "exit_code": p.exit_code,
-            "stdout": p.stdout.trim(),
-            "stderr": p.stderr.trim(),
             "duration_ms": p.duration.as_millis() as u64,
+            "command": p.command,
+            "passed": suite.as_ref().map(|s| s.passed),
+            "failed": suite.as_ref().map(|s| s.failed),
+            "ignored": suite.as_ref().map(|s| s.ignored),
+            "errors": errors_json,
+            "detection_errors": self.detection_errors,
             "truncated": {
                 "stdout": p.stdout_truncated,
                 "stderr": p.stderr_truncated,
             },
-            "stack": self.stack,
-            "detection_errors": self.detection_errors,
-            "errors": errors_json,
         });
         let s = match serde_json::to_string(&json) {
             Ok(s) => s,
@@ -78,34 +168,104 @@ mod tests {
     use crate::render::Renderable;
     use std::time::Duration;
 
+    fn sample_stdout_json() -> String {
+        // Minimal cargo --format=json output for a passing suite with 2 tests.
+        r#"{"type":"suite","event":"started","test_count":2}
+{"type":"test","event":"ok","name":"foo","exec_time":0.1}
+{"type":"test","event":"ok","name":"bar","exec_time":0.1}
+{"type":"suite","event":"ok","passed":2,"failed":0,"ignored":0,"measured":0,"filtered_out":0,"exec_time":0.539}"#
+            .to_string()
+    }
+
     fn sample() -> TestReport {
         TestReport {
             process: ProcessReport {
-                command: "cargo test".to_string(),
+                command: "cargo test --format=json --report-time".to_string(),
                 exit_code: 0,
                 success: true,
                 exit_label: "0 (success)".to_string(),
-                duration: Duration::from_millis(1234),
-                duration_display: "1.23s".to_string(),
-                stdout: "test result: ok. 5 passed".to_string(),
+                duration: Duration::from_millis(539),
+                duration_display: "539ms".to_string(),
+                stdout: sample_stdout_json(),
                 stderr: String::new(),
                 stdout_truncated: false,
                 stderr_truncated: false,
             },
             stack: "rust".to_string(),
+            name: "myproject".to_string(),
             detection_errors: vec![],
             render_config: RenderConfig::default(),
             errors: vec![],
         }
     }
 
+    fn sample_failure() -> TestReport {
+        let stdout = r#"{"type":"suite","event":"started","test_count":1}
+{"type":"test","event":"failed","name":"my_test","exec_time":0.01}
+{"type":"suite","event":"failed","passed":0,"failed":1,"ignored":0,"measured":0,"filtered_out":0,"exec_time":0.5}"#
+            .to_string();
+        TestReport {
+            process: ProcessReport {
+                command: "cargo test --format=json --report-time".to_string(),
+                exit_code: 1,
+                success: false,
+                exit_label: "1".to_string(),
+                duration: Duration::from_millis(500),
+                duration_display: "500ms".to_string(),
+                stdout,
+                stderr: String::new(),
+                stdout_truncated: false,
+                stderr_truncated: false,
+            },
+            stack: "rust".to_string(),
+            name: "myproject".to_string(),
+            detection_errors: vec![],
+            render_config: RenderConfig::default(),
+            errors: vec![],
+        }
+    }
+
+    /// Regression test: must FAIL on old code that starts with "$ cargo test\n".
     #[test]
-    fn plain_format() {
+    fn plain_success_progressive_format() {
         let out = sample().render_plain();
         let text = out.as_str();
-        assert!(text.starts_with("$ cargo test\n"));
-        assert!(text.contains("exit: 0 (success)\n"));
-        assert!(text.contains("duration: 1.23s\n"));
+        assert!(
+            text.starts_with("myproject rust\n"),
+            "expected progressive header 'myproject rust\\n', got: {text:?}"
+        );
+        assert!(
+            text.contains("tests 2 passed 0 failed 0 ignored 539ms"),
+            "expected test counts and duration, got: {text:?}"
+        );
+        // Must NOT contain old verbose format markers.
+        assert!(
+            !text.contains("$ cargo test"),
+            "must not contain raw command line: {text:?}"
+        );
+        assert!(
+            !text.contains("exit:"),
+            "must not contain 'exit:' in progressive output: {text:?}"
+        );
+    }
+
+    /// Regression test: failure shows counts + failed test names.
+    #[test]
+    fn plain_failure_progressive_format() {
+        let out = sample_failure().render_plain();
+        let text = out.as_str();
+        assert!(
+            text.starts_with("myproject rust\n"),
+            "expected 'myproject rust\\n', got: {text:?}"
+        );
+        assert!(
+            text.contains("0 passed 1 failed"),
+            "expected failure counts, got: {text:?}"
+        );
+        assert!(
+            text.contains("FAILED my_test"),
+            "expected failed test name, got: {text:?}"
+        );
     }
 
     #[test]
@@ -117,10 +277,15 @@ mod tests {
     }
 
     #[test]
-    fn json_valid() {
+    fn json_has_name_stack_counts() {
         let out = sample().render_json();
         let v: serde_json::Value = serde_json::from_str(out.as_str()).unwrap();
-        assert_eq!(v["command"], "cargo test");
-        assert_eq!(v["exit_code"], 0);
+        assert_eq!(v["name"], "myproject");
+        assert_eq!(v["stack"], "rust");
+        assert_eq!(v["success"], true);
+        assert_eq!(v["passed"], 2);
+        assert_eq!(v["failed"], 0);
+        // Must NOT contain raw stdout/stderr.
+        assert!(v.get("stdout").is_none(), "raw stdout must not be in JSON");
     }
 }

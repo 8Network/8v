@@ -66,6 +66,21 @@ fn read_one(
     let abs_path = workspace.resolve(&file_path);
     let root = workspace.containment();
 
+    // Relativize display path against workspace root so rendered headers show
+    // relative paths even when MCP resolution has made args.paths absolute.
+    // Canonicalize before strip_prefix to handle OS symlinks (e.g. macOS
+    // /var → /private/var) that cause prefix mismatch when workspace.resolve()
+    // returns the non-canonical form but ContainmentRoot stores the canonical form.
+    // Falls back to the user-supplied label if the file is outside the workspace.
+    let abs_path_canonical = match abs_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => abs_path.clone(),
+    };
+    let display_path = match abs_path_canonical.strip_prefix(workspace.as_path()) {
+        Ok(rel) => rel.to_string_lossy().into_owned(),
+        Err(_) => file_path.clone(),
+    };
+
     let config = o8v_fs::FsConfig::default();
     let file = match o8v_fs::safe_read(&abs_path, root, &config) {
         Ok(f) => f,
@@ -123,7 +138,7 @@ fn read_one(
             })
             .collect();
         ReadReport::Range {
-            path: file_path,
+            path: display_path,
             start: clamped_start,
             end: clamped_end,
             total_lines,
@@ -139,7 +154,7 @@ fn read_one(
             })
             .collect();
         ReadReport::Full {
-            path: file_path,
+            path: display_path,
             total_lines,
             lines,
         }
@@ -159,7 +174,7 @@ fn read_one(
             })
             .collect();
         ReadReport::Symbols {
-            path: file_path,
+            path: display_path,
             total_lines,
             symbols: entries,
         }
@@ -193,6 +208,21 @@ pub fn read_to_report(
         .paths
         .iter()
         .map(|label| {
+            // Relativize the label's path portion for display, preserving any :N-M suffix.
+            let (path_part, range_suffix) = {
+                let (p, r) = parse_path_range(label);
+                let suffix = r.map(|(s, e)| format!(":{s}-{e}")).unwrap_or_default();
+                (p, suffix)
+            };
+            let abs = workspace.resolve(&path_part);
+            let abs_canonical = match abs.canonicalize() {
+                Ok(p) => p,
+                Err(_) => abs.clone(),
+            };
+            let display_label = match abs_canonical.strip_prefix(workspace.as_path()) {
+                Ok(rel) => format!("{}{}", rel.to_string_lossy(), range_suffix),
+                Err(_) => label.clone(),
+            };
             let result = match read_one(label, args.full, workspace) {
                 Ok(report) => MultiResult::Ok {
                     report: Box::new(report),
@@ -200,7 +230,7 @@ pub fn read_to_report(
                 Err(message) => MultiResult::Err { message },
             };
             MultiEntry {
-                label: label.clone(),
+                label: display_label,
                 result,
             }
         })

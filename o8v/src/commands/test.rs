@@ -99,13 +99,19 @@ impl Command for TestCommand {
         // etc.). Without this the agent hits a native-runner error from the
         // stock default and thrashes since Bash is denied.
         let project_path = std::path::PathBuf::from(project.path().to_string());
-        let resolved = o8v_stacks::resolve_test_tool(
+        let mut resolved = o8v_stacks::resolve_test_tool(
             project.stack(),
             &project_path,
             test_tool.program,
             test_tool.args,
         )
         .map_err(|e| CommandError::Execution(format!("8v test: {e}")))?;
+
+        // Inject JSON output flags for cargo so parse_suite_summary can extract counts.
+        if resolved.program == "cargo" {
+            resolved.args.push("--format=json".to_string());
+            resolved.args.push("--report-time".to_string());
+        }
 
         let mut cmd = std::process::Command::new(&resolved.program);
         cmd.args(&resolved.args);
@@ -139,7 +145,13 @@ impl Command for TestCommand {
             vec![]
         };
 
+        let name = project_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
         Ok(TestReport {
+            name,
             process: o8v_core::process_report::ProcessReport {
                 command: cmd_str,
                 exit_code: exit_code_number(&proc_result.outcome),
