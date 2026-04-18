@@ -36,6 +36,7 @@ struct InitDir {
     claude_md: std::path::PathBuf,
     agents_md: std::path::PathBuf,
     config_toml: std::path::PathBuf,
+    aider_conf: std::path::PathBuf,
 }
 
 impl InitDir {
@@ -43,6 +44,7 @@ impl InitDir {
     const CLAUDE_MD: &'static str = "CLAUDE.md";
     const AGENTS_MD: &'static str = "AGENTS.md";
     const CONFIG_TOML: &'static str = ".8v/config.toml";
+    const AIDER_CONF: &'static str = ".aider.conf.yml";
 
     fn new(root: &o8v_fs::ContainmentRoot) -> Self {
         let base = root.as_path();
@@ -51,6 +53,7 @@ impl InitDir {
             claude_md: base.join(Self::CLAUDE_MD),
             agents_md: base.join(Self::AGENTS_MD),
             config_toml: base.join(Self::CONFIG_TOML),
+            aider_conf: base.join(Self::AIDER_CONF),
         }
     }
 
@@ -65,6 +68,9 @@ impl InitDir {
     }
     fn config_toml(&self) -> &std::path::Path {
         &self.config_toml
+    }
+    fn aider_conf(&self) -> &std::path::Path {
+        &self.aider_conf
     }
 }
 
@@ -306,6 +312,25 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
                 completed.push("AGENTS.md — 8v block upgraded");
             }
         }
+    }
+
+    // Step 5b: Aider integration
+    if confirm("Set up Aider integration?", args.yes) {
+        const AIDER_CONF_CONTENT: &str = "\
+lint-cmd: 8v check .\n\
+test-cmd: 8v test .\n\
+auto-lint: true\n\
+no-auto-commits: true\n";
+        if let Err(e) = o8v_fs::safe_write(
+            init_dir.aider_conf(),
+            project_root,
+            AIDER_CONF_CONTENT.as_bytes(),
+        ) {
+            eprintln!("error: failed to write .aider.conf.yml: {e}");
+            return ExitCode::from(EXIT_FAIL);
+        }
+        eprintln!("✓ Updated .aider.conf.yml");
+        completed.push(".aider.conf.yml — Aider uses 8v for lint and test");
     }
 
     // Step 6: Pre-commit hook

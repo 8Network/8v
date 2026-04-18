@@ -24,6 +24,8 @@ use std::sync::atomic::AtomicBool;
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
+    #[command(flatten)]
+    pub format: crate::commands::output_format::OutputFormat,
     #[command(subcommand)]
     pub command: HooksCommand,
 }

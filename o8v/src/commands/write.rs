@@ -32,7 +32,7 @@ pub struct Args {
     #[arg(long)]
     pub delete: bool,
 
-    /// Append to end of file
+    /// Append to end of file. Appended content is written verbatim; add \n to the value if you want a trailing newline.
     #[arg(long)]
     pub append: bool,
 

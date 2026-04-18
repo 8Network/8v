@@ -69,7 +69,7 @@ pub struct Args {
     #[arg(long)]
     pub meta: bool,
 
-    /// Max files to list (default: 500)
+    /// Maximum number of files to list (default: 500)
     #[arg(long, default_value = "500")]
     pub limit: usize,
 

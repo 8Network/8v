@@ -84,7 +84,9 @@ impl Command {
             Command::Log(a) => a.format.audience_with_default(default),
             Command::Stats(a) => a.format.audience_with_default(default),
             Command::Init(a) => a.format.audience_with_default(default),
-            Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => default,
+            Command::Hooks(a) => a.format.audience_with_default(default),
+            Command::Upgrade(a) => a.format.audience_with_default(default),
+            Command::Mcp => default,
         }
     }
 

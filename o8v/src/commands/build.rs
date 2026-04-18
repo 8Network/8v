@@ -18,7 +18,7 @@ pub struct Args {
     #[arg(long, default_value = "300")]
     pub timeout: u64,
 
-    /// Maximum output lines to show per section (0 = no limit)
+    /// Maximum output lines shown per failing section (default: 30; 0 = no limit)
     #[arg(long, default_value = "30")]
     pub limit: usize,
 

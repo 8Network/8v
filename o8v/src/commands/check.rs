@@ -14,7 +14,7 @@ pub struct Args {
     #[arg(long, short)]
     pub verbose: bool,
 
-    /// Max lines of error detail per check (0 = no limit)
+    /// Maximum number of error lines shown per check (default: 10; 0 = no limit)
     #[arg(long, default_value = "10", value_parser = parse_limit)]
     pub limit: usize,
 

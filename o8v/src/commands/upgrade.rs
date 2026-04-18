@@ -23,6 +23,9 @@ pub struct Args {
     /// Include pre-release versions
     #[arg(long)]
     pub pre: bool,
+
+    #[command(flatten)]
+    pub format: super::output_format::OutputFormat,
 }
 
 // ─── Platform Detection ──────────────────────────────────────────────────────
@@ -306,7 +309,16 @@ impl Command for UpgradeCommand {
             return Err(CommandError::Interrupted);
         }
 
-        run_impl_report(&self.args, BASE_URL, None, None).map_err(CommandError::Execution)
+        let report = match run_impl_report(&self.args, BASE_URL, None, None) {
+            Ok(r) => r,
+            Err(e) => UpgradeReport {
+                current_version: env!("CARGO_PKG_VERSION").to_string(),
+                latest_version: None,
+                upgraded: false,
+                error: Some(e),
+            },
+        };
+        Ok(report)
     }
 }
 
@@ -623,7 +635,11 @@ mod tests {
     }
 
     fn test_args(force: bool, pre: bool) -> Args {
-        Args { force, pre }
+        Args {
+            force,
+            pre,
+            format: Default::default(),
+        }
     }
 
     fn current_platform_binary() -> &'static str {
