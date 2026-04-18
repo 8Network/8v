@@ -243,7 +243,7 @@ pub(crate) fn do_ls(
     let root: PathBuf = match args.path.as_deref() {
         Some(p) => {
             if p.contains('\0') {
-                return Err("error: path argument contains null bytes".to_string());
+                return Err("path argument contains null bytes".to_string());
             }
             workspace.resolve(p)
         }
@@ -252,10 +252,10 @@ pub(crate) fn do_ls(
 
     let root = root
         .canonicalize()
-        .map_err(|e| format!("error: cannot access path '{}': {e}", root.display()))?;
+        .map_err(|e| format!("cannot access path '{}': {e}", root.display()))?;
 
     if !root.is_dir() {
-        return Err(format!("error: '{}' is not a directory", root.display()));
+        return Err(format!("'{}' is not a directory", root.display()));
     }
 
     // Create containment root anchored at the scan root (not the workspace root).
@@ -263,19 +263,15 @@ pub(crate) fn do_ls(
     // containment at `root` to avoid rejecting those paths.
     let containment = o8v_fs::ContainmentRoot::new(&root).map_err(|e| {
         format!(
-            "error: cannot create containment root for '{}': {e}",
+            "cannot create containment root for '{}': {e}",
             root.display()
         )
     })?;
     let fs_config = FsConfig::default();
 
     // Detect projects
-    let project_root = o8v_core::project::ProjectRoot::new(&root).map_err(|e| {
-        format!(
-            "error: cannot create project root for '{}': {e}",
-            root.display()
-        )
-    })?;
+    let project_root = o8v_core::project::ProjectRoot::new(&root)
+        .map_err(|e| format!("cannot create project root for '{}': {e}", root.display()))?;
     let detect_result = o8v_stacks::detect_all(&project_root);
     let detected_projects = detect_result.projects();
 

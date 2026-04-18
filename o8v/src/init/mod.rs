@@ -79,17 +79,20 @@ pub struct Args {
     #[arg(long, short = 'y')]
     pub yes: bool,
 
+    #[command(flatten)]
+    pub format: crate::commands::output_format::OutputFormat,
+
     /// Override the `command` field written to `.mcp.json` for the 8v server.
     /// Defaults to `"8v"` (resolved via PATH). Used by the benchmark harness
     /// so the spawned MCP server is the same binary under test.
     #[arg(long = "mcp-command", value_name = "PATH")]
+    pub mcp_command: Option<String>,
 
     /// Override the `name` key written to `.mcp.json` for the 8v server entry.
     /// Defaults to `"8v"`. Use `"8v-debug"` when registering a debug binary
     /// alongside the released one so both coexist without overwriting each other.
     #[arg(long = "mcp-name", value_name = "NAME", default_value = "8v")]
     pub mcp_name: String,
-    pub mcp_command: Option<String>,
 }
 
 // ─── Run ────────────────────────────────────────────────────────────────────

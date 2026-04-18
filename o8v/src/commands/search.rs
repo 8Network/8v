@@ -114,12 +114,12 @@ fn truncate_line(s: &str) -> String {
 /// Build and compile the regex from args.
 fn build_regex(args: &Args) -> Result<Regex, String> {
     if args.pattern.is_empty() {
-        return Err("error: pattern cannot be empty".to_string());
+        return Err("pattern cannot be empty".to_string());
     }
     RegexBuilder::new(&args.pattern)
         .case_insensitive(args.ignore_case)
         .build()
-        .map_err(|e| format!("error: invalid regex pattern: {e}"))
+        .map_err(|e| format!("invalid regex pattern: {e}"))
 }
 
 /// Search file contents for regex matches.
@@ -258,7 +258,7 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
     // Canonicalize so we can compute relative paths later.
     let root = root
         .canonicalize()
-        .map_err(|e| format!("error: cannot access path '{}': {e}", root.display()))?;
+        .map_err(|e| format!("cannot access path '{}': {e}", root.display()))?;
 
     let containment = workspace.containment();
     let config = FsConfig::default();

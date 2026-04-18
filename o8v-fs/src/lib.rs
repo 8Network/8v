@@ -101,7 +101,7 @@ pub fn safe_exists(path: &std::path::Path, root: &ContainmentRoot) -> Result<boo
         loop {
             if ancestor.as_os_str().is_empty() {
                 // Walked past filesystem root — path escapes containment.
-                return Err(FsError::SymlinkEscape {
+                return Err(FsError::ContainmentViolation {
                     path: path.to_path_buf(),
                 });
             }
@@ -109,14 +109,14 @@ pub fn safe_exists(path: &std::path::Path, root: &ContainmentRoot) -> Result<boo
                 let canonical_ancestor = std::fs::canonicalize(&ancestor)
                     .map_err(|e| error::classify_io_error(&ancestor, e))?;
                 if !canonical_ancestor.starts_with(canonical_root) {
-                    return Err(FsError::SymlinkEscape {
+                    return Err(FsError::ContainmentViolation {
                         path: path.to_path_buf(),
                     });
                 }
                 break;
             }
             if !ancestor.pop() {
-                return Err(FsError::SymlinkEscape {
+                return Err(FsError::ContainmentViolation {
                     path: path.to_path_buf(),
                 });
             }

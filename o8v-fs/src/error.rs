@@ -44,6 +44,10 @@ pub enum FsError {
     /// Symlink resolves outside the containment boundary.
     /// Error message omits resolved target (security, bug #143).
     SymlinkEscape { path: PathBuf },
+    /// Path is outside the containment boundary (not a symlink issue).
+    /// Used when an absolute or resolved path simply does not start with
+    /// the containment root — no symlink is involved.
+    ContainmentViolation { path: PathBuf },
     /// Not a regular file: directory, FIFO, device, socket, etc.
     NotRegularFile { path: PathBuf, kind: FileKind },
     /// File exceeds the configured size limit.
@@ -91,6 +95,9 @@ impl std::fmt::Display for FsError {
             }
             Self::SymlinkEscape { path } => {
                 write!(f, "symlink escapes project directory: {}", path.display())
+            }
+            Self::ContainmentViolation { path } => {
+                write!(f, "path escapes project directory: {}", path.display())
             }
             Self::NotRegularFile { path, kind } => {
                 write!(f, "not a regular file ({}): {}", kind, path.display())
@@ -162,6 +169,7 @@ impl FsError {
             Self::NotFound { .. } => "not_found",
             Self::PermissionDenied { .. } => "permission_denied",
             Self::SymlinkEscape { .. } => "symlink_escape",
+            Self::ContainmentViolation { .. } => "containment_violation",
             Self::NotRegularFile { .. } => "not_regular_file",
             Self::TooLarge { .. } => "too_large",
             Self::RaceCondition { .. } => "race_condition",
@@ -181,6 +189,7 @@ impl FsError {
             Self::NotFound { path }
             | Self::PermissionDenied { path }
             | Self::SymlinkEscape { path }
+            | Self::ContainmentViolation { path }
             | Self::NotRegularFile { path, .. }
             | Self::TooLarge { path, .. }
             | Self::RaceCondition { path }

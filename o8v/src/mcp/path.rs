@@ -93,7 +93,7 @@ fn path_validation_error(
     containment_root: &o8v_fs::ContainmentRoot,
 ) -> String {
     match e {
-        o8v_fs::FsError::SymlinkEscape { .. } => format!(
+        o8v_fs::FsError::SymlinkEscape { .. } | o8v_fs::FsError::ContainmentViolation { .. } => format!(
             "error: path must be inside the current workspace\n  requested: {}\n  workspace: {}\n  hint: cd into a workspace, or pass a path inside the current one",
             requested.display(),
             containment_root.as_path().display(),

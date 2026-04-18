@@ -14,6 +14,7 @@ pub mod build;
 pub mod check;
 pub mod fmt;
 pub mod hooks;
+pub mod init;
 pub mod log;
 pub mod ls;
 pub mod output_format;
@@ -82,7 +83,8 @@ impl Command {
             Command::Ls(a) => a.format.audience_with_default(default),
             Command::Log(a) => a.format.audience_with_default(default),
             Command::Stats(a) => a.format.audience_with_default(default),
-            Command::Init(_) | Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => default,
+            Command::Init(a) => a.format.audience_with_default(default),
+            Command::Hooks(_) | Command::Upgrade(_) | Command::Mcp => default,
         }
     }
 
@@ -313,12 +315,16 @@ pub async fn dispatch_command_with_agent(
             Ok((output, exit, false))
         }
         Command::Init(args) => {
-            let exit = crate::init::run(&args);
-            if exit == ExitCode::SUCCESS {
-                Ok(("init complete".to_string(), ExitCode::SUCCESS, false))
+            let cmd = init::InitCommand { args };
+            let (output, _, report) =
+                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                    .await?;
+            let exit = if report.success {
+                ExitCode::SUCCESS
             } else {
-                Ok(("error: init failed".to_string(), ExitCode::FAILURE, true))
-            }
+                ExitCode::FAILURE
+            };
+            Ok((output, exit, false))
         }
         Command::Mcp => Err(CommandError::Execution("not a dispatchable command".into())),
     }

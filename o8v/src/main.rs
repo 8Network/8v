@@ -4,7 +4,7 @@
 
 //! The 8v CLI — entry point. Parses input, forwards to dispatch. No logic here.
 
-use o8v::{cli, commands, init, mcp, signal, tracing};
+use o8v::{cli, commands, mcp, signal, tracing};
 
 use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
@@ -33,7 +33,6 @@ fn main() -> ExitCode {
     let cli = cli::Cli::parse();
 
     match cli.command {
-        commands::Command::Init(args) => init::run(&args),
         commands::Command::Mcp => {
             let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
