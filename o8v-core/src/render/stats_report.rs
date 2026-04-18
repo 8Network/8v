@@ -48,7 +48,7 @@ pub fn render_table(header_label: &str, rows: &[StatsRow]) -> String {
     // Header
     // plain headers are display shorthand; JSON field names are the contract.
     out.push_str(&format!(
-        "{:<label_w$}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>8}  {:>14}\n",
+        "{:<label_w$}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>8}  {:>7}\n",
         header_label,
         "n",
         "p50",
@@ -56,13 +56,13 @@ pub fn render_table(header_label: &str, rows: &[StatsRow]) -> String {
         "p99",
         "ok%",
         "out/call",
-        "retry_clusters",
+        "retries",
         label_w = label_w,
     ));
     // Separator
     out.push_str(&format!(
         "{}\n",
-        "-".repeat(label_w + 2 + 6 + 2 + 6 + 2 + 6 + 2 + 6 + 2 + 6 + 2 + 8 + 2 + 14)
+        "-".repeat(label_w + 2 + 6 + 2 + 6 + 2 + 6 + 2 + 6 + 2 + 6 + 2 + 8 + 2 + 7)
     ));
 
     for row in rows {
@@ -71,7 +71,7 @@ pub fn render_table(header_label: &str, rows: &[StatsRow]) -> String {
             None => (None, None, None),
         };
         out.push_str(&format!(
-            "{:<label_w$}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>8}  {:>14}\n",
+            "{:<label_w$}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>8}  {:>7}\n",
             row.label,
             row.n,
             fmt_ms(p50),

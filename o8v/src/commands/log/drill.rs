@@ -12,6 +12,7 @@ use o8v_core::render::log_report::{
 pub fn build_drill_report(
     session: &SessionAggregate,
     warnings: Vec<o8v_core::types::Warning>,
+    retry_window_ms: u64,
 ) -> DrillReport {
     let started_ms = session.commands.first().map(|c| c.started.timestamp_ms);
     let ended_ms = session
@@ -109,5 +110,6 @@ pub fn build_drill_report(
         top_commands,
         clusters,
         warnings,
+        retry_window_ms,
     }
 }

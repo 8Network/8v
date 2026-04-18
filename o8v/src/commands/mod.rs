@@ -296,11 +296,17 @@ pub async fn dispatch_command_with_agent(
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Log(args) => {
+            use o8v_core::render::log_report::LogReport;
             let cmd = log::LogCommand { args };
-            let (output, _, _) =
+            let (output, _, report) =
                 crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
                     .await?;
-            Ok((output, ExitCode::SUCCESS, false))
+            let exit = if matches!(report, LogReport::Empty) {
+                ExitCode::from(2u8)
+            } else {
+                ExitCode::SUCCESS
+            };
+            Ok((output, exit, false))
         }
         Command::Stats(args) => {
             let cmd = stats::StatsCommand { args };

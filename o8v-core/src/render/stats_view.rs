@@ -66,6 +66,8 @@ struct StatsViewJson<'a> {
     label_key: &'a LabelKey,
     #[serde(skip_serializing_if = "Option::is_none")]
     shape: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<&'a str>,
     rows: &'a [StatsRow],
     warnings: &'a [Warning],
     failure_hotspots: &'a [FailureHotspot],
@@ -84,6 +86,11 @@ impl super::Renderable for StatsView {
             _ => "command",
         };
 
+        let session_header = match &self.report.session_id {
+            Some(id) => format!("session: {id}\n\n"),
+            None => String::new(),
+        };
+
         let table = match &self.shape {
             Some(shape) => format!(
                 "shape: {shape}\n\n{}",
@@ -93,10 +100,12 @@ impl super::Renderable for StatsView {
         };
 
         let text = format!(
-            "{}{}{}",
+            "{}{}{}{}\n{}",
+            session_header,
             table,
             render_warnings(&self.report.warnings),
             render_failure_hotspots(&self.report.failure_hotspots),
+            super::log_report::BLIND_SPOTS,
         );
         Output::new(text)
     }
@@ -106,6 +115,7 @@ impl super::Renderable for StatsView {
             kind: &self.kind,
             label_key: &self.label_key,
             shape: self.shape.as_deref(),
+            session_id: self.report.session_id.as_deref(),
             rows: &self.report.rows,
             warnings: &self.report.warnings,
             failure_hotspots: &self.report.failure_hotspots,

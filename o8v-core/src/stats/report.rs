@@ -21,6 +21,10 @@ pub struct StatsReport {
     /// which is a valid first-run state and should exit 0.
     /// Used by the dispatch layer to emit exit code 2 (empty-window signal).
     pub filtered_empty: bool,
+
+    /// Set when `--session <id>` was used. Drives the session-scoped header in
+    /// plain output and the top-level `session_id` field in JSON output.
+    pub session_id: Option<String>,
 }
 
 impl StatsReport {

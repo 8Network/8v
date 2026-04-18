@@ -61,6 +61,10 @@ pub enum Warning {
 
     /// A percentile request fell outside [0.0, 1.0] or was NaN.
     PercentileOutOfRange { p: f64 },
+
+    /// A time-window flag (`--since`, `--until`) was ignored because `--session`
+    /// takes precedence and pins the time span to the session's own range.
+    FlagIgnoredForSession { flag: String },
 }
 
 impl Warning {
@@ -92,6 +96,7 @@ impl Warning {
             Warning::OrphanCompleted { .. } => "orphan_completed",
             Warning::NormalizerBasenameFallback { .. } => "normalizer_basename_fallback",
             Warning::PercentileOutOfRange { .. } => "percentile_out_of_range",
+            Warning::FlagIgnoredForSession { .. } => "flag_ignored_for_session",
         }
     }
 }

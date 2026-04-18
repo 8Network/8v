@@ -26,5 +26,6 @@ pub struct StatsRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_bytes_per_call_mean: Option<f64>,
     /// Number of retry clusters involving this label.
+    #[serde(rename = "retries")]
     pub retry_cluster_count: u64,
 }

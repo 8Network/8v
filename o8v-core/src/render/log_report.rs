@@ -64,12 +64,15 @@ pub fn fmt_warning(w: &Warning) -> String {
         Warning::PercentileOutOfRange { p } => {
             format!("percentile out of range: {p}")
         }
+        Warning::FlagIgnoredForSession { flag } => {
+            format!("{flag} ignored: session filter takes precedence")
+        }
     }
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-const BLIND_SPOTS: &str =
+pub(crate) const BLIND_SPOTS: &str =
     "blind spots: native Read/Edit/Bash invisible; write-success ≠ code-correct.";
 
 /// Format a byte count as a human-readable string: KB / MB / B.
@@ -103,6 +106,19 @@ fn fmt_duration_ms(ms: u64) -> String {
     } else {
         format!("{}ms", ms)
     }
+}
+
+/// Format a unix-ms timestamp as `HH:MM` (UTC, time-of-day only).
+fn fmt_time_hhmm(ts: TimestampMs) -> String {
+    let ms = ts.as_millis();
+    if ms < 0 {
+        return "??:??".to_string();
+    }
+    let secs = ms / 1000;
+    let minutes_total = secs / 60;
+    let hour = (minutes_total / 60) % 24;
+    let minute = minutes_total % 60;
+    format!("{:02}:{:02}", hour, minute)
 }
 
 /// Format a unix-ms timestamp as `YYYY-MM-DD HH:MM` (UTC).
@@ -313,6 +329,8 @@ pub struct DrillReport {
     pub top_commands: Vec<TopCommand>,
     pub clusters: Vec<ClusterEntry>,
     pub warnings: Vec<Warning>,
+    /// Window used when building retry clusters (milliseconds). Default 30 000.
+    pub retry_window_ms: u64,
 }
 
 impl super::Renderable for DrillReport {
@@ -323,13 +341,14 @@ impl super::Renderable for DrillReport {
         let when = match (self.started_ms, self.ended_ms) {
             (Some(s), Some(e)) => match e.checked_sub(s) {
                 Some(dur) => format!(
-                    "{}  ({})",
-                    fmt_timestamp(s),
+                    "{}-{} ({})",
+                    fmt_time_hhmm(s),
+                    fmt_time_hhmm(e),
                     fmt_duration_ms(dur.as_millis())
                 ),
-                None => fmt_timestamp(s),
+                None => fmt_time_hhmm(s),
             },
-            (Some(s), None) => fmt_timestamp(s),
+            (Some(s), None) => fmt_time_hhmm(s),
             _ => "-".to_string(),
         };
         let agent_str = self.agent.as_deref().unwrap_or("-");
@@ -366,15 +385,14 @@ impl super::Renderable for DrillReport {
         // Per-cmd p95
         if !self.per_command_p95.is_empty() {
             out.push('\n');
-            out.push_str("per-cmd p95");
+            out.push_str("per-cmd p95\n");
             for pc in &self.per_command_p95 {
                 out.push_str(&format!(
-                    "    {} {}",
+                    "    {} {}\n",
                     pc.command,
                     fmt_duration_ms(pc.p95_ms)
                 ));
             }
-            out.push('\n');
             out.push_str(
                 "               (run '8v stats' for p50/p99, ok%, argv-shape breakdown)\n",
             );
@@ -383,11 +401,10 @@ impl super::Renderable for DrillReport {
         // Top commands
         if !self.top_commands.is_empty() {
             out.push('\n');
-            out.push_str("top commands");
+            out.push_str("top commands\n");
             for tc in &self.top_commands {
-                out.push_str(&format!("   {} {}", tc.command, tc.count));
+                out.push_str(&format!("   {} {}\n", tc.command, tc.count));
             }
-            out.push('\n');
         }
 
         // Clusters
@@ -413,7 +430,10 @@ impl super::Renderable for DrillReport {
             for r in &retries {
                 out.push_str(&format!(
                     "        {} {}   x{} in {}s\n",
-                    r.command, r.argv_shape, r.count, 90
+                    r.command,
+                    r.argv_shape,
+                    r.count,
+                    self.retry_window_ms / 1000
                 ));
             }
         }
@@ -541,6 +561,10 @@ impl super::Renderable for SearchResults {
             ));
         }
 
+        out.push('\n');
+        out.push_str(BLIND_SPOTS);
+        out.push('\n');
+
         Output::new(out)
     }
 
@@ -571,6 +595,9 @@ pub enum LogReport {
     Sessions(Box<SessionsTable>),
     Drill(Box<DrillReport>),
     Search(Box<SearchResults>),
+    /// Returned when `--session <id>` is supplied but no matching session exists.
+    /// The dispatch layer converts this into exit code 2.
+    Empty,
 }
 
 impl Renderable for LogReport {
@@ -579,6 +606,7 @@ impl Renderable for LogReport {
             LogReport::Sessions(t) => t.render_plain(),
             LogReport::Drill(d) => d.render_plain(),
             LogReport::Search(s) => s.render_plain(),
+            LogReport::Empty => Output::new("no session found\n".to_string()),
         }
     }
     fn render_json(&self) -> Output {
@@ -586,6 +614,7 @@ impl Renderable for LogReport {
             LogReport::Sessions(t) => t.render_json(),
             LogReport::Drill(d) => d.render_json(),
             LogReport::Search(s) => s.render_json(),
+            LogReport::Empty => Output::new("{\"error\":\"no session found\"}\n".to_string()),
         }
     }
 }
@@ -755,6 +784,7 @@ mod tests {
                 path_hint: Some("handler.rs".to_string()),
             }],
             warnings: vec![],
+            retry_window_ms: 30_000,
         }
     }
 
@@ -921,6 +951,66 @@ mod tests {
         assert_eq!(
             fmt_timestamp(TimestampMs::from_millis(-1)),
             "(invalid timestamp)"
+        );
+    }
+
+    // A8: drill header must show HH:MM-HH:MM (duration) instead of start-only timestamp
+    #[test]
+    fn drill_plain_header_shows_time_range() {
+        // 2026-04-17 14:32:00 UTC = 1776436320 secs = 1776436320000 ms
+        // 2026-04-17 14:47:00 UTC = 15m later = 1776437220000 ms
+        let mut drill = make_drill();
+        drill.started_ms = Some(TimestampMs::from_millis(1_776_436_320_000)); // 14:32 UTC
+        drill.ended_ms = Some(TimestampMs::from_millis(1_776_437_220_000)); // 14:47 UTC
+        let out = drill.render_plain();
+        let s = out.as_str();
+        // Must contain time range format HH:MM-HH:MM
+        assert!(
+            s.contains("14:32-14:47"),
+            "header must contain time range 14:32-14:47, got: {}",
+            s.lines().next().unwrap_or("")
+        );
+        assert!(
+            s.contains("(15m)"),
+            "header must contain duration (15m), got: {}",
+            s.lines().next().unwrap_or("")
+        );
+    }
+
+    // B1: retries section must use retry_window_ms, not hardcoded 90
+    #[test]
+    fn drill_plain_retry_shows_window_from_field() {
+        let mut drill = make_drill();
+        drill.retry_window_ms = 45_000;
+        drill.clusters = vec![ClusterEntry {
+            kind: ClusterKind::Retry,
+            command: "write".to_string(),
+            argv_shape: "handler.rs --find <str>".to_string(),
+            count: 2,
+            path_hint: None,
+        }];
+        let out = drill.render_plain();
+        let s = out.as_str();
+        assert!(
+            s.contains("in 45s"),
+            "retry window must use retry_window_ms (45s), got: {}",
+            s
+        );
+    }
+
+    // A5: search results must include BLIND_SPOTS footer
+    #[test]
+    fn search_results_plain_has_blind_spots() {
+        let results = SearchResults {
+            query: "foo".to_string(),
+            rows: vec![],
+            session_count: 0,
+            total_matches: 0,
+        };
+        let out = results.render_plain();
+        assert!(
+            out.as_str().contains(BLIND_SPOTS),
+            "search results must contain BLIND_SPOTS footer"
         );
     }
 }
