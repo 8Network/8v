@@ -668,21 +668,28 @@ pub(crate) fn write_to_report(
                 .map_err(|e| format!("Error: failed to read file: {e}"))?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
+            let match_count = existing_content.matches(find.as_str()).count();
+
+            if match_count == 0 {
+                return Err(render_not_found_hint(find, existing_content, &path_str));
+            }
+
+            if !*all && match_count > 1 {
+                return Err(format!(
+                    "Error: --find matched {match_count} occurrences but --all was not specified.\n\
+                     To replace every occurrence add --all:\n\
+                     \t8v write {path_str} --find \"...\" --replace \"...\" --all\n\
+                     To replace a single occurrence, narrow the pattern so it matches exactly once."
+                ));
+            }
+
             let new_content = if *all {
                 existing_content.replace(find.as_str(), replace.as_str())
             } else {
                 existing_content.replacen(find.as_str(), replace.as_str(), 1)
             };
 
-            if new_content == existing_content {
-                return Err(render_not_found_hint(find, existing_content, &path_str));
-            }
-
-            let count = if *all {
-                existing_content.matches(find.as_str()).count()
-            } else {
-                1
-            };
+            let count = if *all { match_count } else { 1 };
             o8v_fs::safe_write(&path, root, new_content.as_bytes())
                 .map_err(|e| format!("Error: failed to write file: {e}"))?;
 

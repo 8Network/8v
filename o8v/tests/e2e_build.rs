@@ -326,11 +326,10 @@ fn build_rust_broken_errors_first_false_omits_preamble() {
         .args([
             "build",
             project.path().to_str().unwrap(),
-            "--errors-first",
-            "false",
+            "--no-errors-first",
         ])
         .output()
-        .expect("run 8v build with errors-first=false");
+        .expect("run 8v build with --no-errors-first");
 
     assert!(!out.status.success(), "broken project should fail");
 

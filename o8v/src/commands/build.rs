@@ -27,8 +27,12 @@ pub struct Args {
     pub page: usize,
 
     /// Show extracted errors above raw stderr on build failure (default: on)
-    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, default_value_t = true, action = clap::ArgAction::SetTrue, overrides_with = "no_errors_first")]
     pub errors_first: bool,
+
+    /// Disable errors-first mode
+    #[arg(long = "no-errors-first", action = clap::ArgAction::SetFalse, overrides_with = "errors_first")]
+    pub no_errors_first: bool,
 
     #[command(flatten)]
     pub format: super::output_format::OutputFormat,

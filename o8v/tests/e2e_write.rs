@@ -170,7 +170,7 @@ fn insert_before_multiline() {
 
 // ─── FindReplace ─────────────────────────────────────────────────────────────
 
-/// FindReplace without --all replaces only the first occurrence.
+/// FindReplace without --all on N>1 matches must fail (silent partial-replace footgun).
 #[test]
 fn find_replace_first_occurrence() {
     let tmp = tempfile::tempdir().expect("tmpdir");
@@ -184,12 +184,17 @@ fn find_replace_first_occurrence() {
         .expect("run 8v write");
 
     assert!(
-        out.status.success(),
-        "should exit 0\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
+        !out.status.success(),
+        "expected non-zero exit when N>1 matches without --all\nstdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--all"),
+        "error must mention --all\nstderr: {stderr}"
     );
     let result = std::fs::read_to_string(&file).unwrap();
-    assert_eq!(result, "qux bar\nfoo baz\n");
+    assert_eq!(result, "foo bar\nfoo baz\n", "file must not be modified");
 }
 
 /// FindReplace with --all replaces every occurrence.
@@ -1030,4 +1035,98 @@ fn write_absolute_path_renders_relative_in_header() {
         stdout.contains("src.txt"),
         "relative filename missing from write output header:\n{stdout}"
     );
+}
+
+// ─── FindReplace multi-occurrence guard ──────────────────────────────────────
+
+/// N=3 occurrences without --all must fail with a non-zero exit and mention --all.
+#[test]
+fn find_replace_multi_match_without_all_fails() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("src.txt");
+    std::fs::write(&file, "foo\nfoo\nfoo\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "src.txt", "--find", "foo", "--replace", "bar"])
+        .output()
+        .expect("run 8v write");
+
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when N>1 matches without --all\nstdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+    assert!(
+        combined.contains("--all"),
+        "error output must mention --all\ncombined: {combined}"
+    );
+    // File must be unchanged.
+    let content = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(content, "foo\nfoo\nfoo\n", "file must not be modified");
+}
+
+/// N=3 occurrences with --all must replace all, exit 0.
+#[test]
+fn find_replace_multi_match_with_all_replaces_all() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("src.txt");
+    std::fs::write(&file, "foo\nfoo\nfoo\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args([
+            "write",
+            "src.txt",
+            "--find",
+            "foo",
+            "--replace",
+            "bar",
+            "--all",
+        ])
+        .output()
+        .expect("run 8v write");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 with --all\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let content = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(
+        content, "bar\nbar\nbar\n",
+        "all occurrences must be replaced"
+    );
+}
+
+/// N=1 occurrence without --all must still succeed (backward compat).
+#[test]
+fn find_replace_single_match_without_all_succeeds() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("src.txt");
+    std::fs::write(&file, "hello\nworld\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args([
+            "write",
+            "src.txt",
+            "--find",
+            "hello",
+            "--replace",
+            "goodbye",
+        ])
+        .output()
+        .expect("run 8v write");
+
+    assert!(
+        out.status.success(),
+        "expected exit 0 for single match\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let content = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(content, "goodbye\nworld\n", "single match must be replaced");
 }

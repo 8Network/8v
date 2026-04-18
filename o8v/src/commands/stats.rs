@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use clap::ValueEnum;
 use o8v_core::command::{Command, CommandContext, CommandError};
 use o8v_core::events::Event;
 use o8v_core::render::stats_view::{LabelKey, ReportKind, StatsView};
@@ -23,6 +24,13 @@ use crate::aggregator::{
 use crate::event_reader::read_events_lenient;
 use crate::stats_histogram::Histogram;
 use crate::workspace::StorageDir;
+
+/// Valid dimensions for `--compare`.
+#[derive(Clone, Debug, ValueEnum)]
+pub enum CompareBy {
+    /// Group results by agent name.
+    Agent,
+}
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
@@ -44,7 +52,7 @@ pub struct Args {
     pub strict: bool,
     /// Group by `agent` (the only dimension in v1).
     #[arg(long)]
-    pub compare: Option<String>,
+    pub compare: Option<CompareBy>,
     /// Failure-hotspot row count (reserved — not rendered in v1 rows, see design §3.1).
     #[arg(long, default_value_t = 3)]
     pub top: usize,
@@ -150,7 +158,7 @@ enum Mode<'a> {
 }
 
 fn resolve_mode(args: &Args) -> Mode<'_> {
-    if args.compare.as_deref() == Some("agent") {
+    if matches!(args.compare, Some(CompareBy::Agent)) {
         Mode::ByAgent
     } else if let Some(shape) = args.shape.as_deref() {
         // --shape takes precedence over positional command arg.

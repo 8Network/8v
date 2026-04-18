@@ -411,3 +411,26 @@ fn percentile_boundary_single_bucket() {
     assert!(p50 <= p95, "p50={p50} must be <= p95={p95}");
     assert!(p95 <= p99, "p95={p95} must be <= p99={p99}");
 }
+
+#[test]
+fn compare_bogus_value_exits_nonzero() {
+    // Regression: `8v stats --compare bogusvalue` previously exited 0 and
+    // silently fell through to the default view.  Only "agent" is valid.
+    let home = home_with_events("");
+    let out = bin()
+        .arg("stats")
+        .arg("--compare")
+        .arg("bogusvalue")
+        .env("HOME", home.path())
+        .output()
+        .expect("run 8v stats");
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit for invalid --compare value, got 0"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("bogusvalue") || stderr.contains("invalid") || stderr.contains("error"),
+        "expected error message mentioning invalid value, got: {stderr}"
+    );
+}
