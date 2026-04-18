@@ -45,6 +45,12 @@ pub enum LogSubcommand {
     Search {
         /// Substring to search for in command names and argv shapes.
         query: String,
+        /// Maximum number of results to return (default: 20).
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        /// Return all results (overrides --limit).
+        #[arg(long)]
+        all: bool,
     },
 }
 
@@ -106,9 +112,14 @@ impl Command for LogCommand {
                     all_warnings,
                 ))))
             }
-            Some(LogSubcommand::Search { query }) => Ok(LogReport::Search(Box::new(
-                search::build_search_results(&sessions, query, all_warnings),
-            ))),
+            Some(LogSubcommand::Search { query, limit, all }) => {
+                Ok(LogReport::Search(Box::new(search::build_search_results(
+                    &sessions,
+                    query,
+                    if *all { usize::MAX } else { *limit },
+                    all_warnings,
+                ))))
+            }
         }
     }
 }

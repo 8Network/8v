@@ -216,9 +216,10 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
                  Usage: 8v write <path> --find \"old\" --replace \"new\""
                 .to_string());
         }
+        let replace = unescape_content(&args.replace.clone().unwrap());
         return Ok(WriteOperation::FindReplace {
             find,
-            replace: args.replace.clone().unwrap(),
+            replace,
             all: args.all,
         });
     }
@@ -622,7 +623,7 @@ pub(crate) fn write_to_report(
                 match o8v_fs::safe_exists(&path, root) {
                     Ok(true) => {
                         return Err(format!(
-                            "Error: file already exists: {}\n  to replace entire file: add --force\n  to replace a range: use {path_str}:<start>-<end> \"<content>\"\n  to find/replace: use --find \"<old>\" --replace \"<new>\"", path.display()
+                            "Error: file already exists: {path_str}\n  to replace entire file: add --force\n  to replace a range: use {path_str}:<start>-<end> \"<content>\"\n  to find/replace: use --find \"<old>\" --replace \"<new>\""
                         ));
                     }
                     Ok(false) => {}
@@ -1046,6 +1047,33 @@ mod tests {
                 assert_eq!(content, "a\nb\nc", "ReplaceRange content must unescape \\n");
             }
             other => panic!("expected ReplaceRange, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_replace_operation_unescapes_newline() {
+        // F12: --replace must unescape \n just like --append/--insert
+        let args = Args {
+            path: "f.txt".to_string(),
+            content: None,
+            insert: false,
+            delete: false,
+            append: false,
+            find: Some("foo".to_string()),
+            replace: Some("a\\nb".to_string()),
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::FindReplace { replace, .. } => {
+                assert_eq!(
+                    replace, "a\nb",
+                    "FindReplace replace must have real newline, not \\\\n literal"
+                );
+            }
+            other => panic!("expected FindReplace, got {other:?}"),
         }
     }
 }

@@ -16,10 +16,15 @@ pub struct StatsReport {
     pub rows: Vec<StatsRow>,
     pub warnings: Vec<Warning>,
     pub failure_hotspots: Vec<FailureHotspot>,
+    /// True when the caller applied an explicit time filter (`--since`/`--until`)
+    /// that produced zero matching events. Distinct from "no history at all",
+    /// which is a valid first-run state and should exit 0.
+    /// Used by the dispatch layer to emit exit code 2 (empty-window signal).
+    pub filtered_empty: bool,
 }
 
 impl StatsReport {
-    /// True when there are no rows (used to decide exit code 2).
+    /// True when there are no rows.
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }

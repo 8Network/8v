@@ -521,3 +521,41 @@ fn log_search_success_field_reflects_outcome() {
         "success must be false for a failed command; got: {fixture_row}"
     );
 }
+
+#[test]
+fn log_search_limit_flag_after_subcommand_filters_results() {
+    // F14: `8v log search <query> --limit N` must filter results.
+    // Before the fix, --limit placed after the subcommand is rejected with
+    // "unexpected argument '--limit' found".
+    let ndjson = [
+        make_event_pair("ses_01AAAAAAAAAAAAAAAAAAAAAAA", "run_1", "check", true),
+        make_event_pair("ses_01BBBBBBBBBBBBBBBBBBBBBBB", "run_2", "check", true),
+        make_event_pair("ses_01CCCCCCCCCCCCCCCCCCCCCCC", "run_3", "check", true),
+    ]
+    .join("\n");
+    let home = home_with_events(&ndjson);
+
+    // With --limit 1 after the subcommand, should exit 0 and return exactly 1 result.
+    let out = bin()
+        .args(["log", "--json", "search", "check", "--limit", "1"])
+        .env("HOME", home.path())
+        .output()
+        .expect("run 8v log --json search check --limit 1");
+
+    assert!(
+        out.status.success(),
+        "--limit after subcommand must not be rejected\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let results = v["results"].as_array().expect("results must be array");
+    assert_eq!(
+        results.len(),
+        1,
+        "--limit 1 must return exactly 1 result; got {} results\nfull output: {v}",
+        results.len()
+    );
+}

@@ -146,9 +146,17 @@ pub fn build_context(interrupted: &'static AtomicBool) -> CommandContext {
 ///
 /// Called by `dispatch_command()` after matching on the Command enum.
 /// Caller and command_str are for lifecycle events only.
+/// The run-id of the currently-executing command.
+///
+/// Inserted into `CommandContext::extensions` by `dispatch()` before
+/// `Command::execute()` is called.  Commands that read the event log (e.g.
+/// `stats`) use this to exclude their own in-flight `CommandStarted` event
+/// from aggregation so the orphan warning is not incorrectly raised.
+pub struct CurrentRunId(pub String);
+
 pub async fn dispatch<C: Command>(
     command: &C,
-    ctx: &CommandContext,
+    ctx: &mut CommandContext,
     audience: Audience,
     caller: Caller,
     command_str: &str,
@@ -196,6 +204,10 @@ where
         .extensions
         .get::<Arc<EventBus>>()
         .map(|bus| CommandGuard::new(run_id.clone(), start_ms, bus));
+
+    // Expose the current run-id to the command so it can exclude its own
+    // in-flight event from any event-log reads (e.g. stats orphan warning).
+    ctx.extensions.insert(CurrentRunId(run_id.clone()));
 
     // Execute the command.
     let result = command.execute(ctx).await;
@@ -282,7 +294,8 @@ mod tests {
         bus.subscribe(recorder.clone());
 
         let cmd = NoopCommand;
-        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "noop", &[]).await;
+        let mut ctx = ctx;
+        let result = dispatch(&cmd, &mut ctx, Audience::Agent, Caller::Cli, "noop", &[]).await;
         assert!(result.is_ok());
 
         let events = recorder.events.lock().unwrap();
@@ -343,7 +356,8 @@ mod tests {
                 bus.subscribe(recorder_clone.clone());
 
                 let cmd = PanicCommand;
-                let _ = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "panic", &[]).await;
+                let mut ctx = ctx;
+                let _ = dispatch(&cmd, &mut ctx, Audience::Agent, Caller::Cli, "panic", &[]).await;
             });
         });
 
@@ -372,7 +386,8 @@ mod tests {
         bus.subscribe(recorder.clone());
 
         let cmd = FailCommand;
-        let result = dispatch(&cmd, &ctx, Audience::Agent, Caller::Cli, "fail", &[]).await;
+        let mut ctx = ctx;
+        let result = dispatch(&cmd, &mut ctx, Audience::Agent, Caller::Cli, "fail", &[]).await;
         assert!(result.is_err(), "command must return an error");
 
         let events = recorder.events.lock().unwrap();

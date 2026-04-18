@@ -87,6 +87,7 @@ impl Command for StatsCommand {
                     rows: Vec::new(),
                     warnings: sink.into_inner(),
                     failure_hotspots: Vec::new(),
+                    filtered_empty: true,
                 },
                 kind: ReportKind::Table,
                 label_key: LabelKey::Command,
@@ -103,7 +104,22 @@ impl Command for StatsCommand {
             .collect();
 
         // Aggregate over events in window. Clone filtered set to feed aggregator.
-        let filtered: Vec<Event> = windowed.into_iter().cloned().collect();
+        // Exclude events belonging to the currently-executing stats command so its
+        // own CommandStarted (with no matching CommandCompleted yet) doesn't trigger
+        // an orphan warning.
+        let current_run_id = ctx
+            .extensions
+            .get::<crate::dispatch::CurrentRunId>()
+            .map(|r| r.0.clone());
+        let filtered: Vec<Event> = windowed
+            .into_iter()
+            .filter(|ev| match (ev, &current_run_id) {
+                (Event::CommandStarted(s), Some(rid)) => &s.run_id != rid,
+                (Event::CommandCompleted(c), Some(rid)) => &c.run_id != rid,
+                _ => true,
+            })
+            .cloned()
+            .collect();
         let mut normalizer = ArgvNormalizer::new();
         let sessions = aggregate_events(
             &filtered,
@@ -114,14 +130,16 @@ impl Command for StatsCommand {
 
         let failure_hotspots = compute_failure_hotspots(&sessions);
         let mode = resolve_mode(&self.args);
-        let report = build_report(
+        let has_explicit_filter = self.args.since != "7d" || self.args.until != "0ms";
+        let mut view = build_report(
             &sessions,
             mode,
             self.args.min_n,
             sink.into_inner(),
             failure_hotspots,
         );
-        Ok(report)
+        view.report.filtered_empty = filtered.is_empty() && has_explicit_filter;
+        Ok(view)
     }
 }
 
@@ -160,6 +178,7 @@ fn build_report(
                     rows,
                     warnings,
                     failure_hotspots,
+                    filtered_empty: false,
                 },
                 kind: ReportKind::Table,
                 label_key: LabelKey::Command,
@@ -174,6 +193,7 @@ fn build_report(
                     rows,
                     warnings,
                     failure_hotspots,
+                    filtered_empty: false,
                 },
                 kind: ReportKind::Drill,
                 label_key: LabelKey::ArgvShape,
@@ -188,6 +208,7 @@ fn build_report(
                     rows,
                     warnings,
                     failure_hotspots,
+                    filtered_empty: false,
                 },
                 kind: ReportKind::ByAgent,
                 label_key: LabelKey::Agent,
@@ -414,6 +435,59 @@ mod tests {
     #[test]
     fn parse_duration_rejects_empty() {
         assert!(parse_duration_ms("").is_err());
+    }
+
+    /// Regression: aggregate_events produces OrphanStarted for any CommandStarted
+    /// without a matching CommandCompleted. When stats runs, its own CommandStarted
+    /// is already in the event log but CommandCompleted hasn't been written yet.
+    /// Filtering events by current run_id before aggregation must suppress this warning.
+    #[test]
+    fn orphan_warning_suppressed_when_current_run_id_excluded() {
+        use crate::aggregator::{aggregate_events, ArgvNormalizer};
+        use o8v_core::caller::Caller;
+        use o8v_core::events::{CommandStarted, Event};
+        use o8v_core::types::{Warning, WarningSink};
+
+        let current_run_id = "current-run-000".to_string();
+
+        // Simulate the log: only a CommandStarted for the current invocation, no CommandCompleted yet.
+        let started =
+            CommandStarted::new(current_run_id.clone(), Caller::Cli, "stats", vec![], None);
+        let events = vec![Event::CommandStarted(started)];
+
+        // Without filtering: must see an OrphanStarted warning (proves the bug exists pre-fix).
+        let mut sink_unfiltered = WarningSink::new();
+        let mut normalizer = ArgvNormalizer::new();
+        aggregate_events(&events, 30_000, &mut normalizer, &mut sink_unfiltered);
+        let warnings_unfiltered = sink_unfiltered.into_inner();
+        let has_orphan = warnings_unfiltered
+            .iter()
+            .any(|w| matches!(w, Warning::OrphanStarted { run_id } if run_id == &current_run_id));
+        assert!(
+            has_orphan,
+            "pre-fix: aggregate_events must emit OrphanStarted for an open CommandStarted"
+        );
+
+        // With filtering: exclude the current run_id — must see no OrphanStarted.
+        let filtered: Vec<Event> = events
+            .into_iter()
+            .filter(|ev| match ev {
+                Event::CommandStarted(s) => s.run_id != current_run_id,
+                Event::CommandCompleted(c) => c.run_id != current_run_id,
+                Event::Unknown { .. } => true,
+            })
+            .collect();
+        let mut sink_filtered = WarningSink::new();
+        let mut normalizer2 = ArgvNormalizer::new();
+        aggregate_events(&filtered, 30_000, &mut normalizer2, &mut sink_filtered);
+        let warnings_filtered = sink_filtered.into_inner();
+        let still_has_orphan = warnings_filtered
+            .iter()
+            .any(|w| matches!(w, Warning::OrphanStarted { run_id } if run_id == &current_run_id));
+        assert!(
+            !still_has_orphan,
+            "post-fix: no OrphanStarted warning should appear after filtering current run_id"
+        );
     }
 
     #[test]

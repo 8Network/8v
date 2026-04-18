@@ -113,18 +113,24 @@ pub(crate) struct ProjectEntry {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Check whether the file name matches the glob pattern (if set).
-fn matches_glob(path: &Path, pattern: Option<&str>) -> bool {
+/// Check whether the path (relative to root) matches the glob pattern (if set).
+///
+/// The pattern is matched against the path relative to root, so patterns like
+/// `src/*.rs` correctly match files nested inside subdirectories.
+fn matches_glob(root: &Path, path: &Path, pattern: Option<&str>) -> bool {
     let pattern = match pattern {
         None => return true,
         Some(p) => p,
     };
-    let file_name = match path.file_name().and_then(|n| n.to_str()) {
-        Some(n) => n,
+    let rel = match path.strip_prefix(root) {
+        Ok(r) => r,
+        Err(_) => path,
+    };
+    let rel_str = match rel.to_str() {
+        Some(s) => s,
         None => return false,
     };
-    // Use glob pattern matching on file name only
-    glob_match(pattern, file_name)
+    glob_match(pattern, rel_str)
 }
 
 /// Format Unix permissions as "rwxrwxrwx" style.
@@ -369,7 +375,7 @@ pub(crate) fn do_ls(
         }
 
         // Apply glob match filter
-        if !matches_glob(path, args.match_pattern.as_deref()) {
+        if !matches_glob(&root, path, args.match_pattern.as_deref()) {
             files_filtered += 1;
             continue;
         }
@@ -453,7 +459,10 @@ impl Command for LsCommand {
 
         let mode = if self.args.tree {
             LsMode::Tree
-        } else if self.args.files {
+        } else if self.args.files || self.args.match_pattern.is_some() {
+            // When --match is specified, the user wants to see which files matched.
+            // Default Projects mode only shows project headers, hiding matched files.
+            // Implicitly switch to Files mode so matches are visible.
             LsMode::Files
         } else {
             LsMode::Projects
@@ -493,5 +502,43 @@ impl Command for LsCommand {
             truncated: result.truncated,
             shown: result.shown,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// F15: `--match` with a nested pattern (e.g. `src/*.rs`) must match files
+    /// inside subdirectories. Previously `matches_glob` used `file_name()` (basename
+    /// only) so `src/*.rs` never matched — only `*.rs` would.
+    #[test]
+    fn matches_glob_nested_pattern_matches_relative_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().canonicalize().expect("canonicalize");
+
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src/");
+        let file = src_dir.join("foo.rs");
+        fs::write(&file, "").expect("write foo.rs");
+
+        // Pattern `src/*.rs` should match `src/foo.rs` relative to root.
+        assert!(
+            matches_glob(&root, &file, Some("src/*.rs")),
+            "matches_glob must match nested pattern against relative path"
+        );
+
+        // Basename-only pattern `*.rs` should still match.
+        assert!(
+            matches_glob(&root, &file, Some("*.rs")),
+            "matches_glob must still match basename-only pattern"
+        );
+
+        // Non-matching pattern must not match.
+        assert!(
+            !matches_glob(&root, &file, Some("lib/*.rs")),
+            "matches_glob must not match wrong-directory pattern"
+        );
     }
 }

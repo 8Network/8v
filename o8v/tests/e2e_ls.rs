@@ -336,3 +336,36 @@ fn ls_empty_directory() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// F15: `8v ls --match <glob>` must show matched files at non-root depth.
+///
+/// Previously, `--match *.rs` without `--files` or `--tree` rendered only
+/// project headers (Projects mode), making the output appear as "no files".
+/// When `--match` is given alone, the command must switch to Files mode so
+/// matched files are actually visible.
+#[test]
+fn ls_match_glob_shows_nested_files_without_files_flag() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+
+    // Create a nested file: a/b/c/foo.rs
+    std::fs::create_dir_all(dir.join("a/b/c")).expect("create dirs");
+    std::fs::write(dir.join("a/b/c/foo.rs"), "fn main() {}").expect("write foo.rs");
+
+    // Run `8v ls <dir> --match "*.rs"` (no --files, no --tree)
+    let out = bin()
+        .args(["ls", dir.to_str().unwrap(), "--match", "*.rs"])
+        .output()
+        .expect("run 8v ls --match");
+
+    assert!(
+        out.status.success(),
+        "exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("foo.rs"),
+        "Expected foo.rs in output when --match *.rs is given without --files/--tree\nGot: {stdout}"
+    );
+}
