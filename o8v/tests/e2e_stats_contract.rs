@@ -101,7 +101,7 @@ fn contract_1_default_table_top_level_shape() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -155,7 +155,7 @@ fn contract_1_default_table_top_level_shape() {
 
     // every row has exactly the required fields
     for (i, row) in rows.iter().enumerate() {
-        for field in ["label", "n", "retry_cluster_count"] {
+        for field in ["label", "n", "retries"] {
             assert!(
                 row.get(field).is_some(),
                 "row[{i}] missing required field '{field}'; row = {row}"
@@ -175,7 +175,7 @@ fn contract_2_percentiles_null_below_threshold() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -202,7 +202,7 @@ fn contract_2_percentiles_numeric_at_threshold() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -246,7 +246,7 @@ fn contract_3_ok_rate_range_all_success() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -316,7 +316,7 @@ fn contract_3_ok_rate_range_mixed() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -351,7 +351,7 @@ fn contract_4_output_bytes_per_call_mean_is_number() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -387,7 +387,7 @@ fn contract_5_drill_mode_shape() {
 
     let out = bin()
         .args(["stats", "write", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats write --json");
 
@@ -448,7 +448,7 @@ fn contract_6_by_agent_mode() {
 
     let out = bin()
         .args(["stats", "--compare", "agent", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --compare agent --json");
 
@@ -502,7 +502,7 @@ fn contract_7_empty_window_exit_2() {
 
     let out = bin()
         .args(["stats", "--since", "1d", "--until", "1d"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats on empty window");
 
@@ -528,7 +528,7 @@ fn stats_json_empty_window_exits_2() {
 
     let out = bin()
         .args(["stats", "--since", "1d", "--until", "1d", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json on empty window");
 
@@ -562,7 +562,7 @@ fn contract_row_field_types_are_exact() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -581,10 +581,10 @@ fn contract_row_field_types_are_exact() {
     let n = row["n"].as_u64().expect("n must be a u64 integer");
     assert!(n > 0, "n must be > 0 when events are present");
 
-    // retry_cluster_count is a u64 integer (may be 0)
-    let _retry_cluster_count = row["retry_cluster_count"]
+    // retries is a u64 integer (may be 0)
+    let _retries = row["retries"]
         .as_u64()
-        .expect("retry_cluster_count must be a u64 integer");
+        .expect("retries must be a u64 integer");
 
     // duration_ms.p50/p95/p99 are u64 — verify they are NOT floats (integer ms).
     if let Some(dur) = row["duration_ms"].as_object() {
@@ -611,7 +611,7 @@ fn counterexample_old_p50_ms_field_absent() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -642,7 +642,7 @@ fn counterexample_old_ok_pct_field_absent() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -665,7 +665,7 @@ fn counterexample_old_out_per_call_bytes_absent() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -680,7 +680,7 @@ fn counterexample_old_out_per_call_bytes_absent() {
     }
 }
 
-/// Old field name "retries" must not appear in any row; new name is "retry_cluster_count".
+/// Old field name "retry_cluster_count" must not appear in any row; new name is "retries".
 #[test]
 fn counterexample_old_retries_field_absent() {
     let ndjson = fresh("test", 6, true, &["test"], None);
@@ -688,7 +688,7 @@ fn counterexample_old_retries_field_absent() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -697,13 +697,13 @@ fn counterexample_old_retries_field_absent() {
     let rows = v["rows"].as_array().expect("rows must be array");
     for (i, row) in rows.iter().enumerate() {
         assert!(
-            row.get("retries").is_none(),
-            "row[{i}] must not contain old field 'retries'; row={row}"
+            row.get("retry_cluster_count").is_none(),
+            "row[{i}] must not contain old field 'retry_cluster_count'; row={row}"
         );
         // and the new field must be present
         assert!(
-            row.get("retry_cluster_count").is_some(),
-            "row[{i}] must contain new field 'retry_cluster_count'; row={row}"
+            row.get("retries").is_some(),
+            "row[{i}] must contain new field 'retries'; row={row}"
         );
     }
 }
@@ -717,7 +717,7 @@ fn counterexample_old_label_key_cmd_absent() {
 
     let out_t = bin()
         .args(["stats", "--json"])
-        .env("HOME", home_t.path())
+        .env("_8V_HOME", home_t.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -742,7 +742,7 @@ fn counterexample_old_label_key_cmd_absent() {
 
     let out_d = bin()
         .args(["stats", "search", "--json"])
-        .env("HOME", home_d.path())
+        .env("_8V_HOME", home_d.path())
         .output()
         .expect("run 8v stats search --json");
 
@@ -808,7 +808,7 @@ fn stats_json_surfaces_malformed_event_line_warning() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -883,7 +883,7 @@ fn stats_json_surfaces_duplicate_started_warning() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -955,7 +955,7 @@ fn stats_json_failure_hotspots_cross_session() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -1034,7 +1034,7 @@ fn stats_json_failure_hotspots_top_path_frequency() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -1077,7 +1077,7 @@ fn stats_json_failure_hotspots_empty_when_no_failures() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
 
@@ -1108,7 +1108,7 @@ fn stats_json_by_agent_envelope() {
 
     let out = bin()
         .args(["stats", "--compare", "agent", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --compare agent --json");
 
@@ -1141,7 +1141,7 @@ fn stats_json_drill_envelope() {
 
     let out = bin()
         .args(["stats", "write", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats write --json");
 
@@ -1212,7 +1212,7 @@ fn stats_plain_shows_warnings_section() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
 
@@ -1269,7 +1269,7 @@ fn stats_plain_shows_failure_hotspots_section() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
 

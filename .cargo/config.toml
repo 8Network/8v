@@ -1,0 +1,2 @@
+[env]
+_8V_HOME = { value = "target/test-home", relative = true, force = true }

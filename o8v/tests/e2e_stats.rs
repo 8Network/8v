@@ -120,7 +120,7 @@ fn default_table_renders() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
 
@@ -158,7 +158,7 @@ fn drill_argv_shape_breakdown() {
 
     let out = bin()
         .args(["stats", "write", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats write");
 
@@ -189,7 +189,7 @@ fn compare_agent_separates_rows() {
 
     let out = bin()
         .args(["stats", "--compare", "agent", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --compare agent");
 
@@ -216,7 +216,7 @@ fn n_lt_5_percentiles_dashed() {
 
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
     assert!(out.status.success());
@@ -239,7 +239,7 @@ fn empty_window_exits_2() {
     let home = home_with_events(""); // no events
     let out = bin()
         .args(["stats", "--since", "1d", "--until", "1d"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
 
@@ -258,6 +258,73 @@ fn empty_window_exits_2() {
     );
 }
 
+// ─── A10 regression: empty-window exit-2 based on filtered output, not args ──
+
+#[test]
+fn explicit_since_outside_window_exits_2() {
+    // Events exist but are 30 days old — outside explicit --since 1d window.
+    let old_ms = now_ms() - 30 * 24 * 60 * 60 * 1000_i64; // 30 days ago
+    let ndjson = event_pair_at(
+        "ses_01HZAAAAAAAAAAAAAAAAAAAAA",
+        "run_old",
+        "read",
+        old_ms,
+        42,
+        true,
+        &["read", "."],
+        None,
+    );
+    let home = home_with_events(&ndjson);
+
+    let out = bin()
+        .args(["stats", "--since", "1d", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v stats --since 1d");
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "events outside --since window must exit 2; stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn default_since_7d_outside_window_exits_2() {
+    // Events exist but are 10 days old — outside the DEFAULT --since 7d window.
+    // With the bug: has_explicit_filter=false (default args used), so filtered_empty=false,
+    // exits 0 instead of 2.
+    let old_ms = now_ms() - 10 * 24 * 60 * 60 * 1000_i64; // 10 days ago
+    let ndjson = event_pair_at(
+        "ses_01HZAAAAAAAAAAAAAAAAAAAAA",
+        "run_old2",
+        "read",
+        old_ms,
+        42,
+        true,
+        &["read", "."],
+        None,
+    );
+    let home = home_with_events(&ndjson);
+
+    // No --since/--until flags: default is "--since 7d --until 0ms".
+    let out = bin()
+        .args(["stats", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v stats (defaults)");
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "events outside default 7d window must exit 2; stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 // ─── 6. JSON field contract ─────────────────────────────────────────────────
 
 #[test]
@@ -266,7 +333,7 @@ fn json_field_contract() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
     assert!(out.status.success());
@@ -280,7 +347,7 @@ fn json_field_contract() {
         "n",
         "ok_rate",
         "output_bytes_per_call_mean",
-        "retry_cluster_count",
+        "retries",
     ] {
         assert!(
             row.get(field).is_some(),
@@ -298,7 +365,7 @@ fn malformed_line_skipped_default() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
     assert!(
@@ -315,7 +382,7 @@ fn malformed_line_strict_fails() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--strict", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --strict");
     assert!(
@@ -365,7 +432,7 @@ fn empty_session_id_events_are_dropped() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
     assert!(out.status.success());
@@ -389,7 +456,7 @@ fn percentile_boundary_single_bucket() {
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
     assert!(out.status.success());
@@ -421,7 +488,7 @@ fn compare_bogus_value_exits_nonzero() {
         .arg("stats")
         .arg("--compare")
         .arg("bogusvalue")
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats");
     assert!(

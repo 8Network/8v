@@ -32,7 +32,16 @@ impl StorageDir {
     /// Resolve `~/.8v/` from the HOME environment variable.
     ///
     /// Returns an error if HOME is not set. Never silently falls back to `/tmp`.
+    ///
+    /// `_8V_HOME` overrides HOME when set — this is the test-isolation fence.
+    /// `cargo test` sets `_8V_HOME=target/test-home` via `.cargo/config.toml`
+    /// so integration tests that fork the `8v` binary never write to the real
+    /// `~/.8v/events.ndjson`. Production shells have no `_8V_HOME` set, so the
+    /// HOME path is used as normal.
     fn resolve_home() -> Result<PathBuf, std::io::Error> {
+        if let Ok(v) = std::env::var("_8V_HOME") {
+            return Ok(PathBuf::from(v).join(DIR_NAME));
+        }
         match std::env::var("HOME") {
             Ok(h) => Ok(PathBuf::from(h).join(DIR_NAME)),
             Err(_) => Err(std::io::Error::other(

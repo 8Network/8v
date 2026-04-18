@@ -7,7 +7,15 @@
 
 use std::fs;
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time goes forward")
+        .as_millis() as i64
+}
 
 fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_8v"))
@@ -75,7 +83,7 @@ fn log_empty_events_exits_zero() {
 
     let out = bin()
         .args(["log"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log");
 
@@ -93,7 +101,7 @@ fn log_empty_events_json_has_sessions_array() {
 
     let out = bin()
         .args(["log", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json");
 
@@ -119,7 +127,7 @@ fn log_with_events_shows_session() {
 
     let out = bin()
         .args(["log", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json");
 
@@ -158,7 +166,7 @@ fn log_multiple_sessions_shows_all() {
 
     let out = bin()
         .args(["log", "--json"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json");
 
@@ -193,7 +201,7 @@ fn log_last_with_session_exits_zero() {
 
     let out = bin()
         .args(["log", "last"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log last");
 
@@ -213,7 +221,7 @@ fn log_last_json_has_drill_fields() {
 
     let out = bin()
         .args(["log", "--json", "last"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json last");
 
@@ -258,7 +266,7 @@ fn log_last_picks_most_recent_session() {
 
     let out = bin()
         .args(["log", "--json", "last"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json last");
 
@@ -280,6 +288,108 @@ fn log_last_picks_most_recent_session() {
     );
 }
 
+// ─── A7 regression: log last picks session with latest LAST activity ─────────
+
+#[test]
+fn log_last_picks_by_latest_activity() {
+    // Session A: starts at T=100, completes at T=5000 (long-running)
+    // Session B: starts at T=200, completes at T=300 (short, starts later)
+    // File order: A-start, B-start, B-complete, A-complete (interleaved)
+    // Aggregator sorts by first-event: A(100) first, B(200) last.
+    // sessions.last() = B. But B's last activity (300) < A's (5000).
+    // Correct answer: session A (latest last-activity = 5000).
+    let session_a = "ses_01AAAAAAAAAAAAAAAAAAAAAAA";
+    let session_b = "ses_01BBBBBBBBBBBBBBBBBBBBBBB";
+
+    // Use timestamps relative to now so self-logged events (which use real
+    // current time) never exceed a_complete's timestamp.
+    // a_complete is set 100ms in the future to guarantee it is always the
+    // largest timestamp, even accounting for clock jitter in the subprocess.
+    let now = now_ms();
+    let a_start_ts = now - 5000;
+    let b_start_ts = now - 4000;
+    let b_complete_ts = now - 3700;
+    let a_complete_ts = now + 60_000; // session A completes "last" — 60 s ahead of now
+
+    let a_start = serde_json::json!({
+        "event": "CommandStarted",
+        "run_id": "run_a",
+        "timestamp_ms": a_start_ts,
+        "version": "0.1.0",
+        "caller": "cli",
+        "command": "check",
+        "argv": ["check", "."],
+        "command_bytes": 5_u64,
+        "command_token_estimate": 1_u64,
+        "project_path": null,
+        "session_id": session_a,
+    });
+    let b_start = serde_json::json!({
+        "event": "CommandStarted",
+        "run_id": "run_b",
+        "timestamp_ms": b_start_ts,
+        "version": "0.1.0",
+        "caller": "cli",
+        "command": "fmt",
+        "argv": ["fmt", "."],
+        "command_bytes": 3_u64,
+        "command_token_estimate": 1_u64,
+        "project_path": null,
+        "session_id": session_b,
+    });
+    let b_complete = serde_json::json!({
+        "event": "CommandCompleted",
+        "run_id": "run_b",
+        "timestamp_ms": b_complete_ts,
+        "output_bytes": 10_u64,
+        "token_estimate": 3_u64,
+        "duration_ms": 300_u64,
+        "success": true,
+        "session_id": session_b,
+    });
+    let a_complete = serde_json::json!({
+        "event": "CommandCompleted",
+        "run_id": "run_a",
+        "timestamp_ms": a_complete_ts,
+        "output_bytes": 10_u64,
+        "token_estimate": 3_u64,
+        "duration_ms": 5100_u64,
+        "success": true,
+        "session_id": session_a,
+    });
+
+    let ndjson = format!(
+        "{}\n{}\n{}\n{}\n",
+        serde_json::to_string(&a_start).unwrap(),
+        serde_json::to_string(&b_start).unwrap(),
+        serde_json::to_string(&b_complete).unwrap(),
+        serde_json::to_string(&a_complete).unwrap(),
+    );
+    let home = home_with_events(&ndjson);
+
+    let out = bin()
+        .args(["log", "--json", "last"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v log --json last");
+
+    assert!(
+        out.status.success(),
+        "should exit 0\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+
+    // session A has the latest last-activity (T=5000) — must be selected.
+    assert_eq!(
+        v["session_id"].as_str().unwrap_or(""),
+        session_a,
+        "log last must return the session with the latest last-activity, got: {v}"
+    );
+}
+
 // ─── 8v log show <id> ────────────────────────────────────────────────────────
 
 #[test]
@@ -290,7 +400,7 @@ fn log_show_exact_id_exits_zero() {
 
     let out = bin()
         .args(["log", "show", session_id])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log show");
 
@@ -312,7 +422,7 @@ fn log_show_prefix_resolves() {
     let prefix = &session_id[..10];
     let out = bin()
         .args(["log", "show", prefix])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log show prefix");
 
@@ -332,7 +442,7 @@ fn log_show_unknown_id_exits_nonzero() {
 
     let out = bin()
         .args(["log", "show", "ses_DOESNOTEXIST"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log show unknown");
 
@@ -350,7 +460,7 @@ fn log_show_json_has_session_id() {
 
     let out = bin()
         .args(["log", "--json", "show", session_id])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json show");
 
@@ -376,7 +486,7 @@ fn log_search_matching_query_returns_results() {
 
     let out = bin()
         .args(["log", "--json", "search", "check"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json search check");
 
@@ -429,7 +539,7 @@ fn log_search_no_match_returns_empty_results() {
 
     let out = bin()
         .args(["log", "--json", "search", "zzz_no_match"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json search zzz_no_match");
 
@@ -463,7 +573,7 @@ fn log_search_case_insensitive() {
 
     let out = bin()
         .args(["log", "--json", "search", "CHECK"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json search CHECK");
 
@@ -491,7 +601,7 @@ fn log_search_success_field_reflects_outcome() {
 
     let out = bin()
         .args(["log", "--json", "search", "check"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json search check");
 
@@ -538,7 +648,7 @@ fn log_search_limit_flag_after_subcommand_filters_results() {
     // With --limit 1 after the subcommand, should exit 0 and return exactly 1 result.
     let out = bin()
         .args(["log", "--json", "search", "check", "--limit", "1"])
-        .env("HOME", home.path())
+        .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v log --json search check --limit 1");
 
