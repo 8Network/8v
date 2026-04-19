@@ -19,6 +19,10 @@ pub struct StatsRow {
     /// Latency percentiles. None when n < MIN_SAMPLES_FOR_PERCENTILE.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<DurationStats>,
+    /// Arithmetic mean duration in ms. Present when n >= 1 (at least one completed record).
+    /// Shown in plain text when n < MIN_SAMPLES_FOR_PERCENTILE; always emitted in JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_ms: Option<f64>,
     /// Fraction of completed commands that succeeded. None when no completed records.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ok_rate: Option<f64>,

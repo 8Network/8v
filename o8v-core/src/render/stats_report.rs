@@ -66,17 +66,28 @@ pub fn render_table(header_label: &str, rows: &[StatsRow]) -> String {
     ));
 
     for row in rows {
-        let (p50, p95, p99) = match &row.duration_ms {
-            Some(d) => (Some(d.p50), Some(d.p95), Some(d.p99)),
-            None => (None, None, None),
+        let (p50_str, p95_str, p99_str) = match &row.duration_ms {
+            Some(d) => (
+                fmt_ms(Some(d.p50)),
+                fmt_ms(Some(d.p95)),
+                fmt_ms(Some(d.p99)),
+            ),
+            None => {
+                // Not enough samples for percentiles — show arithmetic mean instead.
+                let avg_str = match row.mean_ms {
+                    Some(m) => format!("avg:{:.0}ms", m),
+                    None => "-".to_string(),
+                };
+                (avg_str, "-".to_string(), "-".to_string())
+            }
         };
         out.push_str(&format!(
             "{:<label_w$}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>8}  {:>7}\n",
             row.label,
             row.n,
-            fmt_ms(p50),
-            fmt_ms(p95),
-            fmt_ms(p99),
+            p50_str,
+            p95_str,
+            p99_str,
             fmt_pct(row.ok_rate),
             fmt_bytes(row.output_bytes_per_call_mean),
             row.retry_cluster_count,

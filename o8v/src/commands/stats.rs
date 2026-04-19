@@ -308,6 +308,7 @@ struct Bucket {
     ok: u64,
     complete: u64,
     out_bytes_sum: u128,
+    duration_ms_sum: u128,
     histogram: Histogram,
     retry_cluster_count: u64,
 }
@@ -321,6 +322,7 @@ impl Bucket {
                 self.ok += 1;
             }
             self.out_bytes_sum += c.output_bytes as u128;
+            self.duration_ms_sum += c.duration_ms as u128;
             self.histogram.record(c.duration_ms);
         }
     }
@@ -343,10 +345,16 @@ impl Bucket {
         } else {
             None
         };
+        let mean_ms = if self.complete > 0 {
+            Some(self.duration_ms_sum as f64 / self.complete as f64)
+        } else {
+            None
+        };
         StatsRow {
             label,
             n: self.n,
             duration_ms,
+            mean_ms,
             ok_rate,
             output_bytes_per_call_mean,
             retry_cluster_count: self.retry_cluster_count,
@@ -575,6 +583,7 @@ mod tests {
                 label: "a".into(),
                 n: 2,
                 duration_ms: None,
+                mean_ms: None,
                 ok_rate: None,
                 output_bytes_per_call_mean: None,
                 retry_cluster_count: 0,
@@ -583,6 +592,7 @@ mod tests {
                 label: "b".into(),
                 n: 10,
                 duration_ms: None,
+                mean_ms: None,
                 ok_rate: None,
                 output_bytes_per_call_mean: None,
                 retry_cluster_count: 0,

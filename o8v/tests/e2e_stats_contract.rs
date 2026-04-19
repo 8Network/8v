@@ -1228,6 +1228,114 @@ fn stats_plain_shows_warnings_section() {
     );
 }
 
+// ── §mean_ms contract ────────────────────────────────────────────────────────
+
+/// Every row with n>=1 must have a `mean_ms` field in JSON output.
+/// This is true whether n<5 (no percentiles) or n>=5 (percentiles present).
+#[test]
+fn stats_mean_ms_in_json_always_present() {
+    // n=1 — below MIN_SAMPLES threshold, no percentiles expected
+    let ndjson = fresh("read", 1, true, &["read"], None);
+    let home = home_with_events(&ndjson);
+
+    let out = bin()
+        .args(["stats", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v stats");
+
+    assert!(
+        out.status.success(),
+        "must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+
+    let rows = v["rows"].as_array().expect("rows must be an array");
+    assert!(!rows.is_empty(), "expected at least one row");
+
+    for row in rows {
+        let label = row["label"].as_str().unwrap_or("<unknown>");
+        assert!(
+            !row["mean_ms"].is_null() && row.get("mean_ms").is_some(),
+            "row '{label}' with n>=1 must have a non-null mean_ms field; row:\n{row}"
+        );
+        assert!(
+            row["mean_ms"].is_number(),
+            "mean_ms must be a number for row '{label}'; got: {}",
+            row["mean_ms"]
+        );
+        // With n<5, duration_ms (percentiles) must be absent
+        assert!(
+            row.get("duration_ms").is_none(),
+            "row '{label}' with n=1 must not have duration_ms (percentiles require n>=5); row:\n{row}"
+        );
+    }
+}
+
+/// When n>=5, percentiles AND mean_ms must both be present in JSON output.
+#[test]
+fn stats_full_window_keeps_percentiles() {
+    // n=6 — above MIN_SAMPLES=5, so percentiles are expected
+    let ndjson = fresh("write", 6, true, &["write"], None);
+    let home = home_with_events(&ndjson);
+
+    let out = bin()
+        .args(["stats", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v stats");
+
+    assert!(
+        out.status.success(),
+        "must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stdout must be valid JSON");
+
+    let rows = v["rows"].as_array().expect("rows must be an array");
+    assert!(!rows.is_empty(), "expected at least one row");
+
+    for row in rows {
+        let label = row["label"].as_str().unwrap_or("<unknown>");
+
+        // mean_ms must be present
+        assert!(
+            !row["mean_ms"].is_null() && row.get("mean_ms").is_some(),
+            "row '{label}' with n>=5 must have mean_ms; row:\n{row}"
+        );
+        assert!(
+            row["mean_ms"].is_number(),
+            "mean_ms must be a number for row '{label}'; got: {}",
+            row["mean_ms"]
+        );
+
+        // Percentiles must also still be present (n>=5 path unchanged)
+        let duration = row.get("duration_ms");
+        assert!(
+            duration.is_some(),
+            "row '{label}' with n>=5 must have duration_ms (percentiles); row:\n{row}"
+        );
+        let dur = duration.unwrap();
+        assert!(
+            dur["p50"].is_number(),
+            "duration_ms.p50 must be a number for row '{label}'; got: {dur}"
+        );
+        assert!(
+            dur["p95"].is_number(),
+            "duration_ms.p95 must be a number for row '{label}'; got: {dur}"
+        );
+        assert!(
+            dur["p99"].is_number(),
+            "duration_ms.p99 must be a number for row '{label}'; got: {dur}"
+        );
+    }
+}
+
 /// Plain-text output must include a "failure hotspots:" section when hotspots exist.
 #[test]
 fn stats_plain_shows_failure_hotspots_section() {

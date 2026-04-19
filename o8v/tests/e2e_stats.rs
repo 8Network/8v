@@ -501,3 +501,57 @@ fn compare_bogus_value_exits_nonzero() {
         "expected error message mentioning invalid value, got: {stderr}"
     );
 }
+
+// ─── mean latency for n<5 ───────────────────────────────────────────────────
+
+/// When n=1, plain output must show `avg:` with the exact duration in ms.
+/// It must NOT show three `-` columns (p50/p95/p99 placeholders).
+#[test]
+fn stats_single_call_shows_mean_not_dashes() {
+    // One event with duration_ms = 42
+    let now = now_ms();
+    let ndjson = event_pair_at(
+        "ses_single_call_AAAAAAAAAAAAAAAAAAAAAAAAA",
+        "run_single_0",
+        "read",
+        now - 60_000,
+        42, // exact duration — must appear verbatim in output
+        true,
+        &["read"],
+        None,
+    );
+    let home = home_with_events(&ndjson);
+
+    let out = bin()
+        .args(["stats"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v stats");
+
+    assert!(
+        out.status.success(),
+        "must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // Must show the mean — exact value 42ms
+    assert!(
+        stdout.contains("avg:"),
+        "plain output for n=1 must contain 'avg:'; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("42"),
+        "plain output for n=1 must contain the duration value 42; got:\n{stdout}"
+    );
+
+    // Must NOT show three silent dashes for percentile columns.
+    // The old behaviour produced "       -       -       -" (three dash cells) in the data row.
+    // We verify that the three-dash pattern from the pre-fix renderer is absent.
+    // Note: "p50" appears in the header — that is expected and fine.
+    assert!(
+        !stdout.contains("-       -       -"),
+        "plain output for n=1 must not show three silent dash columns; got:\n{stdout}"
+    );
+}
