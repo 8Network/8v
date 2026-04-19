@@ -106,7 +106,25 @@ impl Command for LogCommand {
             return match session {
                 None => Ok(LogReport::Empty),
                 Some(s) => {
-                    let mut warnings = all_warnings;
+                    // Collect the run_ids that belong to this session.
+                    let session_run_ids: std::collections::HashSet<&str> = s
+                        .commands
+                        .iter()
+                        .map(|c| c.started.run_id.as_str())
+                        .collect();
+                    // Orphan warnings are emitted for the full event set before
+                    // session filtering. Retain only those whose run_id is in
+                    // this session; drop orphans from other sessions entirely.
+                    let mut warnings: Vec<Warning> = all_warnings
+                        .into_iter()
+                        .filter(|w| match w {
+                            Warning::OrphanStarted { run_id }
+                            | Warning::OrphanCompleted { run_id } => {
+                                session_run_ids.contains(run_id.as_str())
+                            }
+                            _ => true,
+                        })
+                        .collect();
                     warnings.extend(extra_sink.into_inner());
                     Ok(LogReport::Drill(Box::new(drill::build_drill_report(
                         s,

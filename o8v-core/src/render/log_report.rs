@@ -524,6 +524,7 @@ impl super::Renderable for DrillReport {
             "output_bytes_total": self.output_bytes_total,
             "top_commands": top_cmds,
             "clusters": clusters,
+            "warnings": self.warnings,
         });
 
         let s = match serde_json::to_string_pretty(&json) {
