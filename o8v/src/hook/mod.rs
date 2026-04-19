@@ -9,6 +9,7 @@
 //! event emission, and the HTTP listener are out of scope until Slice 2.
 
 pub mod argv_map;
+pub mod dispatch;
 pub mod payload;
 pub mod redact;
 pub mod run_id;
