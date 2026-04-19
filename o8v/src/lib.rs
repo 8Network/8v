@@ -18,6 +18,7 @@ pub mod workspace;
 // instead of `o8v::`, allowing aggregator internals to stay `pub(crate)`.
 pub mod cli;
 pub mod commands;
+pub mod hook;
 pub(crate) mod hooks;
 pub mod init;
 pub mod mcp;

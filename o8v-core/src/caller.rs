@@ -28,6 +28,8 @@ pub enum Caller {
     Cli,
     /// MCP server (AI agent).
     Mcp,
+    /// Claude hook (PreToolUse / PostToolUse native tool capture).
+    Hook,
 }
 
 impl Caller {
@@ -36,6 +38,7 @@ impl Caller {
         match self {
             Caller::Cli => "cli",
             Caller::Mcp => "mcp",
+            Caller::Hook => "hook",
         }
     }
 }
@@ -43,5 +46,18 @@ impl Caller {
 impl std::fmt::Display for Caller {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for Caller {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cli" => Ok(Caller::Cli),
+            "mcp" => Ok(Caller::Mcp),
+            "hook" => Ok(Caller::Hook),
+            other => Err(format!("unknown caller: {other:?}")),
+        }
     }
 }

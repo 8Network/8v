@@ -5,6 +5,7 @@
 //! `SessionId` — a process-scoped identifier of the form `ses_<ULID>`.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fmt;
 
 /// Stable prefix for all session identifiers. 26 bytes of Crockford-base32 ULID follow.
@@ -73,6 +74,24 @@ impl SessionId {
         &self.0
     }
 
+    /// Derive a deterministic `SessionId` from a Claude session identifier string.
+    ///
+    /// Claude's session IDs are opaque strings (UUIDs or similar). This constructor
+    /// hashes the raw string with SHA-256, interprets the first 16 bytes as a
+    /// big-endian `u128`, then encodes those 128 bits as 26 Crockford base32
+    /// characters — the same alphabet the ULID validator accepts — and prepends
+    /// `ses_`. The result always passes [`Self::try_from_raw`].
+    pub fn from_claude_session_id(claude_id: &str) -> Self {
+        let digest = Sha256::digest(claude_id.as_bytes());
+        // Take first 16 bytes → u128 → Crockford base32 (26 chars, uppercase).
+        let bytes: [u8; 16] = digest[..16].try_into().expect("SHA-256 is 32 bytes");
+        let value = u128::from_be_bytes(bytes);
+        // `Ulid(u128)` is a public tuple struct; `to_string()` encodes to
+        // 26-char Crockford base32, the same alphabet `try_from_raw` validates.
+        let suffix = ulid::Ulid(value).to_string();
+        Self(format!("{PREFIX}{suffix}"))
+    }
+
     /// Bypass validation. **Only** for deserialized-and-already-validated
     /// replay, for replaying from internal storage where the value was
     /// produced by [`Self::new`], or for tests. Callers that receive a
@@ -139,5 +158,33 @@ mod tests {
             SessionId::try_from_raw(raw),
             Err(InvalidSessionId::InvalidChars(_))
         ));
+    }
+
+    #[test]
+    fn session_id_from_claude_session_id_stable() {
+        // Same input must always produce the same SessionId.
+        let a = SessionId::from_claude_session_id("claude-abc-123");
+        let b = SessionId::from_claude_session_id("claude-abc-123");
+        assert_eq!(a, b);
+
+        // Different inputs must produce different SessionIds.
+        let c = SessionId::from_claude_session_id("claude-xyz-999");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn session_id_from_claude_session_id_format() {
+        let id = SessionId::from_claude_session_id("any-opaque-session-value");
+        let s = id.as_str();
+
+        // Must start with the standard prefix.
+        assert!(s.starts_with(PREFIX), "expected 'ses_' prefix, got: {s}");
+
+        // Total length must be prefix + 26 Crockford base32 chars.
+        assert_eq!(s.len(), PREFIX.len() + ULID_LEN, "wrong total length: {s}");
+
+        // Must pass the standard validator (exercises Crockford alphabet check).
+        SessionId::try_from_raw(s.to_string())
+            .expect("from_claude_session_id must produce a valid SessionId");
     }
 }
