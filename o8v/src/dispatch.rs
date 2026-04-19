@@ -166,7 +166,7 @@ where
     C::Report: Renderable,
 {
     let task_id = TaskId::new();
-    let run_id = task_id.to_string();
+    let run_id = crate::hook::run_id::mint_run_id();
     let start_ms = match std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
     {
