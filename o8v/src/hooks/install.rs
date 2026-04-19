@@ -35,6 +35,12 @@ const CLAUDE_HOOK_EVENTS: &[(&str, &str)] = &[
     ("SubagentStop", "8v hooks claude subagent-stop"),
 ];
 
+/// Observability hooks: emit events to ~/.8v/events.ndjson, never block.
+const CLAUDE_OBSERVABILITY_HOOKS: &[(&str, &str)] = &[
+    ("PreToolUse", "8v hook pre"),
+    ("PostToolUse", "8v hook post"),
+];
+
 // ─── Typed structs for .claude/settings.json ─────────────────────────────────
 
 /// Claude Code settings.json — only the fields we manage.
@@ -360,6 +366,32 @@ pub fn install_claude_hooks(root: &o8v_fs::ContainmentRoot) -> std::io::Result<(
         }
     }
 
+    // For each observability hook event, add our entry if not already present.
+    // These emit events to ~/.8v/events.ndjson and never block.
+    // Idempotency prefix "8v hook " (with trailing space) does not collide with
+    // "8v hooks claude ..." — the `s` at position 5 disambiguates.
+    for (event, command) in CLAUDE_OBSERVABILITY_HOOKS {
+        let entries = event_entries_mut(&mut settings.hooks, event)
+            .ok_or_else(|| std::io::Error::other(format!("unrecognized hook event: {event}")))?;
+
+        let already_present = entries.iter().any(|entry| {
+            entry
+                .hooks
+                .iter()
+                .any(|h| h.command.starts_with("8v hook "))
+        });
+
+        if !already_present {
+            entries.push(HookEntry {
+                matcher: matcher_for(event).to_string(),
+                hooks: vec![Hook {
+                    hook_type: "command".to_string(),
+                    command: command.to_string(),
+                }],
+            });
+        }
+    }
+
     // Ensure MCP permission is present.
     if !settings
         .permissions
@@ -582,13 +614,16 @@ mod tests {
         let content = fs::read_to_string(root.join(".claude/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         let hooks = v["hooks"].as_object().unwrap();
-        // Each event should have exactly one entry
+        // Events that also have an observability hook get 2 entries; others get 1.
+        let obs_events: std::collections::HashSet<&str> =
+            CLAUDE_OBSERVABILITY_HOOKS.iter().map(|(e, _)| *e).collect();
         for (event, _) in CLAUDE_HOOK_EVENTS {
             let entries = hooks[*event].as_array().unwrap();
+            let expected = if obs_events.contains(*event) { 2 } else { 1 };
             assert_eq!(
                 entries.len(),
-                1,
-                "event {event} must have exactly 1 entry after 2 installs"
+                expected,
+                "event {event} must have exactly {expected} entries after 2 installs"
             );
         }
     }
@@ -638,8 +673,8 @@ mod tests {
         let content = fs::read_to_string(root.join(".claude/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         let pre_tool_use = v["hooks"]["PreToolUse"].as_array().unwrap();
-        // Should have both user's hook and our hook
-        assert_eq!(pre_tool_use.len(), 2);
+        // Should have user's hook, blocker hook, and observability hook
+        assert_eq!(pre_tool_use.len(), 3);
         assert!(pre_tool_use
             .iter()
             .any(|e| e["matcher"].as_str() == Some("UserHook")));
@@ -652,5 +687,86 @@ mod tests {
                 })
                 .unwrap_or(false)
         }));
+    }
+
+    #[test]
+    fn observability_hooks_installed_for_pre_tool_use() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        install_claude_hooks(&containment_root).unwrap();
+
+        let content = fs::read_to_string(root.join(".claude/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let pre_tool_use = v["hooks"]["PreToolUse"].as_array().unwrap();
+        assert!(
+            pre_tool_use.iter().any(|e| {
+                e["hooks"]
+                    .as_array()
+                    .map(|h| {
+                        h.iter()
+                            .any(|h| h["command"].as_str() == Some("8v hook pre"))
+                    })
+                    .unwrap_or(false)
+            }),
+            "PreToolUse must contain an observability entry with command '8v hook pre'"
+        );
+    }
+
+    #[test]
+    fn observability_hooks_installed_for_post_tool_use() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        install_claude_hooks(&containment_root).unwrap();
+
+        let content = fs::read_to_string(root.join(".claude/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let post_tool_use = v["hooks"]["PostToolUse"].as_array().unwrap();
+        assert!(
+            post_tool_use.iter().any(|e| {
+                e["hooks"]
+                    .as_array()
+                    .map(|h| {
+                        h.iter()
+                            .any(|h| h["command"].as_str() == Some("8v hook post"))
+                    })
+                    .unwrap_or(false)
+            }),
+            "PostToolUse must contain an observability entry with command '8v hook post'"
+        );
+    }
+
+    #[test]
+    fn observability_hooks_are_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        install_claude_hooks(&containment_root).unwrap();
+        install_claude_hooks(&containment_root).unwrap();
+
+        let content = fs::read_to_string(root.join(".claude/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let hooks = v["hooks"].as_object().unwrap();
+
+        for (event, obs_cmd) in CLAUDE_OBSERVABILITY_HOOKS {
+            let entries = hooks[*event].as_array().unwrap();
+            let obs_count = entries
+                .iter()
+                .filter(|e| {
+                    e["hooks"]
+                        .as_array()
+                        .map(|h| h.iter().any(|h| h["command"].as_str() == Some(*obs_cmd)))
+                        .unwrap_or(false)
+                })
+                .count();
+            assert_eq!(
+                obs_count, 1,
+                "event {event} must have exactly 1 observability entry after 2 installs"
+            );
+        }
     }
 }
