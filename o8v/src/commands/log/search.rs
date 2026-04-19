@@ -5,6 +5,7 @@
 //! Builds `SearchResults` for `8v log search <query>`.
 
 use crate::aggregator::SessionAggregate;
+use o8v_core::caller::Caller;
 use o8v_core::render::log_report::{SearchResultRow, SearchResults};
 use std::collections::HashSet;
 
@@ -38,6 +39,9 @@ pub fn build_search_results(
 
     let total_matches = rows.len();
     let session_count = matched_sessions.len();
+    let has_hook_events = sessions
+        .iter()
+        .any(|s| s.commands.iter().any(|c| c.started.caller == Caller::Hook));
 
     let rows = if limit > 0 {
         rows.into_iter().take(limit).collect()
@@ -50,6 +54,7 @@ pub fn build_search_results(
         rows,
         session_count,
         total_matches,
+        has_hook_events,
     }
 }
 

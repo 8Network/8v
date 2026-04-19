@@ -75,6 +75,20 @@ pub fn fmt_warning(w: &Warning) -> String {
 pub(crate) const BLIND_SPOTS: &str =
     "blind spots: native Read/Edit/Bash invisible; write-success ≠ code-correct.";
 
+/// Returns the appropriate blind-spots footer line.
+///
+/// When the filtered event set contains at least one hook-caller event the
+/// "native Read/Edit/Bash invisible" clause is factually wrong — hook events
+/// DO capture those tool calls.  Drop that clause and keep only the part that
+/// is always true.
+pub(crate) fn blind_spots_footer(has_hook_events: bool) -> &'static str {
+    if has_hook_events {
+        "blind spots: write-success ≠ code-correct."
+    } else {
+        BLIND_SPOTS
+    }
+}
+
 /// Format a byte count as a human-readable string: KB / MB / B.
 fn fmt_bytes(bytes: u64) -> String {
     if bytes >= 1_000_000 {
@@ -196,6 +210,8 @@ pub struct SessionsTable {
     pub total_count: usize,
     pub limit: usize,
     pub warnings: Vec<Warning>,
+    /// True when the filtered event set contains at least one `caller="hook"` event.
+    pub has_hook_events: bool,
 }
 
 impl super::Renderable for SessionsTable {
@@ -248,7 +264,7 @@ impl super::Renderable for SessionsTable {
         }
 
         out.push('\n');
-        out.push_str(BLIND_SPOTS);
+        out.push_str(blind_spots_footer(self.has_hook_events));
         out.push('\n');
 
         Output::new(out)
@@ -446,7 +462,7 @@ impl super::Renderable for DrillReport {
         }
 
         out.push('\n');
-        out.push_str(BLIND_SPOTS);
+        out.push_str(blind_spots_footer(self.caller == "hook"));
         out.push('\n');
 
         Output::new(out)
@@ -537,6 +553,8 @@ pub struct SearchResults {
     pub rows: Vec<SearchResultRow>,
     pub session_count: usize,
     pub total_matches: usize,
+    /// True when the filtered event set contains at least one `caller="hook"` event.
+    pub has_hook_events: bool,
 }
 
 impl super::Renderable for SearchResults {
@@ -562,7 +580,7 @@ impl super::Renderable for SearchResults {
         }
 
         out.push('\n');
-        out.push_str(BLIND_SPOTS);
+        out.push_str(blind_spots_footer(self.has_hook_events));
         out.push('\n');
 
         Output::new(out)
@@ -646,6 +664,7 @@ mod tests {
             total_count: 1,
             limit: 10,
             warnings: vec![],
+            has_hook_events: false,
         };
         let out = table.render_plain();
         let s = out.as_str();
@@ -662,6 +681,7 @@ mod tests {
             total_count: 1,
             limit: 10,
             warnings: vec![],
+            has_hook_events: false,
         };
         let out = table.render_plain();
         let s = out.as_str();
@@ -677,6 +697,7 @@ mod tests {
             total_count: 1,
             limit: 10,
             warnings: vec![],
+            has_hook_events: false,
         };
         let out = table.render_plain();
         let s = out.as_str();
@@ -695,6 +716,7 @@ mod tests {
             total_count: 87,
             limit: 5,
             warnings: vec![],
+            has_hook_events: false,
         };
         let out = table.render_plain();
         let s = out.as_str();
@@ -712,6 +734,7 @@ mod tests {
             total_count: 1,
             limit: 10,
             warnings: vec![],
+            has_hook_events: false,
         };
         let out = table.render_json();
         let s = out.as_str();
@@ -732,6 +755,7 @@ mod tests {
             warnings: vec![Warning::DuplicateStarted {
                 run_id: "r1".to_string(),
             }],
+            has_hook_events: false,
         };
         let out = table.render_plain();
         assert!(
@@ -879,6 +903,7 @@ mod tests {
             }],
             session_count: 1,
             total_matches: 1,
+            has_hook_events: false,
         };
         let out = results.render_plain();
         let s = out.as_str();
@@ -904,6 +929,7 @@ mod tests {
             }],
             session_count: 1,
             total_matches: 1,
+            has_hook_events: false,
         };
         let out = results.render_json();
         let parsed: serde_json::Value =
@@ -1006,6 +1032,7 @@ mod tests {
             rows: vec![],
             session_count: 0,
             total_matches: 0,
+            has_hook_events: false,
         };
         let out = results.render_plain();
         assert!(

@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::ValueEnum;
+use o8v_core::caller::Caller;
 use o8v_core::command::{Command, CommandContext, CommandError};
 use o8v_core::events::Event;
 use o8v_core::render::stats_view::{LabelKey, ReportKind, StatsView};
@@ -145,6 +146,7 @@ impl Command for StatsCommand {
                         kind: ReportKind::Table,
                         label_key: LabelKey::Command,
                         shape: None,
+                        has_hook_events: false,
                     });
                 }
                 windowed_owned = events
@@ -175,6 +177,9 @@ impl Command for StatsCommand {
             })
             .cloned()
             .collect();
+        let has_hook_events = filtered
+            .iter()
+            .any(|ev| matches!(ev, Event::CommandStarted(s) if s.caller == Caller::Hook));
         let mut normalizer = ArgvNormalizer::new();
         let sessions = aggregate_events(
             &filtered,
@@ -191,6 +196,7 @@ impl Command for StatsCommand {
             self.args.min_n,
             sink.into_inner(),
             failure_hotspots,
+            has_hook_events,
         );
 
         // Set session_id on the report when session filter was active.
@@ -243,6 +249,7 @@ fn build_report(
     min_n: u64,
     warnings: Vec<Warning>,
     failure_hotspots: Vec<FailureHotspot>,
+    has_hook_events: bool,
 ) -> StatsView {
     match mode {
         Mode::Default => {
@@ -259,6 +266,7 @@ fn build_report(
                 kind: ReportKind::Table,
                 label_key: LabelKey::Command,
                 shape: None,
+                has_hook_events,
             }
         }
         Mode::Drill(cmd) => {
@@ -275,6 +283,7 @@ fn build_report(
                 kind: ReportKind::Drill,
                 label_key: LabelKey::ArgvShape,
                 shape: Some(cmd.to_string()),
+                has_hook_events,
             }
         }
         Mode::ByAgent => {
@@ -291,6 +300,7 @@ fn build_report(
                 kind: ReportKind::ByAgent,
                 label_key: LabelKey::Agent,
                 shape: None,
+                has_hook_events,
             }
         }
     }

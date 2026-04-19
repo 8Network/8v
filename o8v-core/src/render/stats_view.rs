@@ -44,6 +44,8 @@ pub struct StatsView {
     pub label_key: LabelKey,
     /// Only set when `kind = Drill`.
     pub shape: Option<String>,
+    /// True when the filtered event set contains at least one `caller="hook"` event.
+    pub has_hook_events: bool,
 }
 
 impl StatsView {
@@ -105,7 +107,7 @@ impl super::Renderable for StatsView {
             table,
             render_warnings(&self.report.warnings),
             render_failure_hotspots(&self.report.failure_hotspots),
-            super::log_report::BLIND_SPOTS,
+            super::log_report::blind_spots_footer(self.has_hook_events),
         );
         Output::new(text)
     }

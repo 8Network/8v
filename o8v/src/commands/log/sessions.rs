@@ -5,6 +5,7 @@
 //! Builds the `SessionsTable` for `8v log` (no subcommand).
 
 use crate::aggregator::SessionAggregate;
+use o8v_core::caller::Caller;
 use o8v_core::render::log_report::{SessionRow, SessionsTable};
 
 pub fn build_sessions_table(
@@ -82,11 +83,15 @@ pub fn build_sessions_table(
             }
         })
         .collect();
+    let has_hook_events = sessions
+        .iter()
+        .any(|s| s.commands.iter().any(|c| c.started.caller == Caller::Hook));
     SessionsTable {
         rows,
         total_count,
         limit,
         warnings: scoped_warnings,
+        has_hook_events,
     }
 }
 
