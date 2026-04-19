@@ -16,13 +16,20 @@ fn patterns() -> &'static [Regex; 3] {
     static PATTERNS: OnceLock<[Regex; 3]> = OnceLock::new();
     PATTERNS.get_or_init(|| {
         [
-            // API keys — e.g. OpenAI sk-... tokens.
-            Regex::new(r"sk-[A-Za-z0-9]{20,}").expect("api key pattern is valid"),
+            // API keys — e.g. OpenAI sk-... / Stripe sk_live_... / sk_test_... tokens.
+            // (?i) makes the `sk` prefix case-insensitive; [-_] allows dash or underscore
+            // separator; [A-Za-z0-9_] in the body captures Stripe-style sub-segments.
+            Regex::new(r"(?i)sk[-_][A-Za-z0-9_]{20,}").expect("api key pattern is valid"),
             // JWTs — three base64url segments separated by dots.
-            Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+            // `=` added to each char class to handle non-conformant issuers that emit
+            // base64 padding characters in one or more segments.
+            Regex::new(r"eyJ[A-Za-z0-9_=\-]+\.eyJ[A-Za-z0-9_=\-]+\.[A-Za-z0-9_=\-]+")
                 .expect("jwt pattern is valid"),
             // URL credentials — user:pass@ in any scheme.
-            Regex::new(r"://[^:@/ ]+:[^@/ ]+@").expect("url credentials pattern is valid"),
+            // Second branch handles percent-encoded colon (%3A / %3a) where no literal
+            // `:` separator appears between the username and password.
+            Regex::new(r"://(?:[^:@/ ]+:[^@/ ]+|[^@/ ]+%3[Aa][^@/ ]*)@")
+                .expect("url credentials pattern is valid"),
         ]
     })
 }
