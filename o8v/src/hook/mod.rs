@@ -8,4 +8,7 @@
 //! Slice 1 ships the types and pure functions only. Subcommand wiring,
 //! event emission, and the HTTP listener are out of scope until Slice 2.
 
+pub mod argv_map;
+pub mod payload;
 pub mod redact;
+pub mod run_id;
