@@ -62,6 +62,9 @@ pub enum Command {
     Stats(stats::Args),
     /// Start MCP server
     Mcp,
+    /// Handle Claude Code hook events (hidden; used by hook scripts only)
+    #[clap(hide = true)]
+    Hook(crate::hook::Args),
 }
 
 impl Command {
@@ -87,6 +90,7 @@ impl Command {
             Command::Hooks(a) => a.format.audience_with_default(default),
             Command::Upgrade(a) => a.format.audience_with_default(default),
             Command::Mcp => default,
+            Command::Hook(_) => default,
         }
     }
 
@@ -109,7 +113,8 @@ impl Command {
             | Command::Upgrade(_)
             | Command::Log(_)
             | Command::Stats(_)
-            | Command::Mcp => Ok(()),
+            | Command::Mcp
+            | Command::Hook(_) => Ok(()),
         }
     }
 
@@ -130,6 +135,7 @@ impl Command {
             Command::Log(_) => "log",
             Command::Stats(_) => "stats",
             Command::Mcp => "mcp",
+            Command::Hook(_) => "hook",
         }
     }
 }
@@ -333,6 +339,40 @@ pub async fn dispatch_command_with_agent(
                 ExitCode::FAILURE
             };
             Ok((output, exit, false))
+        }
+        Command::Hook(args) => {
+            use crate::hook::dispatch::{handle_post, handle_pre};
+            use crate::hook::HookCommand;
+            use crate::workspace::StorageDir;
+            use std::io::Read as _;
+
+            // Read all of stdin before branching — same for both sub-subcommands.
+            let mut stdin_buf = String::new();
+            if let Err(e) = std::io::stdin().lock().read_to_string(&mut stdin_buf) {
+                eprintln!("8v hook: failed to read stdin: {e}");
+                return Ok(("".to_string(), ExitCode::SUCCESS, false));
+            }
+
+            // Open the event store.  If _8V_HOME is not set or the directory
+            // cannot be opened we still exit 0 — never block Claude Code.
+            let storage = match StorageDir::open() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("8v hook: storage unavailable: {e}");
+                    return Ok(("".to_string(), ExitCode::SUCCESS, false));
+                }
+            };
+
+            let result = match args.command {
+                HookCommand::Pre => handle_pre(&stdin_buf, &storage),
+                HookCommand::Post => handle_post(&stdin_buf, &storage),
+            };
+
+            if let Err(e) = result {
+                eprintln!("8v hook: dispatch error: {e:?}");
+            }
+
+            Ok(("".to_string(), ExitCode::SUCCESS, false))
         }
         Command::Mcp => Err(CommandError::Execution("not a dispatchable command".into())),
     }
