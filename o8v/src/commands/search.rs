@@ -24,6 +24,14 @@ use std::path::Path;
 
 // ─── Args ────────────────────────────────────────────────────────────────────
 
+fn parse_nonzero_limit(s: &str) -> Result<usize, String> {
+    let n: usize = s.parse().map_err(|_| format!("invalid limit: {s:?}"))?;
+    if n == 0 {
+        return Err("--limit must be 1 or greater".to_string());
+    }
+    Ok(n)
+}
+
 #[derive(clap::Args, Debug)]
 pub struct Args {
     /// Regex pattern to search for
@@ -46,7 +54,7 @@ pub struct Args {
     pub context: Option<usize>,
 
     /// Maximum number of files with matches to return (default: 20)
-    #[arg(long, default_value = "20")]
+    #[arg(long, default_value = "20", value_parser = parse_nonzero_limit)]
     pub limit: usize,
 
     /// Maximum matches per file (default: 10)

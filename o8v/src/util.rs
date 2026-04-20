@@ -7,8 +7,13 @@
 use std::path::Path;
 
 /// Makes `path` relative to `root`. Falls back to the full path string if not under root.
+/// When `path == root` (single-file scope), returns the file name so the label is non-empty.
 pub(crate) fn relative_to(root: &Path, path: &Path) -> String {
     match path.strip_prefix(root) {
+        Ok(rel) if rel.as_os_str().is_empty() => path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string_lossy().into_owned()),
         Ok(rel) => rel.to_string_lossy().into_owned(),
         Err(_) => path.to_string_lossy().into_owned(),
     }
