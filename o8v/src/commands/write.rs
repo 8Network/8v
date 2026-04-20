@@ -48,7 +48,7 @@ pub struct Args {
     #[arg(long)]
     pub all: bool,
 
-    /// Force overwrite existing file (create mode only)
+    /// Overwrite an existing file when writing whole-file content (no range, no --find)
     #[arg(long)]
     pub force: bool,
 
@@ -210,7 +210,7 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
                  Usage: 8v write <path> --find \"old\" --replace \"new\""
                 .to_string());
         }
-        let find = args.find.clone().unwrap();
+        let find = unescape_content(&args.find.clone().unwrap());
         if find.is_empty() {
             return Err("Error: --find pattern must not be empty\n\
                  Usage: 8v write <path> --find \"old\" --replace \"new\""
@@ -1079,6 +1079,53 @@ mod tests {
                     replace, "a\nb",
                     "FindReplace replace must have real newline, not \\\\n literal"
                 );
+            }
+            other => panic!("expected FindReplace, got {other:?}"),
+        }
+    }
+
+    // ── AF-4: --find must unescape like --replace and content args ──────────
+    #[test]
+    fn find_replace_operation_unescapes_find_newline() {
+        let args = Args {
+            path: "f.txt".to_string(),
+            content: None,
+            insert: false,
+            delete: false,
+            append: false,
+            find: Some("a\\nb".to_string()),
+            replace: Some("x".to_string()),
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::FindReplace { find, .. } => {
+                assert_eq!(find, "a\nb", "--find must unescape \\n to a real newline");
+            }
+            other => panic!("expected FindReplace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_replace_operation_unescapes_find_tab_and_backslash() {
+        let args = Args {
+            path: "f.txt".to_string(),
+            content: None,
+            insert: false,
+            delete: false,
+            append: false,
+            find: Some("a\\tb\\\\c".to_string()),
+            replace: Some("x".to_string()),
+            all: false,
+            force: false,
+            format: crate::commands::output_format::OutputFormat::default(),
+        };
+        let op = validate_args(&args).expect("should succeed");
+        match op {
+            WriteOperation::FindReplace { find, .. } => {
+                assert_eq!(find, "a\tb\\c", "--find must unescape \\t and \\\\");
             }
             other => panic!("expected FindReplace, got {other:?}"),
         }
