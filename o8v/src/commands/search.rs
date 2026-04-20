@@ -13,6 +13,9 @@
 //! - `8v search <pattern> --limit 20` — max files with matches (default: 20)
 //! - `8v search <pattern> --json` — JSON output (nested by file)
 
+use std::collections::{BTreeMap, HashSet};
+use std::path::Path;
+
 use ignore::WalkBuilder;
 use o8v_core::command::{Command, CommandContext, CommandError};
 use o8v_core::render::search_report::{
@@ -20,7 +23,6 @@ use o8v_core::render::search_report::{
 };
 use o8v_fs::{ContainmentRoot, FsConfig};
 use regex::{Regex, RegexBuilder};
-use std::path::Path;
 
 // ─── Args ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +96,7 @@ pub struct SearchResult {
     pub total_files: usize,
     pub files_searched: usize,
     pub files_skipped: usize,
+    pub files_skipped_by_reason: BTreeMap<String, usize>,
     pub truncated: bool,
 }
 
@@ -143,13 +146,21 @@ fn search_file_contents(
     regex: &Regex,
     args: &Args,
     result: &mut SearchResult,
-) {
+) -> Option<String> {
     let guarded = match o8v_fs::safe_read(path, containment, config) {
         Ok(f) => f,
         Err(e) => {
+            let reason = if e.to_string().contains("Permission denied")
+                || e.to_string().contains("permission denied")
+                || e.to_string().contains("os error 13")
+            {
+                "permission_denied"
+            } else {
+                "io_error"
+            };
             tracing::debug!("cannot read {}: {e}", path.display());
             result.files_skipped += 1;
-            return;
+            return Some(reason.to_string());
         }
     };
 
@@ -159,7 +170,8 @@ fn search_file_contents(
     // invalid UTF-8 is already rejected. NUL bytes in otherwise-valid UTF-8
     // indicate binary content (e.g. embedded null-terminated strings).
     if content.contains('\0') {
-        return;
+        result.files_skipped += 1;
+        return Some("binary".to_string());
     }
 
     let lines: Vec<&str> = content.lines().collect();
@@ -224,6 +236,8 @@ fn search_file_contents(
             matches: file_matches,
         });
     }
+
+    None
 }
 
 /// Search file names for pattern matches.
@@ -278,8 +292,11 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
         total_files: 0,
         files_searched: 0,
         files_skipped: 0,
+        files_skipped_by_reason: BTreeMap::new(),
         truncated: false,
     };
+
+    let mut seen: HashSet<(String, String)> = HashSet::new();
 
     let walker = WalkBuilder::new(&root)
         .standard_filters(true) // respects .gitignore, hidden, etc.
@@ -314,7 +331,24 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
         if args.files {
             search_file_names(path, &root, &regex, &mut result);
         } else {
-            search_file_contents(path, &root, containment, &config, &regex, args, &mut result);
+            let skip_reason =
+                search_file_contents(path, &root, containment, &config, &regex, args, &mut result);
+            if let Some(reason) = skip_reason {
+                let rel_path = crate::util::relative_to(&root, path);
+                *result
+                    .files_skipped_by_reason
+                    .entry(reason.clone())
+                    .or_insert(0) += 1;
+                // Emit stderr for real errors (not binary), deduped by (reason, path).
+                if reason != "binary" && seen.insert((reason.clone(), rel_path.clone())) {
+                    let reason_display = match reason.as_str() {
+                        "permission_denied" => "permission denied",
+                        "not_utf8" => "not UTF-8",
+                        _ => "I/O error",
+                    };
+                    eprintln!("error: search: {reason_display}: {rel_path}");
+                }
+            }
         }
     }
 
@@ -360,6 +394,7 @@ impl Command for SearchCommand {
             total_files: result.total_files,
             files_searched: result.files_searched,
             files_skipped: result.files_skipped,
+            files_skipped_by_reason: result.files_skipped_by_reason,
             truncated: result.truncated,
             file_mode: self.args.files,
             context: self.args.context,
@@ -379,7 +414,11 @@ impl Command for SearchCommand {
 /// increment `files_skipped`, so a non-zero count means a real failure the
 /// agent should be able to detect via the exit code.
 pub(crate) fn had_read_errors(report: &SearchReport) -> bool {
-    report.files_skipped > 0
+    report
+        .files_skipped_by_reason
+        .iter()
+        .filter(|(k, _)| k.as_str() != "binary")
+        .any(|(_, &v)| v > 0)
 }
 
 #[cfg(test)]
@@ -387,7 +426,11 @@ mod tests {
     use super::*;
     use o8v_core::render::RenderConfig;
 
-    fn empty_report(files_skipped: usize) -> SearchReport {
+    fn empty_report_with_reason(reason: &str, count: usize) -> SearchReport {
+        let mut by_reason = BTreeMap::new();
+        if count > 0 {
+            by_reason.insert(reason.to_string(), count);
+        }
         SearchReport {
             pattern: String::new(),
             files: Vec::new(),
@@ -395,7 +438,8 @@ mod tests {
             total_matches_before_limit: 0,
             total_files: 0,
             files_searched: 0,
-            files_skipped,
+            files_skipped: count,
+            files_skipped_by_reason: by_reason,
             truncated: false,
             file_mode: false,
             context: Some(2),
@@ -411,12 +455,25 @@ mod tests {
 
     #[test]
     fn had_read_errors_false_when_zero_skipped() {
-        assert!(!had_read_errors(&empty_report(0)));
+        assert!(!had_read_errors(&empty_report_with_reason(
+            "permission_denied",
+            0
+        )));
     }
 
     #[test]
-    fn had_read_errors_true_when_any_skipped() {
-        assert!(had_read_errors(&empty_report(1)));
-        assert!(had_read_errors(&empty_report(42)));
+    fn had_read_errors_true_when_permission_denied() {
+        assert!(had_read_errors(&empty_report_with_reason(
+            "permission_denied",
+            1
+        )));
+        assert!(had_read_errors(&empty_report_with_reason("io_error", 42)));
+    }
+
+    #[test]
+    fn had_read_errors_false_when_only_binary_skipped() {
+        // Binary skips are expected noise — they must not flip the exit code.
+        assert!(!had_read_errors(&empty_report_with_reason("binary", 1)));
+        assert!(!had_read_errors(&empty_report_with_reason("binary", 999)));
     }
 }

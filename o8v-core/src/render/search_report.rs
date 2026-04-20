@@ -4,6 +4,8 @@
 
 //! Report type for `8v search` — content and file search results.
 
+use std::collections::BTreeMap;
+
 use super::output::Output;
 use crate::render::RenderConfig;
 
@@ -44,6 +46,9 @@ pub struct SearchReport {
     pub files_searched: usize,
     /// Files skipped due to read errors or binary content.
     pub files_skipped: usize,
+    /// Per-reason skip counts. Keys: "permission_denied", "binary", "not_utf8", "io_error".
+    /// Only non-zero entries are present.
+    pub files_skipped_by_reason: BTreeMap<String, usize>,
     /// True when file-limit or per-file-match-limit was hit.
     pub truncated: bool,
     /// True when --files mode was used (filename search).
@@ -191,6 +196,7 @@ impl super::Renderable for SearchReport {
                 "total": self.total_files,
                 "files_searched": self.files_searched,
                 "files_skipped": self.files_skipped,
+                "files_skipped_by_reason": &self.files_skipped_by_reason,
                 "truncated": self.truncated,
             })
         } else {
@@ -241,6 +247,7 @@ impl super::Renderable for SearchReport {
                 "total_files": self.total_files,
                 "files_searched": self.files_searched,
                 "files_skipped": self.files_skipped,
+                "files_skipped_by_reason": &self.files_skipped_by_reason,
                 "truncated": self.truncated,
             })
         };
@@ -288,6 +295,7 @@ mod tests {
             total_files: 2,
             files_searched: 50,
             files_skipped: 0,
+            files_skipped_by_reason: BTreeMap::new(),
             truncated: false,
             file_mode: false,
             context: Some(0),
@@ -329,6 +337,7 @@ mod tests {
             total_files: 0,
             files_searched: 100,
             files_skipped: 0,
+            files_skipped_by_reason: BTreeMap::new(),
             truncated: false,
             file_mode: false,
             context: None,
@@ -361,6 +370,7 @@ mod tests {
             total_files: 1,
             files_searched: 5,
             files_skipped: 0,
+            files_skipped_by_reason: BTreeMap::new(),
             truncated: false,
             file_mode: true,
             context: None,
