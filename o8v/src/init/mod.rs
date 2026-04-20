@@ -257,39 +257,60 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
         completed.push(".mcp.json — MCP server registered");
     }
 
-    // Step 4: CLAUDE.md — skip if AGENTS.md already has the current-version 8v block
+    // Step 4: CLAUDE.md. Three cases:
+    //   1. CLAUDE.md itself already has the current 8v block → report that
+    //      directly ("CLAUDE.md already current"). Truthful on re-runs.
+    //   2. CLAUDE.md does NOT have it but AGENTS.md does → dedup-skip so we
+    //      don't duplicate content between the two files.
+    //   3. Otherwise → upsert CLAUDE.md.
     if confirm("Add 8v to CLAUDE.md?", args.yes) {
-        let agents_has_current =
-            match file_has_current_block(init_dir.agents_md(), project_root, CURRENT_VERSION) {
+        // Malformed CLAUDE.md (Err) falls through to upsert, which surfaces
+        // a specific error rather than aborting on a pre-check.
+        let claude_has_current = matches!(
+            file_has_current_block(init_dir.claude_md(), project_root, CURRENT_VERSION),
+            Ok(true)
+        );
+
+        if claude_has_current {
+            eprintln!("  CLAUDE.md already current (v{CURRENT_VERSION})");
+        } else {
+            let agents_has_current = match file_has_current_block(
+                init_dir.agents_md(),
+                project_root,
+                CURRENT_VERSION,
+            ) {
                 Ok(has) => has,
                 Err(SentinelError::MissingEnd { version }) => {
                     eprintln!(
-                    "error: malformed 8v block in AGENTS.md: found '<!-- 8v:begin v{version} -->' \
-                     but no '<!-- 8v:end -->' — file is in an inconsistent state. \
-                     Remove the partial block manually and re-run `8v init`."
-                );
+                            "error: malformed 8v block in AGENTS.md: found '<!-- 8v:begin v{version} -->' \
+                             but no '<!-- 8v:end -->' — file is in an inconsistent state. \
+                             Remove the partial block manually and re-run `8v init`."
+                        );
                     return ExitCode::from(EXIT_FAIL);
                 }
             };
 
-        if agents_has_current {
-            eprintln!("  Skipped CLAUDE.md (AGENTS.md already has current 8v block)");
-        } else {
-            match upsert_versioned_block(init_dir.claude_md(), project_root, CURRENT_VERSION) {
-                Err(e) => {
-                    eprintln!("error: failed to update CLAUDE.md: {e}");
-                    return ExitCode::from(EXIT_FAIL);
-                }
-                Ok(UpsertOutcome::Written) => {
-                    eprintln!("✓ Updated CLAUDE.md");
-                    completed.push("CLAUDE.md — 8v instructions added");
-                }
-                Ok(UpsertOutcome::AlreadyCurrent) => {
-                    eprintln!("  CLAUDE.md already current (v{CURRENT_VERSION})");
-                }
-                Ok(UpsertOutcome::Upgraded { old_version }) => {
-                    eprintln!("✓ Updated CLAUDE.md (upgraded v{old_version} → v{CURRENT_VERSION})");
-                    completed.push("CLAUDE.md — 8v block upgraded");
+            if agents_has_current {
+                eprintln!("  Skipped CLAUDE.md (AGENTS.md already has current 8v block)");
+            } else {
+                match upsert_versioned_block(init_dir.claude_md(), project_root, CURRENT_VERSION) {
+                    Err(e) => {
+                        eprintln!("error: failed to update CLAUDE.md: {e}");
+                        return ExitCode::from(EXIT_FAIL);
+                    }
+                    Ok(UpsertOutcome::Written) => {
+                        eprintln!("✓ Updated CLAUDE.md");
+                        completed.push("CLAUDE.md — 8v instructions added");
+                    }
+                    Ok(UpsertOutcome::AlreadyCurrent) => {
+                        eprintln!("  CLAUDE.md already current (v{CURRENT_VERSION})");
+                    }
+                    Ok(UpsertOutcome::Upgraded { old_version }) => {
+                        eprintln!(
+                            "✓ Updated CLAUDE.md (upgraded v{old_version} → v{CURRENT_VERSION})"
+                        );
+                        completed.push("CLAUDE.md — 8v block upgraded");
+                    }
                 }
             }
         }

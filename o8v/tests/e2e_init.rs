@@ -544,6 +544,49 @@ fn i1_init_yes_does_not_claim_commit_msg_hook_installed_in_non_git_dir() {
     );
 }
 
+// ─── I-2: re-run message names the right file ───────────────────────────────
+//
+// Pre-fix bug: on re-run, CLAUDE.md also has the current 8v block (from the
+// first run), but init's CLAUDE.md step only checks AGENTS.md for dedup and
+// prints "Skipped CLAUDE.md (AGENTS.md already has current 8v block)" — as if
+// CLAUDE.md was skipped because of a dedup rule. The honest message on re-run
+// is "CLAUDE.md already current (vX)" since CLAUDE.md itself is current.
+
+/// On re-run (where both files are already current), init must report
+/// "CLAUDE.md already current" for the CLAUDE.md step, not the dedup-skip
+/// message which blames AGENTS.md.
+#[test]
+fn i2_init_yes_rerun_reports_claude_md_already_current() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    // First run: installs 8v blocks into both CLAUDE.md and AGENTS.md.
+    let first = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run first 8v init --yes");
+    assert_eq!(first.status.code(), Some(0), "first init must exit 0");
+
+    // Second run: CLAUDE.md is already current; we want to see that reported.
+    let second = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run second 8v init --yes");
+    let stderr = String::from_utf8_lossy(&second.stderr);
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert_eq!(second.status.code(), Some(0), "re-run init must exit 0");
+    assert!(
+        combined.contains("CLAUDE.md already current"),
+        "re-run must report 'CLAUDE.md already current' (truthful message);\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+    assert!(
+        !combined.contains("Skipped CLAUDE.md"),
+        "re-run must not print the dedup 'Skipped CLAUDE.md' message when CLAUDE.md itself is already current;\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+}
+
 /// With .git present, the success line is still emitted — the fix is scoped
 /// to the no-git branch, not a behavior flip.
 #[test]
