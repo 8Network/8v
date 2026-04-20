@@ -86,7 +86,12 @@ fn main() -> ExitCode {
                     exit_code
                 }
                 Err(e) => {
-                    eprintln!("error: {e}");
+                    let msg = e.to_string();
+                    if msg.starts_with("error: ") {
+                        eprintln!("{msg}");
+                    } else {
+                        eprintln!("error: {msg}");
+                    }
                     ExitCode::FAILURE
                 }
             }

@@ -91,3 +91,73 @@ fn containment_violation_error_text() {
         Ok(_) => panic!("safe_exists on an outside path should return Err"),
     }
 }
+
+/// Write double-prefix bug: `8v write <path>:<line> ""` must emit a single `error: ` prefix,
+/// not `error: error: content cannot be empty ...`
+///
+/// Failing-first test — written before the fix. Run on pre-fix code: MUST FAIL.
+/// After fix: MUST PASS.
+#[test]
+fn write_empty_content_no_doubled_error_prefix() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let file = dir.path().join("target.txt");
+    let mut f = std::fs::File::create(&file).expect("create file");
+    writeln!(f, "hello").expect("write line");
+
+    let path_arg = format!("{}:1", file.display());
+    let out = bin()
+        .args(["write", &path_arg, ""])
+        .output()
+        .expect("run 8v write");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "8v write with empty content should fail"
+    );
+    assert!(
+        !stderr.contains("error: error:"),
+        "stderr must not contain doubled 'error: error:' prefix
+stderr: {stderr}"
+    );
+    assert!(
+        stderr.starts_with("error: "),
+        "stderr must start with single 'error: '
+stderr: {stderr}"
+    );
+}
+
+/// Write double-prefix bug: invalid line range must emit a single `error: ` prefix.
+#[test]
+fn write_invalid_range_no_doubled_error_prefix() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let file = dir.path().join("target.txt");
+    let mut f = std::fs::File::create(&file).expect("create file");
+    writeln!(f, "hello").expect("write line");
+
+    // :5-2 is a reversed range — parse_path_line returns Err("error: invalid line range...") before
+    // any file existence check, so the outer eprintln!("error: {e}") doubles the prefix.
+    let path_arg = format!("{}:5-2", file.display());
+    let out = bin()
+        .args(["write", &path_arg, "new content"])
+        .output()
+        .expect("run 8v write");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "8v write with invalid range should fail"
+    );
+    assert!(
+        !stderr.contains("error: error:"),
+        "stderr must not contain doubled 'error: error:' prefix
+stderr: {stderr}"
+    );
+    assert!(
+        stderr.starts_with("error: "),
+        "stderr must start with single 'error: '
+stderr: {stderr}"
+    );
+}
