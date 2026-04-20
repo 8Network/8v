@@ -86,12 +86,18 @@ fn main() -> ExitCode {
                     exit_code
                 }
                 Err(e) => {
-                    let msg = e.to_string();
-                    if msg.starts_with("error: ") {
-                        eprintln!("{msg}");
-                    } else {
-                        eprintln!("error: {msg}");
+                    let mut msg = e.to_string();
+                    // Strip any legacy inner prefix so we always emit a single
+                    // "error: " at the front. Case-insensitive on the literal
+                    // "error: " / "Error: " / "8v: " — these are the patterns
+                    // measured in-the-wild.
+                    for prefix in ["error: ", "Error: ", "8v: "] {
+                        if let Some(rest) = msg.strip_prefix(prefix) {
+                            msg = rest.to_string();
+                            break;
+                        }
                     }
+                    eprintln!("error: {msg}");
                     ExitCode::FAILURE
                 }
             }
