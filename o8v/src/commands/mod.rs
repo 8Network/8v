@@ -246,10 +246,19 @@ pub async fn dispatch_command_with_agent(
         }
         Command::Upgrade(args) => {
             let cmd = upgrade::UpgradeCommand { args };
-            let (output, _, _) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            Ok((output, ExitCode::SUCCESS, audience == Audience::Human))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, _)) => Ok((output, ExitCode::SUCCESS, audience == Audience::Human)),
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let mut envelope = upgrade::network_error_envelope(&msg);
+                    envelope.push('\n');
+                    Ok((envelope, ExitCode::FAILURE, false))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Read(args) => {
             use o8v_core::render::read_report::{MultiResult, ReadReport};

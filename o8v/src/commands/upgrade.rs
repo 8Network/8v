@@ -309,17 +309,18 @@ impl Command for UpgradeCommand {
             return Err(CommandError::Interrupted);
         }
 
-        let report = match run_impl_report(&self.args, BASE_URL, None, None) {
-            Ok(r) => r,
-            Err(e) => UpgradeReport {
-                current_version: env!("CARGO_PKG_VERSION").to_string(),
-                latest_version: None,
-                upgraded: false,
-                error: Some(e),
-            },
-        };
-        Ok(report)
+        run_impl_report(&self.args, BASE_URL, None, None).map_err(CommandError::Execution)
     }
+}
+
+/// JSON envelope for a network-class upgrade failure.
+/// Contract: `{"error_kind":"network","error":"<msg>"}` — no success fields.
+pub fn network_error_envelope(msg: &str) -> String {
+    serde_json::json!({
+        "error_kind": "network",
+        "error": msg,
+    })
+    .to_string()
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -934,5 +935,38 @@ mod tests {
             after, binary_content,
             "force should re-download even when current"
         );
+    }
+
+    // ─── Contract: network failure → Err, not Ok-with-error-field ───────────
+
+    #[test]
+    fn run_impl_report_returns_err_on_unreachable_url() {
+        // 127.0.0.1:1 is guaranteed-refused (port 1 is reserved and unbound).
+        let args = test_args(false, false);
+        let result = run_impl_report(&args, "http://127.0.0.1:1", None, Some("0.1.0"));
+        assert!(
+            result.is_err(),
+            "unreachable URL must return Err, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn network_error_envelope_has_error_kind_network() {
+        let out = network_error_envelope("could not reach host: connection refused");
+        let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+        assert_eq!(v["error_kind"].as_str(), Some("network"));
+        assert_eq!(
+            v["error"].as_str(),
+            Some("could not reach host: connection refused")
+        );
+    }
+
+    #[test]
+    fn network_error_envelope_omits_success_fields() {
+        let out = network_error_envelope("timeout");
+        let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+        assert!(v.get("upgraded").is_none(), "no upgraded field");
+        assert!(v.get("current_version").is_none(), "no current_version");
+        assert!(v.get("latest_version").is_none(), "no latest_version");
     }
 }
