@@ -313,16 +313,6 @@ impl Command for UpgradeCommand {
     }
 }
 
-/// JSON envelope for a network-class upgrade failure.
-/// Contract: `{"error_kind":"network","error":"<msg>"}` — no success fields.
-pub fn network_error_envelope(msg: &str) -> String {
-    serde_json::json!({
-        "error_kind": "network",
-        "error": msg,
-    })
-    .to_string()
-}
-
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -951,20 +941,28 @@ mod tests {
     }
 
     #[test]
-    fn network_error_envelope_has_error_kind_network() {
-        let out = network_error_envelope("could not reach host: connection refused");
-        let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
-        assert_eq!(v["error_kind"].as_str(), Some("network"));
+    fn network_error_envelope_has_canonical_shape() {
+        let out = o8v_core::render::error_envelope::json_error_envelope(
+            "could not reach host: connection refused",
+            "network",
+        );
+        let v: serde_json::Value = serde_json::from_str(out.trim()).expect("valid JSON");
+        // Canonical shape: {"error":"...","code":"network"} — no error_kind field.
+        assert_eq!(v["code"].as_str(), Some("network"));
         assert_eq!(
             v["error"].as_str(),
             Some("could not reach host: connection refused")
+        );
+        assert!(
+            v.get("error_kind").is_none(),
+            "no error_kind in canonical envelope"
         );
     }
 
     #[test]
     fn network_error_envelope_omits_success_fields() {
-        let out = network_error_envelope("timeout");
-        let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+        let out = o8v_core::render::error_envelope::json_error_envelope("timeout", "network");
+        let v: serde_json::Value = serde_json::from_str(out.trim()).expect("valid JSON");
         assert!(v.get("upgraded").is_none(), "no upgraded field");
         assert!(v.get("current_version").is_none(), "no current_version");
         assert!(v.get("latest_version").is_none(), "no latest_version");

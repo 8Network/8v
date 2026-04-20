@@ -253,8 +253,8 @@ pub async fn dispatch_command_with_agent(
                 Err(o8v_core::command::CommandError::Execution(msg))
                     if audience == Audience::Machine =>
                 {
-                    let mut envelope = upgrade::network_error_envelope(&msg);
-                    envelope.push('\n');
+                    let envelope =
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, "network");
                     Ok((envelope, ExitCode::FAILURE, false))
                 }
                 Err(e) => Err(e),
@@ -263,45 +263,85 @@ pub async fn dispatch_command_with_agent(
         Command::Read(args) => {
             use o8v_core::render::read_report::{MultiResult, ReadReport};
             let cmd = read::ReadCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            // Batch-mode errors are inline in `Multi.entries`. The single-path
-            // case already propagates errors via CommandError. Exit non-zero
-            // if any entry failed, so agents can detect failure.
-            let exit = match &report {
-                ReadReport::Multi { entries }
-                    if entries
-                        .iter()
-                        .any(|e| matches!(e.result, MultiResult::Err { .. })) =>
-                {
-                    ExitCode::FAILURE
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, report)) => {
+                    // Batch-mode errors are inline in `Multi.entries`. The single-path
+                    // case already propagates errors via CommandError. Exit non-zero
+                    // if any entry failed, so agents can detect failure.
+                    let exit = match &report {
+                        ReadReport::Multi { entries }
+                            if entries
+                                .iter()
+                                .any(|e| matches!(e.result, MultiResult::Err { .. })) =>
+                        {
+                            ExitCode::FAILURE
+                        }
+                        _ => ExitCode::SUCCESS,
+                    };
+                    Ok((output, exit, false))
                 }
-                _ => ExitCode::SUCCESS,
-            };
-            Ok((output, exit, false))
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Write(args) => {
             let cmd = write::WriteCommand { args };
-            let (output, _, _) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            Ok((output, ExitCode::SUCCESS, false))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, _)) => Ok((output, ExitCode::SUCCESS, false)),
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Search(args) => {
             let cmd = search::SearchCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            // files_skipped counts files we couldn't read (permission, I/O);
-            // binary content is filtered separately. Surface read failures via
-            // exit code so agents notice instead of silently under-searching.
-            let exit = if search::had_read_errors(&report) {
-                ExitCode::FAILURE
-            } else {
-                ExitCode::SUCCESS
-            };
-            Ok((output, exit, false))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, report)) => {
+                    // files_skipped counts files we couldn't read (permission, I/O);
+                    // binary content is filtered separately. Surface read failures via
+                    // exit code so agents notice instead of silently under-searching.
+                    let exit = if search::had_read_errors(&report) {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    };
+                    Ok((output, exit, false))
+                }
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Ls(args) => {
             let cmd = ls::LsCommand { args };

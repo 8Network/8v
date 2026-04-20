@@ -28,6 +28,9 @@ pub mod test_report;
 pub mod upgrade_report;
 pub mod write_report;
 
+// Shared error envelope for --json error paths.
+pub mod error_envelope;
+
 // Domain types — each in its own file.
 pub mod config;
 pub mod impls;
