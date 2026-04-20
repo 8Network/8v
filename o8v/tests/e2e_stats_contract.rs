@@ -41,7 +41,14 @@ fn now_ms() -> i64 {
 
 /// Build N completed event-pairs for `command` using distinct run-ids.
 /// durations cycle 10, 12, 14, … ms so percentile values differ.
-fn fresh(command: &str, n: usize, success: bool, argv: &[&str], agent: Option<&str>) -> String {
+fn fresh(
+    command: &str,
+    n: usize,
+    success: bool,
+    argv: &[&str],
+    agent: Option<&str>,
+    output_bytes_base: u64,
+) -> String {
     let now = now_ms();
     let mut out = String::new();
     for i in 0..n {
@@ -76,7 +83,7 @@ fn fresh(command: &str, n: usize, success: bool, argv: &[&str], agent: Option<&s
             "event": "CommandCompleted",
             "run_id": run_id,
             "timestamp_ms": timestamp_ms + dur as i64,
-            "output_bytes": 512_u64,
+            "output_bytes": output_bytes_base + i as u64 * 64,
             "token_estimate": 128_u64,
             "duration_ms": dur,
             "success": success,
@@ -96,7 +103,7 @@ fn fresh(command: &str, n: usize, success: bool, argv: &[&str], agent: Option<&s
 
 #[test]
 fn contract_1_default_table_top_level_shape() {
-    let ndjson = fresh("read", 10, true, &["read"], None);
+    let ndjson = fresh("read", 10, true, &["read"], None, 256);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -170,7 +177,7 @@ fn contract_1_default_table_top_level_shape() {
 #[test]
 fn contract_2_percentiles_null_below_threshold() {
     // 4 events — below the MIN_SAMPLES_FOR_PERCENTILE=5 threshold
-    let ndjson = fresh("probe", 4, true, &["probe"], None);
+    let ndjson = fresh("probe", 4, true, &["probe"], None, 128);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -197,7 +204,7 @@ fn contract_2_percentiles_null_below_threshold() {
 #[test]
 fn contract_2_percentiles_numeric_at_threshold() {
     // exactly 5 events — percentiles must be present
-    let ndjson = fresh("probe5", 5, true, &["probe5"], None);
+    let ndjson = fresh("probe5", 5, true, &["probe5"], None, 192);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -241,7 +248,7 @@ fn contract_2_percentiles_numeric_at_threshold() {
 
 #[test]
 fn contract_3_ok_rate_range_all_success() {
-    let ndjson = fresh("ping", 6, true, &["ping"], None);
+    let ndjson = fresh("ping", 6, true, &["ping"], None, 256);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -274,7 +281,7 @@ fn contract_3_ok_rate_range_all_success() {
 #[test]
 fn contract_3_ok_rate_range_mixed() {
     // 6 success + 6 failure for "mixed_cmd"
-    let success_events = fresh("mixed_cmd", 6, true, &["mixed_cmd"], None);
+    let success_events = fresh("mixed_cmd", 6, true, &["mixed_cmd"], None, 320);
     // Disambiguate run_ids by building failure events manually; fresh() uses index-based
     // run-ids that would collide with the success batch.
     let now = now_ms();
@@ -301,7 +308,7 @@ fn contract_3_ok_rate_range_mixed() {
             "event": "CommandCompleted",
             "run_id": run_id,
             "timestamp_ms": ts + dur as i64,
-            "output_bytes": 512_u64,
+            "output_bytes": 128_u64 + i as u64 * 64,
             "token_estimate": 128_u64,
             "duration_ms": dur,
             "success": false,
@@ -346,7 +353,7 @@ fn contract_3_ok_rate_range_mixed() {
 
 #[test]
 fn contract_4_output_bytes_per_call_mean_is_number() {
-    let ndjson = fresh("scan", 6, true, &["scan"], None);
+    let ndjson = fresh("scan", 6, true, &["scan"], None, 384);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -382,6 +389,7 @@ fn contract_5_drill_mode_shape() {
         true,
         &["write", "handler.rs", "--find", "x", "--replace", "y"],
         None,
+        448,
     );
     let home = home_with_events(&ndjson);
 
@@ -441,8 +449,8 @@ fn contract_5_drill_mode_shape() {
 fn contract_6_by_agent_mode() {
     let ndjson = format!(
         "{}{}",
-        fresh("read", 6, true, &["read"], Some("claude-code")),
-        fresh("read", 6, true, &["read"], Some("codex")),
+        fresh("read", 6, true, &["read"], Some("claude-code"), 512),
+        fresh("read", 6, true, &["read"], Some("codex"), 576),
     );
     let home = home_with_events(&ndjson);
 
@@ -497,7 +505,7 @@ fn contract_6_by_agent_mode() {
 // Empty window → exit code 2, stdout contains "no matching events"
 
 #[test]
-fn contract_7_empty_window_exit_2() {
+fn contract_7_empty_window_exit_1() {
     let home = home_with_events(""); // no events at all
 
     let out = bin()
@@ -508,8 +516,8 @@ fn contract_7_empty_window_exit_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "empty window must exit 2; stderr: {}",
+        Some(1),
+        "empty window must exit 1; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 
@@ -523,7 +531,7 @@ fn contract_7_empty_window_exit_2() {
 // ── contract 7b: JSON path also exits 2 on empty window ─────────────────────
 
 #[test]
-fn stats_json_empty_window_exits_2() {
+fn stats_json_empty_window_exits_1() {
     let home = home_with_events(""); // no events at all
 
     let out = bin()
@@ -534,15 +542,15 @@ fn stats_json_empty_window_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "JSON path: empty window must exit 2; stderr: {}",
+        Some(1),
+        "JSON path: empty window must exit 1; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 
     // Must still produce valid JSON with an empty rows array.
     let stdout = String::from_utf8_lossy(&out.stdout);
     let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON even on exit 2");
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON even on exit 1");
     let rows = v["rows"]
         .as_array()
         .expect("JSON must contain a rows array");
@@ -557,7 +565,7 @@ fn stats_json_empty_window_exits_2() {
 
 #[test]
 fn contract_row_field_types_are_exact() {
-    let ndjson = fresh("fmt", 10, true, &["fmt"], None);
+    let ndjson = fresh("fmt", 10, true, &["fmt"], None, 256);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -606,7 +614,7 @@ fn contract_row_field_types_are_exact() {
 /// Old field name "p50_ms" must not appear anywhere in the row object.
 #[test]
 fn counterexample_old_p50_ms_field_absent() {
-    let ndjson = fresh("check", 10, true, &["check"], None);
+    let ndjson = fresh("check", 10, true, &["check"], None, 320);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -637,7 +645,7 @@ fn counterexample_old_p50_ms_field_absent() {
 /// Old field name "ok_pct" must not appear anywhere in the row object.
 #[test]
 fn counterexample_old_ok_pct_field_absent() {
-    let ndjson = fresh("build", 6, true, &["build"], None);
+    let ndjson = fresh("build", 6, true, &["build"], None, 128);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -660,7 +668,7 @@ fn counterexample_old_ok_pct_field_absent() {
 /// Old field name "out_per_call_bytes" must not appear in any row.
 #[test]
 fn counterexample_old_out_per_call_bytes_absent() {
-    let ndjson = fresh("ls", 6, true, &["ls"], None);
+    let ndjson = fresh("ls", 6, true, &["ls"], None, 192);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -683,7 +691,7 @@ fn counterexample_old_out_per_call_bytes_absent() {
 /// Old field name "retry_cluster_count" must not appear in any row; new name is "retries".
 #[test]
 fn counterexample_old_retries_field_absent() {
-    let ndjson = fresh("test", 6, true, &["test"], None);
+    let ndjson = fresh("test", 6, true, &["test"], None, 256);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -712,7 +720,7 @@ fn counterexample_old_retries_field_absent() {
 #[test]
 fn counterexample_old_label_key_cmd_absent() {
     // table mode
-    let ndjson = fresh("search", 6, true, &["search"], None);
+    let ndjson = fresh("search", 6, true, &["search"], None, 320);
     let home_t = home_with_events(&ndjson);
 
     let out_t = bin()
@@ -737,7 +745,7 @@ fn counterexample_old_label_key_cmd_absent() {
     );
 
     // drill mode
-    let ndjson2 = fresh("search", 6, true, &["search"], None);
+    let ndjson2 = fresh("search", 6, true, &["search"], None, 384);
     let home_d = home_with_events(&ndjson2);
 
     let out_d = bin()
@@ -789,7 +797,7 @@ fn stats_json_surfaces_malformed_event_line_warning() {
             "event": "CommandCompleted",
             "run_id": "malformed_test_run_1",
             "timestamp_ms": now - 9_000,
-            "output_bytes": 512_u64,
+            "output_bytes": 256_u64,
             "token_estimate": 128_u64,
             "duration_ms": 1000_u64,
             "success": true,
@@ -1072,7 +1080,7 @@ fn stats_json_failure_hotspots_top_path_frequency() {
 /// When all events succeed, failure_hotspots must be an empty array.
 #[test]
 fn stats_json_failure_hotspots_empty_when_no_failures() {
-    let ndjson = fresh("read", 6, true, &["read"], None);
+    let ndjson = fresh("read", 6, true, &["read"], None, 448);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -1103,7 +1111,7 @@ fn stats_json_failure_hotspots_empty_when_no_failures() {
 #[test]
 fn stats_json_by_agent_envelope() {
     // Need MCP events so agent rows are grouped. Use agent_info fixture.
-    let ndjson = fresh("read", 6, true, &["read"], Some("claude-opus-4-5"));
+    let ndjson = fresh("read", 6, true, &["read"], Some("claude-opus-4-5"), 512);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -1136,7 +1144,14 @@ fn stats_json_by_agent_envelope() {
 /// `stats <shape> --json` must emit kind="drill", shape=<shape>, label_key="argv_shape".
 #[test]
 fn stats_json_drill_envelope() {
-    let ndjson = fresh("write", 6, true, &["write", "src/main.rs:10", "x"], None);
+    let ndjson = fresh(
+        "write",
+        6,
+        true,
+        &["write", "src/main.rs:10", "x"],
+        None,
+        576,
+    );
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -1235,7 +1250,7 @@ fn stats_plain_shows_warnings_section() {
 #[test]
 fn stats_mean_ms_in_json_always_present() {
     // n=1 — below MIN_SAMPLES threshold, no percentiles expected
-    let ndjson = fresh("read", 1, true, &["read"], None);
+    let ndjson = fresh("read", 1, true, &["read"], None, 128);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -1279,7 +1294,7 @@ fn stats_mean_ms_in_json_always_present() {
 #[test]
 fn stats_full_window_keeps_percentiles() {
     // n=6 — above MIN_SAMPLES=5, so percentiles are expected
-    let ndjson = fresh("write", 6, true, &["write"], None);
+    let ndjson = fresh("write", 6, true, &["write"], None, 192);
     let home = home_with_events(&ndjson);
 
     let out = bin()

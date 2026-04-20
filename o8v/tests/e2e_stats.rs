@@ -39,6 +39,7 @@ fn event_pair_at(
     success: bool,
     argv: &[&str],
     agent_name: Option<&str>,
+    output_bytes: u64,
 ) -> String {
     let argv_owned: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
     let agent_field = match agent_name {
@@ -67,7 +68,7 @@ fn event_pair_at(
         "event": "CommandCompleted",
         "run_id": run_id,
         "timestamp_ms": timestamp_ms + duration_ms as i64,
-        "output_bytes": 512_u64,
+        "output_bytes": output_bytes,
         "token_estimate": 128_u64,
         "duration_ms": duration_ms,
         "success": success,
@@ -80,7 +81,14 @@ fn event_pair_at(
     )
 }
 
-fn fresh(command: &str, n: usize, success: bool, argv: &[&str], agent: Option<&str>) -> String {
+fn fresh(
+    command: &str,
+    n: usize,
+    success: bool,
+    argv: &[&str],
+    agent: Option<&str>,
+    output_bytes_base: u64,
+) -> String {
     let now = now_ms();
     let mut out = String::new();
     for i in 0..n {
@@ -95,6 +103,7 @@ fn fresh(command: &str, n: usize, success: bool, argv: &[&str], agent: Option<&s
             success,
             argv,
             agent,
+            output_bytes_base + i as u64 * 64,
         ));
     }
     out
@@ -106,15 +115,16 @@ fn fresh(command: &str, n: usize, success: bool, argv: &[&str], agent: Option<&s
 fn default_table_renders() {
     let ndjson = format!(
         "{}{}{}",
-        fresh("read", 10, true, &["read", "src/main.rs"], None),
+        fresh("read", 10, true, &["read", "src/main.rs"], None, 256),
         fresh(
             "write",
             6,
             false,
             &["write", "handler.rs", "--find", "foo", "--replace", "bar"],
-            None
+            None,
+            384,
         ),
-        fresh("ls", 3, true, &["ls"], None),
+        fresh("ls", 3, true, &["ls"], None, 512),
     );
     let home = home_with_events(&ndjson);
 
@@ -150,9 +160,17 @@ fn drill_argv_shape_breakdown() {
             6,
             false,
             &["write", "handler.rs", "--find", "foo", "--replace", "bar"],
-            None
+            None,
+            192,
         ),
-        fresh("write", 3, true, &["write", "src/main.rs:10", "fix"], None),
+        fresh(
+            "write",
+            3,
+            true,
+            &["write", "src/main.rs:10", "fix"],
+            None,
+            320
+        ),
     );
     let home = home_with_events(&ndjson);
 
@@ -182,8 +200,8 @@ fn drill_argv_shape_breakdown() {
 fn compare_agent_separates_rows() {
     let ndjson = format!(
         "{}{}",
-        fresh("read", 6, true, &["read"], Some("claude-code")),
-        fresh("read", 6, true, &["read"], Some("codex")),
+        fresh("read", 6, true, &["read"], Some("claude-code"), 448),
+        fresh("read", 6, true, &["read"], Some("codex"), 576),
     );
     let home = home_with_events(&ndjson);
 
@@ -211,7 +229,7 @@ fn compare_agent_separates_rows() {
 
 #[test]
 fn n_lt_5_percentiles_dashed() {
-    let ndjson = fresh("read", 3, true, &["read"], None);
+    let ndjson = fresh("read", 3, true, &["read"], None, 128);
     let home = home_with_events(&ndjson);
 
     let out = bin()
@@ -231,10 +249,10 @@ fn n_lt_5_percentiles_dashed() {
     );
 }
 
-// ─── 5. Empty window → stderr "no matching events", exit 2 ──────────────────
+// ─── 5. Empty window → stderr "no matching events", exit 1 ──────────────────
 
 #[test]
-fn empty_window_exits_2() {
+fn empty_window_exits_1() {
     // `--since 1d --until 1d` produces a zero-width window 1 day ago.
     let home = home_with_events(""); // no events
     let out = bin()
@@ -245,8 +263,8 @@ fn empty_window_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "empty window must exit 2; stderr: {}",
+        Some(1),
+        "empty window must exit 1; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     // Renderer owns the "no matching events" message — emitted to stdout,
@@ -261,7 +279,7 @@ fn empty_window_exits_2() {
 // ─── A10 regression: empty-window exit-2 based on filtered output, not args ──
 
 #[test]
-fn explicit_since_outside_window_exits_2() {
+fn explicit_since_outside_window_exits_1() {
     // Events exist but are 30 days old — outside explicit --since 1d window.
     let old_ms = now_ms() - 30 * 24 * 60 * 60 * 1000_i64; // 30 days ago
     let ndjson = event_pair_at(
@@ -273,6 +291,7 @@ fn explicit_since_outside_window_exits_2() {
         true,
         &["read", "."],
         None,
+        256,
     );
     let home = home_with_events(&ndjson);
 
@@ -284,15 +303,15 @@ fn explicit_since_outside_window_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "events outside --since window must exit 2; stdout: {}; stderr: {}",
+        Some(1),
+        "events outside --since window must exit 1; stdout: {}; stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
 }
 
 #[test]
-fn default_since_7d_outside_window_exits_2() {
+fn default_since_7d_outside_window_exits_1() {
     // Events exist but are 10 days old — outside the DEFAULT --since 7d window.
     // With the bug: has_explicit_filter=false (default args used), so filtered_empty=false,
     // exits 0 instead of 2.
@@ -306,6 +325,7 @@ fn default_since_7d_outside_window_exits_2() {
         true,
         &["read", "."],
         None,
+        384,
     );
     let home = home_with_events(&ndjson);
 
@@ -318,8 +338,8 @@ fn default_since_7d_outside_window_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "events outside default 7d window must exit 2; stdout: {}; stderr: {}",
+        Some(1),
+        "events outside default 7d window must exit 1; stdout: {}; stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -329,7 +349,7 @@ fn default_since_7d_outside_window_exits_2() {
 
 #[test]
 fn json_field_contract() {
-    let ndjson = fresh("read", 10, true, &["read"], None);
+    let ndjson = fresh("read", 10, true, &["read"], None, 256);
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
@@ -360,7 +380,7 @@ fn json_field_contract() {
 
 #[test]
 fn malformed_line_skipped_default() {
-    let mut ndjson = fresh("read", 6, true, &["read"], None);
+    let mut ndjson = fresh("read", 6, true, &["read"], None, 320);
     ndjson.push_str("{not valid json\n");
     let home = home_with_events(&ndjson);
     let out = bin()
@@ -377,7 +397,7 @@ fn malformed_line_skipped_default() {
 
 #[test]
 fn malformed_line_strict_fails() {
-    let mut ndjson = fresh("read", 6, true, &["read"], None);
+    let mut ndjson = fresh("read", 6, true, &["read"], None, 320);
     ndjson.push_str("{not valid json\n");
     let home = home_with_events(&ndjson);
     let out = bin()
@@ -418,7 +438,7 @@ fn empty_session_id_events_are_dropped() {
             "event": "CommandCompleted",
             "run_id": format!("empty_sid_{i}"),
             "timestamp_ms": now - 60_000 - i as i64 * 100 + 10,
-            "output_bytes": 512_u64,
+            "output_bytes": 128_u64 + i as u64 * 64,
             "token_estimate": 128_u64,
             "duration_ms": 10_u64,
             "success": true,
@@ -452,7 +472,7 @@ fn empty_session_id_events_are_dropped() {
 fn percentile_boundary_single_bucket() {
     // All samples at exactly the same ms → p50, p95, p99 must all equal
     // the same bucket upper bound, not different buckets.
-    let ndjson = fresh("read", 10, true, &["read"], None);
+    let ndjson = fresh("read", 10, true, &["read"], None, 192);
     let home = home_with_events(&ndjson);
     let out = bin()
         .args(["stats", "--json"])
@@ -519,6 +539,7 @@ fn stats_single_call_shows_mean_not_dashes() {
         true,
         &["read"],
         None,
+        512,
     );
     let home = home_with_events(&ndjson);
 

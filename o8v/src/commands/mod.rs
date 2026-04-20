@@ -209,7 +209,7 @@ pub async fn dispatch_command_with_agent(
                 crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
                     .await?;
             let exit = if report.results().is_empty() && report.detection_errors().is_empty() {
-                ExitCode::from(2u8)
+                ExitCode::FAILURE
             } else if report.is_ok() {
                 ExitCode::SUCCESS
             } else {
@@ -224,7 +224,7 @@ pub async fn dispatch_command_with_agent(
                 crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
                     .await?;
             let exit = if report.entries.is_empty() && report.detection_errors.is_empty() {
-                ExitCode::from(2u8)
+                ExitCode::FAILURE
             } else if report.is_ok() {
                 ExitCode::SUCCESS
             } else {
@@ -302,13 +302,17 @@ pub async fn dispatch_command_with_agent(
             Ok((output, ExitCode::SUCCESS, false))
         }
         Command::Log(args) => {
-            use o8v_core::render::log_report::LogReport;
+            let session_was_specified = args.session.is_some();
             let cmd = log::LogCommand { args };
             let (output, _, report) =
                 crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
                     .await?;
-            let exit = if matches!(report, LogReport::Empty) {
-                ExitCode::from(2u8)
+            // Exit 1 when the user supplied --session but no matching session was found (user error).
+            // Empty history with default args (no --session) exits 0.
+            let exit = if matches!(report, o8v_core::render::log_report::LogReport::Empty)
+                && session_was_specified
+            {
+                ExitCode::FAILURE
             } else {
                 ExitCode::SUCCESS
             };
@@ -319,10 +323,10 @@ pub async fn dispatch_command_with_agent(
             let (output, _, report) =
                 crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
                     .await?;
-            // Exit 2 only when the user supplied an explicit time filter that produced zero
-            // matching events. Empty history with default args exits 0 (valid first-run state).
+            // Exit 1 when the user supplied an explicit time filter that produced zero
+            // matching events (user error). Empty history with default args exits 0.
             let exit = if report.report.filtered_empty {
-                ExitCode::from(2u8)
+                ExitCode::FAILURE
             } else {
                 ExitCode::SUCCESS
             };

@@ -56,7 +56,7 @@ fn path_error_no_newline_injection() {
 }
 
 #[test]
-fn empty_dir_exits_2() {
+fn empty_dir_exits_1() {
     let tmp = tempfile::tempdir().expect("failed to create temp dir");
     let out = bin()
         .args(["check", tmp.path().to_str().unwrap()])
@@ -65,8 +65,8 @@ fn empty_dir_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "empty dir should exit 2 (nothing to check)"
+        Some(1),
+        "empty dir should exit 1 (nothing to check)"
     );
 }
 
@@ -129,8 +129,8 @@ fn timeout_valid_seconds() {
         .output()
         .expect("failed to run binary");
 
-    // Valid timeout, empty dir → exit 2 (nothing to check).
-    assert_eq!(out.status.code(), Some(2));
+    // Valid timeout, empty dir → exit 1 (nothing to check).
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn timeout_valid_minutes() {
         .output()
         .expect("failed to run binary");
 
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn timeout_valid_combined() {
         .output()
         .expect("failed to run binary");
 
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn timeout_valid_bare_number() {
         .output()
         .expect("failed to run binary");
 
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn json_empty_dir_valid_json_on_stdout() {
         .expect("failed to run binary");
 
     // Empty dir still exits 2, but JSON should be valid if any output.
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&out.stdout);
     if !stdout.is_empty() {
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&stdout);
@@ -231,14 +231,14 @@ fn json_empty_dir_valid_json_on_stdout() {
 }
 
 #[test]
-fn plain_empty_dir_exits_2() {
+fn plain_empty_dir_exits_1() {
     let tmp = tempfile::tempdir().expect("failed to create temp dir");
     let out = bin()
         .args(["check", "--plain", tmp.path().to_str().unwrap()])
         .output()
         .expect("failed to run binary");
 
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn limit_zero_means_no_limit() {
         .expect("failed to run binary");
 
     // --limit 0 is valid (means no limit). Should not error on arg parsing.
-    assert_eq!(out.status.code(), Some(2), "empty dir = exit 2");
+    assert_eq!(out.status.code(), Some(1), "empty dir = exit 1");
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn no_color_flag() {
         .output()
         .expect("failed to run binary");
 
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !stderr.contains("\x1b["),
@@ -300,8 +300,8 @@ fn default_path_uses_cwd() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "empty cwd should exit 2 (nothing to check)"
+        Some(1),
+        "empty cwd should exit 1 (nothing to check)"
     );
 }
 
@@ -386,7 +386,7 @@ fn valid_rust_log_accepted() {
         "valid RUST_LOG should not produce warning"
     );
     // Should still produce the correct exit code.
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
 }
 
 // ─── Broken pipe / render error ─────────────────────────────────────────────
@@ -409,10 +409,10 @@ fn json_broken_pipe_exits_1() {
     let out = child.wait_with_output().expect("failed to wait");
 
     // Broken pipe is not a check failure — the consumer decided to stop reading.
-    // Following Unix convention (exit 0 on SIGPIPE), we exit 0 or 2 (nothing to check)
-    // depending on timing.
+    // Under B2c exit-code contract: nothing to check = 1 (user error), broken pipe
+    // may exit 0 (SIGPIPE before check runs) or 1 depending on timing.
     let code = out.status.code().unwrap();
-    assert!(code == 0 || code == 2, "expected exit 0 or 2, got {code}");
+    assert!(code == 0 || code == 1, "expected exit 0 or 1, got {code}");
 }
 
 // ─── Violation fixture render tests ────────────────────────────────────────

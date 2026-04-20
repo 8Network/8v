@@ -87,14 +87,16 @@ fn log_session_exact_match_produces_drill_in() {
     );
 }
 
-// ─── Test 2: unknown ID exits 2 ───────────────────────────────────────────────
+// ─── Test 2: unknown ID (valid format) exits 1 ───────────────────────────────
 
 #[test]
-fn log_session_unknown_id_exits_2() {
+fn log_session_unknown_id_exits_1() {
     let events = make_event_pair(KNOWN_SESSION, "run_001", "check", true);
     let home = home_with_events(&events);
 
-    const UNKNOWN: &str = "ses_01HZUNKNOWNUNKNOWNUNKNOWN0";
+    // Valid ULID-format session ID that does not appear in the events file.
+    // B2c contract: valid format + no match = exit 1 (user error).
+    const UNKNOWN: &str = "ses_01HZBBBBBBBBBBBBBBBBBBBBBB";
 
     let out = bin()
         .args(["log", "--session", UNKNOWN])
@@ -104,14 +106,14 @@ fn log_session_unknown_id_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "expected exit code 2 for unknown session\nstdout: {}\nstderr: {}",
+        Some(1),
+        "expected exit code 1 for unknown session\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
 }
 
-// ─── Test 3: invalid format is a parse error (non-zero, not exit 2) ──────────
+// ─── Test 3: invalid format is a parse error (non-zero, not exit 1) ──────────
 
 #[test]
 fn log_session_invalid_format_is_parse_error() {
@@ -129,7 +131,7 @@ fn log_session_invalid_format_is_parse_error() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    // clap parse errors exit 2 too, but the key requirement is non-zero
+    // clap parse errors exit 1 too, but the key requirement is non-zero
     // and that the rejection happens before any events are read (stderr has
     // clap error content).
     let stderr = String::from_utf8_lossy(&out.stderr);

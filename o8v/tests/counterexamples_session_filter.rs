@@ -16,9 +16,9 @@
 //!   5.  multi_session_orphan_isolation_holds
 //!   6.  project_flag_rejected_by_clap_holds
 //!   7.  since_non_default_with_session_emits_warning_holds
-//!   8.  empty_events_file_session_exits_two_holds
+//!   8.  empty_events_file_with_session_exits_one_holds
 //!   9.  missing_events_file_exits_failure_not_two_holds
-//!  10.  session_no_match_exits_two_holds
+//!  10.  session_no_match_exits_one_holds
 //!  11.  too_long_session_id_rejected_holds
 //!  12.  log_show_leaks_orphan_warnings_across_sessions_bug
 
@@ -396,12 +396,12 @@ fn since_non_default_with_session_emits_warning_in_stats_holds() {
 }
 
 // ---------------------------------------------------------------------------
-// Attack 8: Empty events file + --session → exit 2 (no match), not panic
+// Attack 8: Empty events file + --session → exit 1 (user error: no match), not panic
 // ---------------------------------------------------------------------------
 
-/// Empty events.ndjson + `--session <id>` must exit 2 (no session found), not crash.
+/// Empty events.ndjson + `--session <id>` must exit 1 (no session found), not crash.
 #[test]
-fn empty_events_file_with_session_exits_two_holds() {
+fn empty_events_file_with_session_exits_one_holds() {
     let home = home_empty_events();
 
     let out = bin()
@@ -412,25 +412,29 @@ fn empty_events_file_with_session_exits_two_holds() {
 
     let code = out.status.code().unwrap_or(-1);
     assert_eq!(
-        code, 2,
-        "empty events + --session must exit 2 (no session found)\ngot exit: {code}\nstdout: {}\nstderr: {}",
+        code,
+        1,
+        "empty events + --session must exit 1 (no session found)
+got exit: {code}
+stdout: {}
+stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
 }
 
 // ---------------------------------------------------------------------------
-// Attack 9: Missing events file → exit 2 indistinguishable from "no session" (BUG)
+// Attack 9: Missing events file → exit 1 indistinguishable from "no session" (BUG)
 // ---------------------------------------------------------------------------
 
-// BUG: Missing events.ndjson returns exit 2 with {"error":"no session found"} —
+// BUG: Missing events.ndjson returns exit 1 with {"error":"no session found"} —
 // identical to the "no session found" case. A missing file (I/O error) is
 // semantically distinct from "file exists but session not in it". The caller
 // cannot distinguish these two failure modes. Severity: LOW (operational
-// observability; CI scripts treating exit 2 as "try another ID" will silently
+// observability; CI scripts treating exit 1 as "try another ID" will silently
 // swallow I/O errors).
 /// Missing events.ndjson must NOT produce the same exit code + JSON as "no session found".
-/// Currently both return exit 2 + {"error":"no session found"} — caller cannot tell them apart.
+/// Currently both return exit 1 + {"error":"no session found"} — caller cannot tell them apart.
 #[ignore = "known bug: see test-audit-2026-04-18.md"]
 #[test]
 fn missing_events_file_indistinguishable_from_no_session_bug() {
@@ -467,12 +471,12 @@ fn missing_events_file_indistinguishable_from_no_session_bug() {
 }
 
 // ---------------------------------------------------------------------------
-// Attack 10: --session in JSON mode with no match → valid JSON + exit 2
+// Attack 10: --session in JSON mode with no match → valid JSON + exit 1 (user error)
 // ---------------------------------------------------------------------------
 
-/// Non-existent session ID → exit 2, stdout is valid JSON (LogReport::Empty rendering).
+/// Non-existent session ID → exit 1 (user error), stdout is valid JSON (LogReport::Empty rendering).
 #[test]
-fn session_no_match_exits_two_holds() {
+fn session_no_match_exits_one_holds() {
     // Use a real session in events but query for a different one
     let session_a_events = make_event_pair(SESSION_A, "run_a", "check", 0, 448);
     let home = home_with_events(&session_a_events);
@@ -486,8 +490,11 @@ fn session_no_match_exits_two_holds() {
     let code = out.status.code().unwrap_or(-1);
     assert_eq!(
         code,
-        2,
-        "`--session` with no match must exit 2\ngot exit: {code}\nstdout: {}\nstderr: {}",
+        1,
+        "`--session` with no match must exit 1 (user error)
+got exit: {code}
+stdout: {}
+stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );

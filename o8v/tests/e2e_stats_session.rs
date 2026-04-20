@@ -38,6 +38,7 @@ fn event_pair_at(
     success: bool,
     argv: &[&str],
     agent_name: Option<&str>,
+    output_bytes: u64,
 ) -> String {
     let argv_owned: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
     let agent_field = match agent_name {
@@ -66,7 +67,7 @@ fn event_pair_at(
         "event": "CommandCompleted",
         "run_id": run_id,
         "timestamp_ms": timestamp_ms + duration_ms as i64,
-        "output_bytes": 512_u64,
+        "output_bytes": output_bytes,
         "token_estimate": 128_u64,
         "duration_ms": duration_ms,
         "success": success,
@@ -102,7 +103,8 @@ fn stats_session_filters_to_session_events_only() {
             50,
             true,
             &["read", "a.rs"],
-            None
+            None,
+            256,
         ),
         // SES_B: one "write" command — must not appear when filtering by SES_A
         event_pair_at(
@@ -113,7 +115,8 @@ fn stats_session_filters_to_session_events_only() {
             40,
             true,
             &["write", "b.rs"],
-            None
+            None,
+            384,
         ),
     );
     let home = home_with_events(&ndjson);
@@ -154,6 +157,7 @@ fn stats_session_window_header_shows_session_id() {
         true,
         &["read", "a.rs"],
         None,
+        128,
     );
     let home = home_with_events(&ndjson);
 
@@ -190,6 +194,7 @@ fn stats_session_json_has_session_id_field() {
         true,
         &["read", "a.rs"],
         None,
+        192,
     );
     let home = home_with_events(&ndjson);
 
@@ -228,6 +233,7 @@ fn stats_session_since_flag_ignored_with_warning() {
         true,
         &["read", "a.rs"],
         None,
+        320,
     );
     let home = home_with_events(&ndjson);
 
@@ -257,11 +263,11 @@ fn stats_session_since_flag_ignored_with_warning() {
     );
 }
 
-// ─── Test 9: stats_session_unknown_id_exits_2 ───────────────────────────────
+// ─── Test 9: stats_session_unknown_id_exits_1 ───────────────────────────────
 
-/// Valid session id format but no matching events → stderr `no matching events`, exit 2.
+/// Valid session id format but no matching events → stderr `no matching events`, exit 1.
 #[test]
-fn stats_session_unknown_id_exits_2() {
+fn stats_session_unknown_id_exits_1() {
     let now = now_ms();
     // Events exist, but belong to SES_A — filtering by SES_B yields nothing
     let ndjson = event_pair_at(
@@ -273,6 +279,7 @@ fn stats_session_unknown_id_exits_2() {
         true,
         &["read", "a.rs"],
         None,
+        448,
     );
     let home = home_with_events(&ndjson);
 
@@ -284,7 +291,7 @@ fn stats_session_unknown_id_exits_2() {
 
     assert_eq!(
         out.status.code(),
-        Some(2),
+        Some(1),
         "exit code must be 2 for unknown session"
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -336,6 +343,7 @@ fn legacy_events_not_matched_by_session_filter() {
         true,
         &["write", "a.rs"],
         None,
+        256,
     );
     let ndjson = format!(
         "{}\n{}\n{}",
