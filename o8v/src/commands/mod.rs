@@ -249,7 +249,7 @@ pub async fn dispatch_command_with_agent(
             let (output, _, _) =
                 crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
                     .await?;
-            Ok((output, ExitCode::SUCCESS, false))
+            Ok((output, ExitCode::SUCCESS, audience == Audience::Human))
         }
         Command::Read(args) => {
             use o8v_core::render::read_report::{MultiResult, ReadReport};
