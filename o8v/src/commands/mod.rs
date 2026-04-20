@@ -417,16 +417,29 @@ pub async fn dispatch_command_with_agent(
                 }
             };
 
-            let result = match args.command {
-                HookCommand::Pre => handle_pre(&stdin_buf, &storage),
-                HookCommand::Post => handle_post(&stdin_buf, &storage),
+            let (result, is_pre) = match args.command {
+                HookCommand::Pre => (handle_pre(&stdin_buf, &storage), true),
+                HookCommand::Post => (handle_post(&stdin_buf, &storage), false),
             };
 
-            if let Err(e) = result {
-                eprintln!("8v hook: dispatch error: {e:?}");
-            }
+            // Per slice-c1 H-1: Pre with invalid input (empty or malformed JSON)
+            // is not a legitimate tool invocation. Fail-closed at the gate
+            // boundary (exit 1 = block). IO failures while emitting are still
+            // non-blocking (exit 0) to preserve the observability principle —
+            // the pipeline must not be blocked by disk-full or similar.
+            let exit_code = match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(crate::hook::dispatch::HookError::Json(e)) if is_pre => {
+                    eprintln!("8v hook: pre: rejecting invalid stdin (fail-closed): {e}");
+                    ExitCode::FAILURE
+                }
+                Err(e) => {
+                    eprintln!("8v hook: dispatch error: {e:?}");
+                    ExitCode::SUCCESS
+                }
+            };
 
-            Ok(("".to_string(), ExitCode::SUCCESS, false))
+            Ok(("".to_string(), exit_code, false))
         }
         Command::Mcp => Err(CommandError::Execution("not a dispatchable command".into())),
     }
