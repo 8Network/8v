@@ -480,3 +480,92 @@ fn versioned_sentinel_agents_md_unreadable_warns() {
         "init must print 'warning: ... AGENTS.md ...' when AGENTS.md is unreadable;\ngot stderr:\n{stderr}\nstdout:\n{stdout}"
     );
 }
+
+// ─── I-1: honest hook-install reporting in non-git dirs ─────────────────────
+//
+// Pre-fix bug: `8v init --yes` in a directory without a .git/ always printed
+//   ✓ Pre-commit hook installed
+//   ✓ Commit-msg hook installed
+// because install_git_{pre_commit,commit_msg} return Ok(()) on the "no .git"
+// branch. The success line lies — nothing was installed. I-1 forces the init
+// driver to report the actual outcome.
+
+/// `8v init --yes` in a non-git dir must not claim the pre-commit hook was
+/// installed — there's no .git/hooks/ to install into.
+#[test]
+fn i1_init_yes_does_not_claim_pre_commit_hook_installed_in_non_git_dir() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+    assert!(
+        !path.join(".git").exists(),
+        "preflight: tmpdir must not have .git"
+    );
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "init --yes in a non-git dir should still exit 0 (other files still created)\nstderr: {stderr}"
+    );
+    assert!(
+        !combined.contains("✓ Pre-commit hook installed"),
+        "init in non-git dir must not falsely claim '✓ Pre-commit hook installed'\nstderr: {stderr}"
+    );
+    assert!(
+        !path.join(".git").exists(),
+        "init must not create .git/ as a side effect"
+    );
+}
+
+/// Same contract for the commit-msg hook.
+#[test]
+fn i1_init_yes_does_not_claim_commit_msg_hook_installed_in_non_git_dir() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert!(
+        !combined.contains("✓ Commit-msg hook installed"),
+        "init in non-git dir must not falsely claim '✓ Commit-msg hook installed'\nstderr: {stderr}"
+    );
+}
+
+/// With .git present, the success line is still emitted — the fix is scoped
+/// to the no-git branch, not a behavior flip.
+#[test]
+fn i1_init_yes_still_claims_hook_installed_when_git_present() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+    std::fs::create_dir_all(path.join(".git/hooks")).expect("mkdir .git/hooks");
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert!(
+        combined.contains("✓ Pre-commit hook installed"),
+        "init must claim '✓ Pre-commit hook installed' when .git exists\nstderr: {stderr}"
+    );
+    assert!(
+        path.join(".git/hooks/pre-commit").exists(),
+        "pre-commit script must exist after successful install"
+    );
+}

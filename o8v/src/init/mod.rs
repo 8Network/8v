@@ -9,7 +9,9 @@ mod claude_settings;
 mod mcp_setup;
 
 use crate::cli::common::{EXIT_FAIL, EXIT_OK};
-use crate::hooks::install::{install_claude_hooks, install_git_commit_msg, install_git_pre_commit};
+use crate::hooks::install::{
+    install_claude_hooks, install_git_commit_msg, install_git_pre_commit, GitHookInstallOutcome,
+};
 use crate::workspace::{register_workspace, WorkspaceDir};
 use ai_docs::{file_has_current_block, upsert_versioned_block, SentinelError, UpsertOutcome};
 use claude_settings::setup_claude_settings;
@@ -335,12 +337,23 @@ no-auto-commits: true\n";
 
     // Step 6: Pre-commit hook
     if confirm("Set up pre-commit hook?", args.yes) {
-        if let Err(e) = install_git_pre_commit(project_root) {
-            eprintln!("error: failed to setup pre-commit hook: {e}");
-            return ExitCode::from(EXIT_FAIL);
+        match install_git_pre_commit(project_root) {
+            Err(e) => {
+                eprintln!("error: failed to setup pre-commit hook: {e}");
+                return ExitCode::from(EXIT_FAIL);
+            }
+            Ok(GitHookInstallOutcome::Installed) => {
+                eprintln!("✓ Pre-commit hook installed");
+                completed.push(".git/hooks/pre-commit — runs 8v check before commit");
+            }
+            Ok(GitHookInstallOutcome::SkippedNoGit) => {
+                eprintln!("  Pre-commit hook skipped — no .git directory found");
+            }
+            Ok(GitHookInstallOutcome::SkippedByUser) => {
+                // User declined the "merge with existing" prompt; message
+                // already printed inside install_git_pre_commit.
+            }
         }
-        eprintln!("✓ Pre-commit hook installed");
-        completed.push(".git/hooks/pre-commit — runs 8v check before commit");
     }
 
     // Step 6b: Commit-msg hook
@@ -348,12 +361,20 @@ no-auto-commits: true\n";
         "Set up commit-msg hook? (strips Co-Authored-By lines)",
         args.yes,
     ) {
-        if let Err(e) = install_git_commit_msg(project_root) {
-            eprintln!("error: failed to setup commit-msg hook: {e}");
-            return ExitCode::from(EXIT_FAIL);
+        match install_git_commit_msg(project_root) {
+            Err(e) => {
+                eprintln!("error: failed to setup commit-msg hook: {e}");
+                return ExitCode::from(EXIT_FAIL);
+            }
+            Ok(GitHookInstallOutcome::Installed) => {
+                eprintln!("✓ Commit-msg hook installed");
+                completed.push(".git/hooks/commit-msg — strips AI attribution");
+            }
+            Ok(GitHookInstallOutcome::SkippedNoGit) => {
+                eprintln!("  Commit-msg hook skipped — no .git directory found");
+            }
+            Ok(GitHookInstallOutcome::SkippedByUser) => {}
         }
-        eprintln!("✓ Commit-msg hook installed");
-        completed.push(".git/hooks/commit-msg — strips AI attribution");
     }
 
     // Step 6c: Claude Code tool enforcement hooks

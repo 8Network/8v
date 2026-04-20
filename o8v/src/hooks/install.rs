@@ -202,10 +202,26 @@ impl GitDir {
 
 // ─── Git hook installation ────────────────────────────────────────────────────
 
-pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result<()> {
+/// Outcome of a git-hook install attempt, so the init driver can report the
+/// truth (installed vs no-op). The previous `Result<()>` conflated
+/// "successfully installed" and "silently skipped because .git was missing"
+/// — the init driver printed a success line for both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitHookInstallOutcome {
+    /// Hook script was written (or left in place, already containing 8v).
+    Installed,
+    /// No .git directory found under the root; nothing was written.
+    SkippedNoGit,
+    /// Hook file already existed and the user chose "Skip" in the prompt.
+    SkippedByUser,
+}
+
+pub fn install_git_pre_commit(
+    root: &o8v_fs::ContainmentRoot,
+) -> std::io::Result<GitHookInstallOutcome> {
     let git_dir = match GitDir::open(root)? {
         Some(d) => d,
-        None => return Ok(()), // .git doesn't exist; skip installation gracefully
+        None => return Ok(GitHookInstallOutcome::SkippedNoGit),
     };
 
     o8v_fs::safe_create_dir(git_dir.hooks_dir(), root).map_err(to_io)?;
@@ -217,7 +233,7 @@ pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result
             let existing = guarded.content();
             if existing.contains(HOOK_LINE_MARKER) {
                 eprintln!("  (hook already contains 8v)");
-                return Ok(());
+                return Ok(GitHookInstallOutcome::Installed);
             }
 
             let items = &["Before existing hook", "After existing hook", "Skip"];
@@ -242,7 +258,7 @@ pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result
                 }
                 _ => {
                     eprintln!("  → Pre-commit hook skipped");
-                    return Ok(());
+                    return Ok(GitHookInstallOutcome::SkippedByUser);
                 }
             }
         }
@@ -256,13 +272,15 @@ pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result
     #[cfg(unix)]
     o8v_fs::safe_set_permissions(git_dir.pre_commit(), root, 0o755).map_err(to_io)?;
 
-    Ok(())
+    Ok(GitHookInstallOutcome::Installed)
 }
 
-pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result<()> {
+pub fn install_git_commit_msg(
+    root: &o8v_fs::ContainmentRoot,
+) -> std::io::Result<GitHookInstallOutcome> {
     let git_dir = match GitDir::open(root)? {
         Some(d) => d,
-        None => return Ok(()), // .git doesn't exist; skip installation gracefully
+        None => return Ok(GitHookInstallOutcome::SkippedNoGit),
     };
 
     o8v_fs::safe_create_dir(git_dir.hooks_dir(), root).map_err(to_io)?;
@@ -274,7 +292,7 @@ pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result
             let existing = guarded.content();
             if existing.contains(COMMIT_MSG_HOOK_LINE_MARKER) {
                 eprintln!("  (hook already contains 8v)");
-                return Ok(());
+                return Ok(GitHookInstallOutcome::Installed);
             }
 
             let items = &["Before existing hook", "After existing hook", "Skip"];
@@ -299,7 +317,7 @@ pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result
                 }
                 _ => {
                     eprintln!("  → Commit-msg hook skipped");
-                    return Ok(());
+                    return Ok(GitHookInstallOutcome::SkippedByUser);
                 }
             }
         }
@@ -317,7 +335,7 @@ pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result
     #[cfg(unix)]
     o8v_fs::safe_set_permissions(git_dir.commit_msg(), root, 0o755).map_err(to_io)?;
 
-    Ok(())
+    Ok(GitHookInstallOutcome::Installed)
 }
 
 // ─── Claude hook installation ─────────────────────────────────────────────────
