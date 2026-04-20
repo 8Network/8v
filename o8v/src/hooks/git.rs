@@ -173,10 +173,37 @@ fn load_config(root: &Path) -> Config {
 
 /// Remove lines containing "Co-Authored-By" from `content`.
 /// Preserves a trailing newline if the original had one.
+/// Git-trailer keys (case-insensitive) that indicate AI-assisted authorship.
+/// Matched only in trailer position — `<key>:` at the start of a line
+/// (ignoring leading whitespace). Inline prose mentions are preserved.
+///
+/// Non-AI trailers (Signed-off-by, Reviewed-by, Tested-by, …) are
+/// deliberately NOT in this list — they carry legal or review attestations.
+const AI_TRAILER_KEYS: &[&str] = &[
+    "Co-Authored-By",
+    "Co-Written-By",
+    "Generated-By",
+    "Generated-With",
+    "Assisted-By",
+    "AI-Assistant",
+    "AI-Generated",
+];
+
+fn is_ai_trailer_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let Some(colon_idx) = trimmed.find(':') else {
+        return false;
+    };
+    let key = &trimmed[..colon_idx];
+    AI_TRAILER_KEYS
+        .iter()
+        .any(|expected| key.eq_ignore_ascii_case(expected))
+}
+
 fn strip_attribution(content: &str) -> String {
     let filtered: Vec<&str> = content
         .lines()
-        .filter(|line| !line.contains("Co-Authored-By"))
+        .filter(|line| !is_ai_trailer_line(line))
         .collect();
     let mut result = filtered.join("\n");
     if content.ends_with('\n') {
@@ -212,6 +239,80 @@ mod tests {
         let input = "feat: add feature\nCo-Authored-By: AI";
         let result = strip_attribution(input);
         assert_eq!(result, "feat: add feature");
+    }
+
+    // ── H-3: broaden AI-attribution stripping beyond Co-Authored-By ─────────
+
+    #[test]
+    fn h3_strips_generated_by_trailer() {
+        let input = "feat: X\n\nbody\nGenerated-By: Claude\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
+    }
+
+    #[test]
+    fn h3_strips_generated_with_trailer() {
+        let input = "feat: X\n\nbody\nGenerated-With: Claude Code\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
+    }
+
+    #[test]
+    fn h3_strips_co_written_by_trailer() {
+        let input = "feat: X\n\nbody\nCo-Written-By: AI <ai@example.com>\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
+    }
+
+    #[test]
+    fn h3_strips_assisted_by_trailer() {
+        let input = "feat: X\n\nbody\nAssisted-By: Claude\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
+    }
+
+    #[test]
+    fn h3_strips_ai_assistant_trailer() {
+        let input = "feat: X\n\nbody\nAI-Assistant: Claude Code\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
+    }
+
+    #[test]
+    fn h3_strips_ai_generated_trailer() {
+        let input = "feat: X\n\nbody\nAI-Generated: true\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
+    }
+
+    #[test]
+    fn h3_case_insensitive_trailer_key() {
+        // Git trailers are case-insensitive on the key. "co-authored-by:" must
+        // be stripped just like "Co-Authored-By:".
+        let input = "feat: X\n\ngenerated-by: Claude\nCO-AUTHORED-BY: AI\nco-authored-by: bot\n";
+        assert_eq!(strip_attribution(input), "feat: X\n\n");
+    }
+
+    #[test]
+    fn h3_preserves_signed_off_by_trailer() {
+        // DCO / legal attestation must never be stripped.
+        let input = "feat: X\n\nbody\nSigned-off-by: Dev <dev@example.com>\n";
+        assert_eq!(strip_attribution(input), input);
+    }
+
+    #[test]
+    fn h3_preserves_reviewed_and_tested_by_trailers() {
+        let input = "feat: X\n\nReviewed-by: Alice\nTested-by: Bob\n";
+        assert_eq!(strip_attribution(input), input);
+    }
+
+    #[test]
+    fn h3_preserves_inline_mention_of_co_authored_by() {
+        // Inline prose mentions of the trailer name (without the trailer
+        // `key:` shape) must be preserved — the scope is trailers only, not
+        // any word that looks like one.
+        let input = "feat: X\n\nThe Co-Authored-By convention is documented here.\n";
+        assert_eq!(strip_attribution(input), input);
+    }
+
+    #[test]
+    fn h3_preserves_inline_mention_of_generated_by() {
+        let input = "feat: X\n\nThis file was Generated-By the old tool (now replaced).\n";
+        assert_eq!(strip_attribution(input), input);
     }
 
     #[test]
