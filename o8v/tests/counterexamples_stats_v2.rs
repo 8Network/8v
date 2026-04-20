@@ -44,8 +44,8 @@ fn make_started(run_id: &str, session: &str, command: &str, argv: Vec<&str>) -> 
     Event::CommandStarted(ev)
 }
 
-fn make_completed(run_id: &str, session: &str, success: bool) -> Event {
-    let mut ev = CommandCompleted::new(run_id.to_string(), 512, 10, success);
+fn make_completed(run_id: &str, session: &str, output_bytes: u64, success: bool) -> Event {
+    let mut ev = CommandCompleted::new(run_id.to_string(), output_bytes, 10, success);
     ev.session_id = SessionId::from_raw_unchecked(session.to_string());
     Event::CommandCompleted(ev)
 }
@@ -69,16 +69,27 @@ fn home_with_events(events_ndjson: &str) -> TempDir {
     dir
 }
 
+struct NdjsonTiming {
+    success: bool,
+    timestamp_ms: i64,
+    duration_ms: u64,
+    output_bytes: u64,
+}
+
 /// Build a minimal NDJSON pair for one command invocation.
 fn ndjson_pair(
     run_id: &str,
     session_id: &str,
     command: &str,
     argv: &[&str],
-    success: bool,
-    timestamp_ms: i64,
-    duration_ms: u64,
+    timing: NdjsonTiming,
 ) -> String {
+    let NdjsonTiming {
+        success,
+        timestamp_ms,
+        duration_ms,
+        output_bytes,
+    } = timing;
     let argv_owned: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
     let started = serde_json::json!({
         "event": "CommandStarted",
@@ -97,7 +108,7 @@ fn ndjson_pair(
         "event": "CommandCompleted",
         "run_id": run_id,
         "timestamp_ms": timestamp_ms + duration_ms as i64,
-        "output_bytes": 512_u64,
+        "output_bytes": output_bytes,
         "token_estimate": 128_u64,
         "duration_ms": duration_ms,
         "success": success,
@@ -132,9 +143,12 @@ fn hotspot_sort_ties_argv_shape_is_nondeterministic() {
             session,
             "read",
             &["/abs/path/to/file.rs"],
-            false,
-            now_ms + i as i64 * 1000,
-            10,
+            NdjsonTiming {
+                success: false,
+                timestamp_ms: now_ms + i as i64 * 1000,
+                duration_ms: 10,
+                output_bytes: 128 + i as u64 * 64,
+            },
         ));
     }
     // Cluster B: "read" with no path token → argv_shape = "read" (no path)
@@ -145,9 +159,12 @@ fn hotspot_sort_ties_argv_shape_is_nondeterministic() {
             session,
             "read",
             &["src/main.rs"],
-            false,
-            now_ms + 10_000 + i as i64 * 1000,
-            10,
+            NdjsonTiming {
+                success: false,
+                timestamp_ms: now_ms + 10_000 + i as i64 * 1000,
+                duration_ms: 10,
+                output_bytes: 256 + i as u64 * 32,
+            },
         ));
     }
 
@@ -199,18 +216,24 @@ fn top_path_ties_are_nondeterministic() {
         session,
         "check",
         &["/alpha/path/file.rs"],
-        false,
-        now_ms,
-        10,
+        NdjsonTiming {
+            success: false,
+            timestamp_ms: now_ms,
+            duration_ms: 10,
+            output_bytes: 256,
+        },
     ));
     ndjson.push_str(&ndjson_pair(
         "run_p2",
         session,
         "check",
         &["/beta/path/file.rs"],
-        false,
-        now_ms + 1000,
-        10,
+        NdjsonTiming {
+            success: false,
+            timestamp_ms: now_ms + 1000,
+            duration_ms: 10,
+            output_bytes: 384,
+        },
     ));
 
     let home = home_with_events(&ndjson);
@@ -248,7 +271,7 @@ fn top_path_ties_are_nondeterministic() {
 fn orphan_completed_no_warning_emitted() {
     let session = sess("ORPHANC");
     // Emit only a CommandCompleted, no CommandStarted with this run_id.
-    let events = vec![make_completed("run_orphan_c", &session, true)];
+    let events = vec![make_completed("run_orphan_c", &session, 256, true)];
 
     let mut normalizer = ArgvNormalizer::new();
     let mut sink = WarningSink::new();
@@ -305,9 +328,9 @@ fn duplicate_completed_no_warning_emitted() {
     let session = sess("DUPCOMP");
     let events = vec![
         make_started("run_dup", &session, "read", vec!["read", "a.rs"]),
-        make_completed("run_dup", &session, true),
+        make_completed("run_dup", &session, 256, true),
         // Second Completed for the same run_id
-        make_completed("run_dup", &session, false),
+        make_completed("run_dup", &session, 128, false),
     ];
 
     let mut normalizer = ArgvNormalizer::new();
@@ -335,7 +358,7 @@ fn duplicate_started_warning_is_emitted() {
         make_started("run_dup_s", &session, "read", vec!["read", "a.rs"]),
         // Second Started with same run_id
         make_started("run_dup_s", &session, "read", vec!["read", "a.rs"]),
-        make_completed("run_dup_s", &session, true),
+        make_completed("run_dup_s", &session, 256, true),
     ];
 
     let mut normalizer = ArgvNormalizer::new();
@@ -395,7 +418,12 @@ fn single_session_collects_all_records() {
             "read",
             vec!["read", "x.rs"],
         ));
-        events.push(make_completed(&format!("run_ss_{i}"), &session, true));
+        events.push(make_completed(
+            &format!("run_ss_{i}"),
+            &session,
+            128 + i as u64 * 64,
+            true,
+        ));
     }
 
     let mut normalizer = ArgvNormalizer::new();
@@ -419,9 +447,9 @@ fn two_sessions_produce_two_aggregates() {
 
     let events = vec![
         make_started("run_a", &sess_a, "read", vec!["read", "a.rs"]),
-        make_completed("run_a", &sess_a, true),
+        make_completed("run_a", &sess_a, 256, true),
         make_started("run_b", &sess_b, "check", vec!["check", "."]),
-        make_completed("run_b", &sess_b, true),
+        make_completed("run_b", &sess_b, 512, true),
     ];
 
     let mut normalizer = ArgvNormalizer::new();
@@ -484,9 +512,12 @@ fn stats_json_top_level_fields_present() {
         "ses_FIELDS1AAAAAAAAAAAAAAAAAA",
         "read",
         &["read", "src/main.rs"],
-        true,
-        now_ms(),
-        15,
+        NdjsonTiming {
+            success: true,
+            timestamp_ms: now_ms(),
+            duration_ms: 15,
+            output_bytes: 256,
+        },
     );
     let home = home_with_events(&ndjson);
 
@@ -522,9 +553,12 @@ fn failure_hotspots_empty_when_all_succeed() {
             session,
             "read",
             &["read", "src/main.rs"],
-            true, // all succeed
-            now_ms + i as i64 * 1000,
-            10,
+            NdjsonTiming {
+                success: true, // all succeed
+                timestamp_ms: now_ms + i as i64 * 1000,
+                duration_ms: 10,
+                output_bytes: 128 + i as u64 * 32,
+            },
         ));
     }
     let home = home_with_events(&ndjson);
@@ -561,9 +595,12 @@ fn failure_hotspots_populated_for_failures() {
             session,
             "check",
             &["check", "."],
-            false,
-            now_ms - (2 - i as i64) * 1000,
-            10,
+            NdjsonTiming {
+                success: false,
+                timestamp_ms: now_ms - (2 - i as i64) * 1000,
+                duration_ms: 10,
+                output_bytes: 256 + i as u64 * 64,
+            },
         ));
     }
     let home = home_with_events(&ndjson);
@@ -611,9 +648,12 @@ fn failure_hotspots_capped_at_ten() {
             session,
             &cmd,
             &[],
-            false,
-            now_ms + i as i64 * 1000,
-            10,
+            NdjsonTiming {
+                success: false,
+                timestamp_ms: now_ms + i as i64 * 1000,
+                duration_ms: 10,
+                output_bytes: 128 + i as u64 * 16,
+            },
         ));
     }
     let home = home_with_events(&ndjson);
@@ -659,9 +699,12 @@ fn flag_value_after_append_normalizes_to_str_in_hotspot() {
             "--append",
             "lots of text here that should be stripped — never appear verbatim",
         ],
-        false,
-        now_ms,
-        10,
+        NdjsonTiming {
+            success: false,
+            timestamp_ms: now_ms,
+            duration_ms: 10,
+            output_bytes: 1024,
+        },
     );
 
     let home = home_with_events(&ndjson);
