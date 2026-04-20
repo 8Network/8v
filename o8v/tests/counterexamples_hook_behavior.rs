@@ -477,3 +477,74 @@ stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// ── I-3 installed hooks use absolute 8v path (slice-c1) ─────────────────────
+
+/// Generated pre-commit hook must invoke 8v by absolute path, not the
+/// bare name. PATH at install time may differ from PATH at hook fire time
+/// (git runs hooks with a sanitized environment). Per slice-c1 I-3 +
+/// counterexample 4: prefer absolute path discovered at install.
+#[test]
+fn i3_git_pre_commit_hook_uses_absolute_8v_path() {
+    let dir = TempDir::new().expect("tempdir");
+    // Need a .git dir for pre-commit hook installation to proceed.
+    std::fs::create_dir_all(dir.path().join(".git").join("hooks")).expect("mkdir .git/hooks");
+
+    let out = run_init_yes(&dir);
+    assert!(
+        out.status.success(),
+        "8v init --yes must succeed;
+stdout: {}
+stderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
+    let content = std::fs::read_to_string(&hook_path).expect("read pre-commit");
+
+    // Must NOT start with bare "8v hooks git on-commit" on any line — the
+    // command must be an absolute path ending in 8v (or similar binary name).
+    let has_bare = content
+        .lines()
+        .any(|line| line.trim_start().starts_with("8v hooks git on-commit"));
+    assert!(
+        !has_bare,
+        "hook must not invoke bare ; hook content:
+{content}"
+    );
+
+    // Must still include the subcommand path (hooks git on-commit).
+    assert!(
+        content.contains("hooks git on-commit"),
+        "hook must still include the subcommand; hook content:
+{content}"
+    );
+}
+
+/// Same guarantee for the commit-msg hook.
+#[test]
+fn i3_git_commit_msg_hook_uses_absolute_8v_path() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".git").join("hooks")).expect("mkdir .git/hooks");
+
+    let out = run_init_yes(&dir);
+    assert!(out.status.success(), "init --yes must succeed");
+
+    let hook_path = dir.path().join(".git").join("hooks").join("commit-msg");
+    let content = std::fs::read_to_string(&hook_path).expect("read commit-msg");
+
+    let has_bare = content
+        .lines()
+        .any(|line| line.trim_start().starts_with("8v hooks git on-commit-msg"));
+    assert!(
+        !has_bare,
+        "commit-msg hook must not invoke bare ; hook content:
+{content}"
+    );
+    assert!(
+        content.contains("hooks git on-commit-msg"),
+        "commit-msg hook must still include the subcommand; hook content:
+{content}"
+    );
+}

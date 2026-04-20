@@ -247,10 +247,12 @@ fn hook_bash_redacts_api_key() {
 }
 
 #[test]
-fn hook_malformed_json_exits_zero() {
+fn hook_pre_malformed_json_exits_one_fail_closed() {
+    // H-1 fail-closed contract: `hook pre` must BLOCK the tool call when stdin
+    // is malformed JSON by exiting 1. Observability is sacrificed at the Pre
+    // boundary because Pre is the only place Claude honors exit 1 as a block.
     let dir = home();
 
-    // hook pre with malformed JSON
     let out_pre = {
         let mut child = bin()
             .args(["hook", "pre"])
@@ -269,12 +271,25 @@ fn hook_malformed_json_exits_zero() {
         child.wait_with_output().expect("wait")
     };
     assert!(
-        out_pre.status.success(),
-        "hook pre with malformed JSON must exit 0; stderr: {}",
+        !out_pre.status.success(),
+        "hook pre with malformed JSON must exit 1 (fail-closed); stderr: {}",
         String::from_utf8_lossy(&out_pre.stderr)
     );
 
-    // hook post with malformed JSON
+    let events = read_events(&dir);
+    assert!(
+        events.is_empty(),
+        "no events must be written on pre parse failure; got: {events:?}"
+    );
+}
+
+#[test]
+fn hook_post_malformed_json_exits_zero() {
+    // Post hooks preserve the observability principle: malformed input on the
+    // non-gating path is a parse failure we record-and-continue rather than
+    // block on.
+    let dir = home();
+
     let out_post = {
         let mut child = bin()
             .args(["hook", "post"])
@@ -298,11 +313,10 @@ fn hook_malformed_json_exits_zero() {
         String::from_utf8_lossy(&out_post.stderr)
     );
 
-    // Neither invocation must have written events.
     let events = read_events(&dir);
     assert!(
         events.is_empty(),
-        "no events must be written on parse failure; got: {events:?}"
+        "no events must be written on post parse failure; got: {events:?}"
     );
 }
 

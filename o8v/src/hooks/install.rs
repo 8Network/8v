@@ -11,35 +11,68 @@ use serde::{Deserialize, Serialize};
 
 // ─── Git hook constants ───────────────────────────────────────────────────────
 
-const HOOK_LINE: &str = "8v hooks git on-commit";
-const HOOK_TEMPLATE: &str = "#!/bin/sh\n8v hooks git on-commit\n";
-const COMMIT_MSG_HOOK_LINE: &str = "8v hooks git on-commit-msg \"$1\"";
-const COMMIT_MSG_HOOK_TEMPLATE: &str = "#!/bin/sh\n8v hooks git on-commit-msg \"$1\"\n";
+// Idempotency markers — substrings always present in installed hooks regardless
+// of the absolute path prefix. Used to detect pre-existing 8v hook lines.
+const HOOK_LINE_MARKER: &str = "hooks git on-commit";
+const COMMIT_MSG_HOOK_LINE_MARKER: &str = "hooks git on-commit-msg";
+
+/// Absolute path to the currently running 8v binary — used to generate
+/// installed hook scripts so they don't depend on PATH at hook fire time.
+/// Falls back to the bare name if env::current_exe() fails (extremely rare;
+/// platform-dependent — keeps installation working rather than aborting).
+fn resolved_8v_command() -> String {
+    match std::env::current_exe() {
+        Ok(p) => match p.canonicalize() {
+            Ok(abs) => abs.to_string_lossy().into_owned(),
+            Err(_) => p.to_string_lossy().into_owned(),
+        },
+        Err(_) => "8v".to_string(),
+    }
+}
+
+fn hook_line() -> String {
+    format!("{} hooks git on-commit", resolved_8v_command())
+}
+
+fn hook_template() -> String {
+    format!("#!/bin/sh\n{} hooks git on-commit\n", resolved_8v_command())
+}
+
+fn commit_msg_hook_line() -> String {
+    format!("{} hooks git on-commit-msg \"$1\"", resolved_8v_command())
+}
+
+fn commit_msg_hook_template() -> String {
+    format!(
+        "#!/bin/sh\n{} hooks git on-commit-msg \"$1\"\n",
+        resolved_8v_command()
+    )
+}
 
 // ─── Claude hook constants ────────────────────────────────────────────────────
 
 const MCP_TOOL_PERMISSION: &str = "mcp__8v__8v";
 
-/// All 8 Claude Code hook events and the 8v command they map to.
-const CLAUDE_HOOK_EVENTS: &[(&str, &str)] = &[
-    ("PreToolUse", "8v hooks claude pre-tool-use"),
-    ("PostToolUse", "8v hooks claude post-tool-use"),
-    (
-        "PostToolUseFailure",
-        "8v hooks claude post-tool-use-failure",
-    ),
-    ("UserPromptSubmit", "8v hooks claude user-prompt-submit"),
-    ("SessionStart", "8v hooks claude session-start"),
-    ("Stop", "8v hooks claude stop"),
-    ("SubagentStart", "8v hooks claude subagent-start"),
-    ("SubagentStop", "8v hooks claude subagent-stop"),
+/// All 8 Claude Code hook events and the subcommand suffix (everything after
+/// the `8v ` binary invocation) they map to. The binary path is resolved at
+/// install time via `resolved_8v_command()` so hooks don't depend on PATH at
+/// fire time. The suffix doubles as an idempotency marker — it's invariant
+/// across absolute-path vs bare-name installations.
+const CLAUDE_HOOK_EVENT_SUFFIXES: &[(&str, &str)] = &[
+    ("PreToolUse", "hooks claude pre-tool-use"),
+    ("PostToolUse", "hooks claude post-tool-use"),
+    ("PostToolUseFailure", "hooks claude post-tool-use-failure"),
+    ("UserPromptSubmit", "hooks claude user-prompt-submit"),
+    ("SessionStart", "hooks claude session-start"),
+    ("Stop", "hooks claude stop"),
+    ("SubagentStart", "hooks claude subagent-start"),
+    ("SubagentStop", "hooks claude subagent-stop"),
 ];
 
 /// Observability hooks: emit events to ~/.8v/events.ndjson, never block.
-const CLAUDE_OBSERVABILITY_HOOKS: &[(&str, &str)] = &[
-    ("PreToolUse", "8v hook pre"),
-    ("PostToolUse", "8v hook post"),
-];
+/// Same suffix-based contract as CLAUDE_HOOK_EVENT_SUFFIXES.
+const CLAUDE_OBSERVABILITY_HOOK_SUFFIXES: &[(&str, &str)] =
+    &[("PreToolUse", "hook pre"), ("PostToolUse", "hook post")];
 
 // ─── Typed structs for .claude/settings.json ─────────────────────────────────
 
@@ -182,7 +215,7 @@ pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result
             let guarded = o8v_fs::safe_read(git_dir.pre_commit(), root, &FsConfig::default())
                 .map_err(to_io)?;
             let existing = guarded.content();
-            if existing.contains("8v hooks git on-commit") {
+            if existing.contains(HOOK_LINE_MARKER) {
                 eprintln!("  (hook already contains 8v)");
                 return Ok(());
             }
@@ -195,14 +228,15 @@ pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result
                 .interact()
                 .map_err(std::io::Error::other)?;
 
+            let hook_line_str = hook_line();
             match selection {
                 0 => {
-                    let new = format!("{HOOK_LINE}\n{existing}");
+                    let new = format!("{hook_line_str}\n{existing}");
                     o8v_fs::safe_write(git_dir.pre_commit(), root, new.as_bytes())
                         .map_err(to_io)?;
                 }
                 1 => {
-                    let new = format!("{existing}\n{HOOK_LINE}\n");
+                    let new = format!("{existing}\n{hook_line_str}\n");
                     o8v_fs::safe_write(git_dir.pre_commit(), root, new.as_bytes())
                         .map_err(to_io)?;
                 }
@@ -213,7 +247,7 @@ pub fn install_git_pre_commit(root: &o8v_fs::ContainmentRoot) -> std::io::Result
             }
         }
         Ok(false) => {
-            o8v_fs::safe_write(git_dir.pre_commit(), root, HOOK_TEMPLATE.as_bytes())
+            o8v_fs::safe_write(git_dir.pre_commit(), root, hook_template().as_bytes())
                 .map_err(to_io)?;
         }
         Err(e) => return Err(to_io(e)),
@@ -238,7 +272,7 @@ pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result
             let guarded = o8v_fs::safe_read(git_dir.commit_msg(), root, &FsConfig::default())
                 .map_err(to_io)?;
             let existing = guarded.content();
-            if existing.contains(COMMIT_MSG_HOOK_LINE) {
+            if existing.contains(COMMIT_MSG_HOOK_LINE_MARKER) {
                 eprintln!("  (hook already contains 8v)");
                 return Ok(());
             }
@@ -251,14 +285,15 @@ pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result
                 .interact()
                 .map_err(std::io::Error::other)?;
 
+            let commit_msg_line_str = commit_msg_hook_line();
             match selection {
                 0 => {
-                    let new = format!("{COMMIT_MSG_HOOK_LINE}\n{existing}");
+                    let new = format!("{commit_msg_line_str}\n{existing}");
                     o8v_fs::safe_write(git_dir.commit_msg(), root, new.as_bytes())
                         .map_err(to_io)?;
                 }
                 1 => {
-                    let new = format!("{existing}\n{COMMIT_MSG_HOOK_LINE}\n");
+                    let new = format!("{existing}\n{commit_msg_line_str}\n");
                     o8v_fs::safe_write(git_dir.commit_msg(), root, new.as_bytes())
                         .map_err(to_io)?;
                 }
@@ -272,7 +307,7 @@ pub fn install_git_commit_msg(root: &o8v_fs::ContainmentRoot) -> std::io::Result
             o8v_fs::safe_write(
                 git_dir.commit_msg(),
                 root,
-                COMMIT_MSG_HOOK_TEMPLATE.as_bytes(),
+                commit_msg_hook_template().as_bytes(),
             )
             .map_err(to_io)?;
         }
@@ -343,24 +378,25 @@ pub fn install_claude_hooks(root: &o8v_fs::ContainmentRoot) -> std::io::Result<(
         Ok(false) => ClaudeSettings::default(),
     };
 
+    let bin = resolved_8v_command();
+
     // For each hook event, add our entry if not already present.
-    for (event, command) in CLAUDE_HOOK_EVENTS {
+    // Idempotency uses the suffix ("hooks claude ...") which is invariant
+    // across bare-name vs absolute-path installations.
+    for (event, suffix) in CLAUDE_HOOK_EVENT_SUFFIXES {
         let entries = event_entries_mut(&mut settings.hooks, event)
             .ok_or_else(|| std::io::Error::other(format!("unrecognized hook event: {event}")))?;
 
-        let already_present = entries.iter().any(|entry| {
-            entry
-                .hooks
-                .iter()
-                .any(|h| h.command.starts_with("8v hooks claude"))
-        });
+        let already_present = entries
+            .iter()
+            .any(|entry| entry.hooks.iter().any(|h| h.command.contains(suffix)));
 
         if !already_present {
             entries.push(HookEntry {
                 matcher: matcher_for(event).to_string(),
                 hooks: vec![Hook {
                     hook_type: "command".to_string(),
-                    command: command.to_string(),
+                    command: format!("{bin} {suffix}"),
                 }],
             });
         }
@@ -368,25 +404,22 @@ pub fn install_claude_hooks(root: &o8v_fs::ContainmentRoot) -> std::io::Result<(
 
     // For each observability hook event, add our entry if not already present.
     // These emit events to ~/.8v/events.ndjson and never block.
-    // Idempotency prefix "8v hook " (with trailing space) does not collide with
-    // "8v hooks claude ..." — the `s` at position 5 disambiguates.
-    for (event, command) in CLAUDE_OBSERVABILITY_HOOKS {
+    // Suffixes ("hook pre", "hook post") do not substring-match "hooks claude"
+    // (the `s` at position 4 disambiguates), so the two loops don't collide.
+    for (event, suffix) in CLAUDE_OBSERVABILITY_HOOK_SUFFIXES {
         let entries = event_entries_mut(&mut settings.hooks, event)
             .ok_or_else(|| std::io::Error::other(format!("unrecognized hook event: {event}")))?;
 
-        let already_present = entries.iter().any(|entry| {
-            entry
-                .hooks
-                .iter()
-                .any(|h| h.command.starts_with("8v hook "))
-        });
+        let already_present = entries
+            .iter()
+            .any(|entry| entry.hooks.iter().any(|h| h.command.contains(suffix)));
 
         if !already_present {
             entries.push(HookEntry {
                 matcher: matcher_for(event).to_string(),
                 hooks: vec![Hook {
                     hook_type: "command".to_string(),
-                    command: command.to_string(),
+                    command: format!("{bin} {suffix}"),
                 }],
             });
         }
@@ -437,7 +470,7 @@ mod tests {
         install_git_pre_commit(&containment_root).unwrap();
 
         let content = fs::read_to_string(root.join(".git/hooks/pre-commit")).unwrap();
-        assert_eq!(content, HOOK_TEMPLATE);
+        assert_eq!(content, hook_template());
     }
 
     #[test]
@@ -508,7 +541,7 @@ mod tests {
         install_git_commit_msg(&containment_root).unwrap();
 
         let content = fs::read_to_string(root.join(".git/hooks/commit-msg")).unwrap();
-        assert_eq!(content, COMMIT_MSG_HOOK_TEMPLATE);
+        assert_eq!(content, commit_msg_hook_template());
     }
 
     #[test]
@@ -583,7 +616,7 @@ mod tests {
         assert!(hooks.contains_key("PreToolUse"));
         assert!(hooks.contains_key("PostToolUse"));
         assert!(hooks.contains_key("Stop"));
-        assert_eq!(hooks.len(), CLAUDE_HOOK_EVENTS.len());
+        assert_eq!(hooks.len(), CLAUDE_HOOK_EVENT_SUFFIXES.len());
     }
 
     #[test]
@@ -615,9 +648,11 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         let hooks = v["hooks"].as_object().unwrap();
         // Events that also have an observability hook get 2 entries; others get 1.
-        let obs_events: std::collections::HashSet<&str> =
-            CLAUDE_OBSERVABILITY_HOOKS.iter().map(|(e, _)| *e).collect();
-        for (event, _) in CLAUDE_HOOK_EVENTS {
+        let obs_events: std::collections::HashSet<&str> = CLAUDE_OBSERVABILITY_HOOK_SUFFIXES
+            .iter()
+            .map(|(e, _)| *e)
+            .collect();
+        for (event, _) in CLAUDE_HOOK_EVENT_SUFFIXES {
             let entries = hooks[*event].as_array().unwrap();
             let expected = if obs_events.contains(*event) { 2 } else { 1 };
             assert_eq!(
@@ -653,7 +688,7 @@ mod tests {
             .any(|a| a.as_str() == Some(MCP_TOOL_PERMISSION)));
         // All hook events present
         let hooks = v["hooks"].as_object().unwrap();
-        assert_eq!(hooks.len(), CLAUDE_HOOK_EVENTS.len());
+        assert_eq!(hooks.len(), CLAUDE_HOOK_EVENT_SUFFIXES.len());
     }
 
     #[test]
@@ -682,8 +717,11 @@ mod tests {
             e["hooks"]
                 .as_array()
                 .map(|h| {
-                    h.iter()
-                        .any(|h| h["command"].as_str() == Some("8v hooks claude pre-tool-use"))
+                    h.iter().any(|h| {
+                        h["command"]
+                            .as_str()
+                            .is_some_and(|c| c.contains("hooks claude pre-tool-use"))
+                    })
                 })
                 .unwrap_or(false)
         }));
@@ -705,12 +743,15 @@ mod tests {
                 e["hooks"]
                     .as_array()
                     .map(|h| {
-                        h.iter()
-                            .any(|h| h["command"].as_str() == Some("8v hook pre"))
+                        h.iter().any(|h| {
+                            h["command"]
+                                .as_str()
+                                .is_some_and(|c| c.contains("hook pre"))
+                        })
                     })
                     .unwrap_or(false)
             }),
-            "PreToolUse must contain an observability entry with command '8v hook pre'"
+            "PreToolUse must contain an observability entry whose command ends with 'hook pre'"
         );
     }
 
@@ -730,12 +771,15 @@ mod tests {
                 e["hooks"]
                     .as_array()
                     .map(|h| {
-                        h.iter()
-                            .any(|h| h["command"].as_str() == Some("8v hook post"))
+                        h.iter().any(|h| {
+                            h["command"]
+                                .as_str()
+                                .is_some_and(|c| c.contains("hook post"))
+                        })
                     })
                     .unwrap_or(false)
             }),
-            "PostToolUse must contain an observability entry with command '8v hook post'"
+            "PostToolUse must contain an observability entry whose command ends with 'hook post'"
         );
     }
 
@@ -752,14 +796,20 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         let hooks = v["hooks"].as_object().unwrap();
 
-        for (event, obs_cmd) in CLAUDE_OBSERVABILITY_HOOKS {
+        for (event, obs_suffix) in CLAUDE_OBSERVABILITY_HOOK_SUFFIXES {
             let entries = hooks[*event].as_array().unwrap();
             let obs_count = entries
                 .iter()
                 .filter(|e| {
                     e["hooks"]
                         .as_array()
-                        .map(|h| h.iter().any(|h| h["command"].as_str() == Some(*obs_cmd)))
+                        .map(|h| {
+                            h.iter().any(|h| {
+                                h["command"]
+                                    .as_str()
+                                    .is_some_and(|c| c.contains(*obs_suffix))
+                            })
+                        })
                         .unwrap_or(false)
                 })
                 .count();
