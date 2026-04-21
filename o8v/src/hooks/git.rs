@@ -244,43 +244,43 @@ mod tests {
     // ── H-3: broaden AI-attribution stripping beyond Co-Authored-By ─────────
 
     #[test]
-    fn h3_strips_generated_by_trailer() {
+    fn strips_generated_by_trailer() {
         let input = "feat: X\n\nbody\nGenerated-By: Claude\n";
         assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
     }
 
     #[test]
-    fn h3_strips_generated_with_trailer() {
+    fn strips_generated_with_trailer() {
         let input = "feat: X\n\nbody\nGenerated-With: Claude Code\n";
         assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
     }
 
     #[test]
-    fn h3_strips_co_written_by_trailer() {
+    fn strips_co_written_by_trailer() {
         let input = "feat: X\n\nbody\nCo-Written-By: AI <ai@example.com>\n";
         assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
     }
 
     #[test]
-    fn h3_strips_assisted_by_trailer() {
+    fn strips_assisted_by_trailer() {
         let input = "feat: X\n\nbody\nAssisted-By: Claude\n";
         assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
     }
 
     #[test]
-    fn h3_strips_ai_assistant_trailer() {
+    fn strips_ai_assistant_trailer() {
         let input = "feat: X\n\nbody\nAI-Assistant: Claude Code\n";
         assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
     }
 
     #[test]
-    fn h3_strips_ai_generated_trailer() {
+    fn strips_ai_generated_trailer() {
         let input = "feat: X\n\nbody\nAI-Generated: true\n";
         assert_eq!(strip_attribution(input), "feat: X\n\nbody\n");
     }
 
     #[test]
-    fn h3_case_insensitive_trailer_key() {
+    fn strips_trailer_key_case_insensitively() {
         // Git trailers are case-insensitive on the key. "co-authored-by:" must
         // be stripped just like "Co-Authored-By:".
         let input = "feat: X\n\ngenerated-by: Claude\nCO-AUTHORED-BY: AI\nco-authored-by: bot\n";
@@ -288,20 +288,20 @@ mod tests {
     }
 
     #[test]
-    fn h3_preserves_signed_off_by_trailer() {
+    fn preserves_signed_off_by_trailer() {
         // DCO / legal attestation must never be stripped.
         let input = "feat: X\n\nbody\nSigned-off-by: Dev <dev@example.com>\n";
         assert_eq!(strip_attribution(input), input);
     }
 
     #[test]
-    fn h3_preserves_reviewed_and_tested_by_trailers() {
+    fn preserves_reviewed_and_tested_by_trailers() {
         let input = "feat: X\n\nReviewed-by: Alice\nTested-by: Bob\n";
         assert_eq!(strip_attribution(input), input);
     }
 
     #[test]
-    fn h3_preserves_inline_mention_of_co_authored_by() {
+    fn preserves_inline_mention_of_co_authored_by() {
         // Inline prose mentions of the trailer name (without the trailer
         // `key:` shape) must be preserved — the scope is trailers only, not
         // any word that looks like one.
@@ -310,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn h3_preserves_inline_mention_of_generated_by() {
+    fn preserves_inline_mention_of_generated_by() {
         let input = "feat: X\n\nThis file was Generated-By the old tool (now replaced).\n";
         assert_eq!(strip_attribution(input), input);
     }

@@ -324,7 +324,7 @@ mod tests {
     /// This test FAILS on pre-fix code (where `Err` was returned) and passes
     /// on fixed code (where `Ok(ParseOutcome::HelpOutput(_))` is returned).
     #[test]
-    fn f7_help_flag_returns_help_output_not_error() {
+    fn help_flag_returns_help_output_not_error() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
         let result = parse_mcp_command("--help", &root);
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn f7_short_help_flag_returns_help_output_not_error() {
+    fn short_help_flag_returns_help_output_not_error() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
         let result = parse_mcp_command("-h", &root);
@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn f7_subcommand_help_returns_help_output_not_error() {
+    fn subcommand_help_returns_help_output_not_error() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
         let result = parse_mcp_command("read --help", &root);
@@ -360,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn f7_help_output_contains_text() {
+    fn help_output_contains_text() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
         let result = parse_mcp_command("--help", &root);

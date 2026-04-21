@@ -148,7 +148,7 @@ mod tests {
     /// hint. This test FAILS on pre-fix code (old message lacked those fields)
     /// and passes on fixed code.
     #[test]
-    fn f8_outside_path_error_contains_workspace_hint() {
+    fn outside_path_error_contains_workspace_hint() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
 
@@ -174,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn f8_outside_path_error_includes_paths() {
+    fn outside_path_error_includes_paths() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
         let mut path = "/nonexistent_8v_test_path_outside_workspace".to_string();
@@ -191,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn f8_inside_path_resolves_ok() {
+    fn inside_path_resolves_ok() {
         let dir = TempDir::new().unwrap();
         let root = make_containment_root(&dir);
         std::fs::write(dir.path().join("hello.rs"), "fn main() {}").unwrap();

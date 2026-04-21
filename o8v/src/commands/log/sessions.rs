@@ -145,7 +145,7 @@ mod tests {
     /// so the test below would assert `is_empty()` but find the excluded warning
     /// still present — causing a test failure.  Post-fix the warning is dropped.
     #[test]
-    fn f3_warnings_from_excluded_sessions_are_dropped() {
+    fn warnings_from_excluded_sessions_are_dropped() {
         // Three sessions: oldest = "ses_old", rendered = "ses_a", "ses_b".
         let sessions = vec![
             make_session("ses_old"),
