@@ -37,7 +37,7 @@ impl Check for NodeToolCheck {
     }
 
     fn run(&self, project_dir: &o8v_fs::ContainmentRoot, ctx: &CheckContext) -> CheckOutcome {
-        // Walk up from project_dir to find the tool in node_modules/.bin
+        // Look for the tool in project_dir/node_modules/.bin (project root only)
         let Some(bin_path) = find_node_bin(project_dir, self.program) else {
             if self.optional {
                 // Tool is optional — not installed means not used by this project

@@ -1,7 +1,7 @@
 # log/stats — Implementation Design (Level 2)
 
 **Date:** 2026-04-17
-**Precedence:** supersedes the current POC implementation. Level 1 (feature design) unchanged — see `log_stats_design.md`. Learnings this design responds to: `log_stats_poc_learnings.md`.
+**Precedence:** supersedes the current POC implementation. Level 1 (feature design) unchanged — see `log_stats_design.md`. Learnings this design responds to: `log-stats-design-learnings.md`.
 
 **Principle in one line:** every value that can be wrong at runtime must be wrong at compile time, or must become a typed `Warning` that travels to the user. Nothing silent. Nothing duplicated. One path per concern.
 

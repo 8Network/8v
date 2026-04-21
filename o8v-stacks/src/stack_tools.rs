@@ -43,7 +43,7 @@ pub struct FormatTool {
     /// If true, check mode uses stdout (not exit code) to detect dirty.
     /// Needed for gofmt -l which exits 0 but lists dirty files.
     pub check_dirty_on_stdout: bool,
-    /// If true, resolve binary via find_node_bin walk-up.
+    /// If true, resolve binary via find_node_bin (project root only).
     /// Used for npm/yarn/pnpm formatters that live in node_modules.
     pub needs_node_resolution: bool,
 }

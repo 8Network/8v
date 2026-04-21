@@ -36,7 +36,7 @@ fn find_in_path(program: &str) -> Option<String> {
 /// Returns the binary path (absolute or relative as appropriate) or None if not found.
 fn resolve_formatter_binary(root: &o8v_fs::ContainmentRoot, tool: &FormatTool) -> Option<String> {
     if tool.needs_node_resolution {
-        // Walk up from root to find in node_modules/.bin
+        // Look in root/node_modules/.bin (project root only — never ancestors)
         crate::tool_resolution::find_node_bin(root, tool.program)
             .map(|p| p.to_string_lossy().to_string())
     } else {
