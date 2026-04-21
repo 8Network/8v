@@ -49,6 +49,19 @@ pub fn run_scenario(
             .to_string()
     };
 
+    // Warn if the working tree is dirty — benchmark results from a dirty tree
+    // cannot be attributed to a specific commit and should not be published.
+    if let Ok(status) = Command::new("git").args(["status", "--porcelain"]).output() {
+        let dirty = !status.stdout.is_empty();
+        if dirty {
+            eprintln!(
+                "  [benchmark] WARNING: working tree is dirty — commit changes before \
+                 publishing results. Results will be tagged with the current HEAD but \
+                 do not reflect a clean build."
+            );
+        }
+    }
+
     // ── 1. Setup ────────────────────────────────────────────────────────────
     let fixture = fixture_path("o8v", scenario.task.fixture);
     let project = TempProject::from_fixture(&fixture);
