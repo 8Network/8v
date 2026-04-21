@@ -57,7 +57,7 @@ pub fn json_error_envelope_with_line(message: &str, code: &str, path: &str, line
 /// Classify an error message string into a machine-readable code.
 ///
 /// Uses substring matching on the error message text. Falls back to `"runtime"`
-/// for unrecognized errors (approved as fallback in CE-3 resolution).
+/// for unrecognized errors (fallback for unrecognized error messages).
 pub fn classify_error_code(msg: &str) -> &'static str {
     let lower = msg.to_ascii_lowercase();
     if lower.contains("not found")

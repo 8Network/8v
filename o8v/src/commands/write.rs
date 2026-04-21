@@ -342,7 +342,7 @@ fn has_lone_cr(content: &str) -> bool {
 ///
 /// Returns Err for:
 /// - Lone `\r` (classic Mac, no `\n` at all) — CE6
-/// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`) — HIGH-6
+/// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`)
 /// - Mixed `\r\n` and lone `\n` — CE19
 fn validate_line_endings(content: &str) -> Result<(), String> {
     let has_crlf = content.contains("\r\n");
@@ -384,9 +384,9 @@ fn validate_line_endings(content: &str) -> Result<(), String> {
 /// user never needs to put `\r` in content strings.
 ///
 /// Returns Err for:
-/// - Lone `\r` (classic Mac) — HIGH-3
+/// - Lone `\r` (classic Mac)
 /// - `\r\n` (CRLF) — was silently allowed, now rejected
-/// - Mixed `\r\n` and lone `\n` — HIGH-2
+/// - Mixed `\r\n` and lone `\n`
 fn validate_content_line_endings(content: &str) -> Result<(), String> {
     if content.contains('\r') {
         return Err(

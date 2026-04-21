@@ -320,7 +320,7 @@ pub async fn dispatch_command_with_agent(
                 .await
             {
                 Ok((output, _, report)) => {
-                    // Per CE-2 resolution of error-contract §7: exit 1 on no matches OR
+                    // Per error-contract §7: exit 1 on no matches OR
                     // on partial I/O failures. Stderr distinguishes — empty = clean
                     // no-match, non-empty = read failures. Binary skips are expected
                     // noise and do not flip the exit code.

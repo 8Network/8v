@@ -9,7 +9,7 @@
 //! - BR-03: chmod-000 files silently skipped, stderr empty, indistinguishable from no-match.
 //! - BR-06: binary (NUL-byte) files silently skipped without incrementing `files_skipped`.
 //!
-//! CE-2 discriminant:
+//! Exit code + stderr contract:
 //!   exit 0                        = ≥1 match, no I/O errors
 //!   exit 1 + stderr empty         = 0 matches, no I/O errors (clean no-match)
 //!   exit 1 + stderr non-empty     = partial I/O failure (0 or ≥1 matches)
@@ -104,9 +104,9 @@ fn search_emits_stderr_warning_on_permission_denied() {
     );
 }
 
-/// CE-2 discriminant regression: exit 1 with zero matches must keep stderr EMPTY.
+/// Regression: exit 1 with zero matches must keep stderr EMPTY.
 ///
-/// This test guards the CE-2 contract: if nothing went wrong, don't emit anything
+/// This test guards the exit-code contract: if nothing went wrong, don't emit anything
 /// to stderr. A future code path writing to stderr on a clean no-match would break
 /// the agent's ability to distinguish partial failure from genuine no-match.
 #[test]
@@ -135,7 +135,7 @@ fn search_stderr_empty_on_clean_no_match() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.is_empty(),
-        "clean no-match must produce empty stderr (CE-2 discriminant); got: {stderr}"
+        "clean no-match must produce empty stderr; got: {stderr}"
     );
 }
 
