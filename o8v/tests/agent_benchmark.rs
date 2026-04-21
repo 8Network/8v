@@ -214,6 +214,29 @@ fn experiment_fix_test() {
 }
 
 #[test]
+#[ignore = "experiment: baseline + 8v × N=9 runs (~13 min, costs tokens) — use when N=6 CI exceeds publishability threshold"]
+fn experiment_fix_test_n9() {
+    let binary = env!("CARGO_BIN_EXE_8v");
+    let result = run_experiment(&scenarios::EXPERIMENT_FIX_TEST_N9, binary);
+
+    assert!(
+        result.control.tests_pass_count() == result.n,
+        "Control failed to fix bug in {}/{} runs",
+        result.control.tests_pass_count(),
+        result.n
+    );
+    for sample in &result.treatments {
+        assert!(
+            sample.tests_pass_count() == result.n,
+            "{} failed to fix bug in {}/{} runs",
+            sample.description,
+            sample.tests_pass_count(),
+            result.n
+        );
+    }
+}
+
+#[test]
 #[ignore = "experiment: 2 conditions × 3 runs (~6 min, costs tokens)"]
 fn experiment_diagnose() {
     let binary = env!("CARGO_BIN_EXE_8v");

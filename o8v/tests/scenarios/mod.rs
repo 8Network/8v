@@ -18,7 +18,8 @@ mod fix_typescript;
 
 // ── Fix-failing-test (Rust) ───────────────────────────────────────────────────
 pub use fix_rust::{
-    EXPERIMENT_FIX_TEST, EXPERIMENT_FIX_TEST_CODEX, FIX_TEST_8V, FIX_TEST_BASELINE,
+    EXPERIMENT_FIX_TEST, EXPERIMENT_FIX_TEST_CODEX, EXPERIMENT_FIX_TEST_N9, FIX_TEST_8V,
+    FIX_TEST_BASELINE,
 };
 
 // ── Diagnose-issues (Rust) ────────────────────────────────────────────────────

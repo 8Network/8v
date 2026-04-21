@@ -36,3 +36,12 @@ pub static EXPERIMENT_FIX_TEST_CODEX: ExperimentConfig = ExperimentConfig {
     treatments: &[&FIX_TEST_CODEX_8V],
     n: 3,
 };
+
+// N=9 variant — used when N=6 CI half-width exceeds publishability threshold
+pub static EXPERIMENT_FIX_TEST_N9: ExperimentConfig = ExperimentConfig {
+    name: "fix-failing-test",
+    task: &FIX_FAILING_TEST,
+    control: &FIX_TEST_BASELINE,
+    treatments: &[&FIX_TEST_8V],
+    n: 9,
+};
