@@ -31,7 +31,7 @@
 | B3-1 | BR-39 conflict — design closes it but register §4 note says explicitly out of scope | **PARTIALLY FIXED** — B3 scope is now clear (BR-39 out of scope in this doc, line 82); register v2 §4 row still shows B3 closing 3 bugs while note excludes BR-39; count/scope mismatch unreconciled |
 | B3-2 | No backward-compat statement for new `files_skipped_by_reason` JSON field | **FIXED** — additive field noted at line 16; no current consumers confirmed (2026-04-20 survey) |
 
-### slice-c1-init-hooks-correctness.md
+### init-hooks-correctness-l1.md
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
@@ -39,7 +39,7 @@
 | C1-2 | No test for I-3 (PATH anchor) fix | **FIXED** — `init_installed_hook_uses_absolute_8v_path_not_bare_name` added at line 49 |
 | C1-3 | BR-28 orphaned — doc claimed to close it but register lists it as unowned | **NOT FIXED** — BR-28 silently removed from the doc with no explanation; register v2 §5 still lists BR-28 as orphaned with "park for Phase 0 round 2" note; ownership gap unresolved |
 
-### slice-c2-upgrade-contract.md
+### upgrade-contract-l1.md
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
@@ -47,7 +47,7 @@
 | C2-2 | No test for "field absent/null when network error" behavior | **FIXED** — `upgrade_json_field_absent_when_network_error` added at line 52 |
 | C2-3 | Offline exit code unspecified — design silent on `upgrade` when network is unreachable | **FIXED** — DNS failure → non-zero covered at line 16; counterexample 4 defaults to exit 1 for offline cache scenario |
 
-### slice-c3-write-semantics.md
+### write-semantics-l1.md
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|

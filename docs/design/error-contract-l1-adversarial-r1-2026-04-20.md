@@ -102,7 +102,7 @@ M5 (CE-2 discriminant) is the strongest mutation. M1–M4 are adequate. No gaps 
 
 ---
 
-## §4 slice-c1-init-hooks-correctness.md
+## §4 init-hooks-correctness-l1.md
 
 ### Blockers
 
@@ -135,7 +135,7 @@ No explicit mutation list in C1 doc. The doc lists tests but not their inversion
 
 ---
 
-## §5 slice-c2-upgrade-contract.md
+## §5 upgrade-contract-l1.md
 
 ### Blockers
 
@@ -168,7 +168,7 @@ No mutation list. For U-1: invert the "already current" check to always emit `up
 
 ---
 
-## §6 slice-c3-write-semantics.md
+## §6 write-semantics-l1.md
 
 ### Blockers
 
@@ -257,9 +257,9 @@ M3 is not a mutation plan item (see Untestable claims above). M1 and M2 are adeq
 | error-routing-decomposition.md | REVISE | Prove B2a→B2c dependency or drop claim. Document B2d/capital-E option handoff. Name one failing-first test per sub-slice. |
 | stderr-channel-counterexamples.md | REVISE | Resolve A2 concretely (not "resolution needed"). Provide concrete answers for A6, A7, A8 or remove them from gate list. Add --json/stderr test. |
 | search-silent-failure-l1.md | REVISE | Resolve BR-39 conflict between register and slice doc. Add backward-compat note for `files_skipped_by_reason`. |
-| slice-c1-init-hooks-correctness.md | REVISE | Fix H-1 exit code (exit 1, not 2, for runtime empty-stdin). Add failing-first test for I-3. Resolve BR-28 orphan. |
-| slice-c2-upgrade-contract.md | REVISE | Decide JSON shape at L1 (not deferred). Add test for "field absent when errored." Specify exit code for offline failure. |
-| slice-c3-write-semantics.md | REVISE | Fix CE-1 escape depth analysis. Resolve AF-1 L2 decision conflict with test. Resolve BR-38 orphan. Remove line number citations. |
+| init-hooks-correctness-l1.md | REVISE | Fix H-1 exit code (exit 1, not 2, for runtime empty-stdin). Add failing-first test for I-3. Resolve BR-28 orphan. |
+| upgrade-contract-l1.md | REVISE | Decide JSON shape at L1 (not deferred). Add test for "field absent when errored." Specify exit code for offline failure. |
+| write-semantics-l1.md | REVISE | Fix CE-1 escape depth analysis. Resolve AF-1 L2 decision conflict with test. Resolve BR-38 orphan. Remove line number citations. |
 | write-capital-e-prefix-superseded.md (findings/) | REVISE | Record A/B/C decision. Document handoff into B2d. Convert M3 from open question to deterministic assertion. |
 
 **READY: 0. REVISE: 7. REJECT: 0.**
@@ -287,9 +287,9 @@ Friction observed during this review session:
 | error-routing-decomposition.md | 3 | REVISE |
 | stderr-channel-counterexamples.md | 3 | REVISE |
 | search-silent-failure-l1.md | 2 | REVISE |
-| slice-c1-init-hooks-correctness.md | 3 | REVISE |
-| slice-c2-upgrade-contract.md | 3 | REVISE |
-| slice-c3-write-semantics.md | 3 | REVISE |
+| init-hooks-correctness-l1.md | 3 | REVISE |
+| upgrade-contract-l1.md | 3 | REVISE |
+| write-semantics-l1.md | 3 | REVISE |
 | write-capital-e-prefix-superseded.md (findings/) | 2 | REVISE |
 
 **Total blockers: 19. READY: 0. REVISE: 7. REJECT: 0.**
