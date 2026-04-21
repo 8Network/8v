@@ -610,6 +610,53 @@ pub fn render_markdown(report: &ReportJson) -> String {
         md.push_str(&format!("> {}\n\n", report.confidence.reason));
     }
 
+    // Plain-English summary for first-time readers
+    if report.conditions.len() >= 2 {
+        let control = &report.conditions[0];
+        let treatment = &report.conditions[1];
+        let cost_delta = report
+            .deltas_vs_control
+            .first()
+            .and_then(|d| d.cost_delta_ratio)
+            .map(|d| d * 100.0);
+        let turns_delta_pct = report
+            .deltas_vs_control
+            .first()
+            .map(|d| d.turns_delta_ratio * 100.0);
+        let all_pass = treatment.verification.tests_pass.passed
+            == treatment.verification.tests_pass.total
+            && treatment.verification.tests_pass.total > 0;
+
+        md.push_str("## Summary\n\n");
+        if let Some(delta) = cost_delta {
+            let direction = if delta < 0.0 { "reduced" } else { "increased" };
+            md.push_str(&format!(
+                "8v {} cost by **{:.1}%** ({:.1} turns vs {:.1}).",
+                direction,
+                delta.abs(),
+                treatment.turns.mean,
+                control.turns.mean,
+            ));
+        }
+        if let Some(turns_pct) = turns_delta_pct {
+            if turns_pct < -10.0 {
+                md.push_str(&format!(
+                    " Fewer turns means less back-and-forth ({:.0}% reduction).",
+                    turns_pct.abs()
+                ));
+            }
+        }
+        if all_pass {
+            md.push_str(" All verification runs passed on both conditions.");
+        }
+        md.push_str(if report.confidence.publishable {
+            " Result is publishable."
+        } else {
+            " **Result is not yet publishable** — run more iterations to narrow the confidence interval."
+        });
+        md.push_str("\n\n");
+    }
+
     // Token breakdown
     if report.conditions.len() >= 2 {
         md.push_str("## Token breakdown (means)\n\n");
