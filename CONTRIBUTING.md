@@ -6,7 +6,7 @@ Thank you for your interest in contributing to 8v.
 
 1. Open an issue describing what you want to change and why
 2. Fork the repository and create a branch
-3. Make your changes
+3. Make your changes — requires Rust 1.82.0 or later (`rustup update stable`)
 4. Run `cargo test --workspace && cargo clippy --workspace && cargo fmt --all --check`
 5. Open a pull request
 
