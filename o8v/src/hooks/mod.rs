@@ -14,8 +14,31 @@
 //! ```
 
 pub mod claude;
+pub(super) mod claude_install;
 pub mod git;
+pub(super) mod git_install;
 pub mod install;
+
+// ─── Shared helpers (used by git_install + claude_install) ───────────────────
+
+/// POSIX sh single-quote escaping: `'...'` with internal `'` escaped as `'\''`.
+/// Handles paths with spaces, parentheses, or any character except NUL.
+pub(super) fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Absolute path to the currently running 8v binary, shell-quoted for use in
+/// installed hook scripts so they don't depend on PATH at hook fire time.
+/// Falls back to the bare name `8v` (no quoting needed) if resolution fails.
+pub(super) fn resolved_8v_command() -> String {
+    match std::env::current_exe() {
+        Ok(p) => match p.canonicalize() {
+            Ok(abs) => shell_quote(&abs.to_string_lossy()),
+            Err(_) => shell_quote(&p.to_string_lossy()),
+        },
+        Err(_) => "8v".to_string(),
+    }
+}
 
 use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
