@@ -13,6 +13,7 @@ pub fn tools() -> StackTools {
             stack: "helm",
             parse_fn: crate::parse::helm::parse,
             env: &[],
+            optional: false,
         })],
         formatter: None,
         test_runner: None,

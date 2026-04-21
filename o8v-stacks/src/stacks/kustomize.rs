@@ -13,6 +13,7 @@ pub fn tools() -> StackTools {
             stack: "kustomize",
             parse_fn: crate::parse::kustomize::parse,
             env: &[],
+            optional: false,
         })],
         formatter: None,
         test_runner: None,

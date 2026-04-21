@@ -14,6 +14,7 @@ pub fn tools() -> StackTools {
                 stack: "erlang",
                 parse_fn: crate::parse::rebar_compile::parse,
                 env: &[],
+                optional: false,
             }),
             Box::new(EnrichedToolCheck {
                 name: "rebar3 dialyzer",
@@ -22,6 +23,7 @@ pub fn tools() -> StackTools {
                 stack: "erlang",
                 parse_fn: crate::parse::rebar_dialyzer::parse,
                 env: &[],
+                optional: false,
             }),
             Box::new(EnrichedToolCheck {
                 name: "rebar3 xref",
@@ -30,6 +32,7 @@ pub fn tools() -> StackTools {
                 stack: "erlang",
                 parse_fn: crate::parse::rebar_xref::parse,
                 env: &[],
+                optional: false,
             }),
         ],
         formatter: Some(FormatTool {

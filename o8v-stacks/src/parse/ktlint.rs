@@ -49,8 +49,19 @@ pub fn parse(
 ) -> ParseResult {
     let mut diagnostics = Vec::new();
 
+    // ktlint emits INFO/WARN log lines to stdout before the JSON array.
+    // Extract starting from the first line that begins with '['.
+    let json_str = if stdout.trim_start().starts_with('[') {
+        stdout
+    } else {
+        stdout
+            .find("\n[")
+            .map(|pos| &stdout[pos + 1..])
+            .unwrap_or(stdout)
+    };
+
     // Empty output is clean
-    if stdout.is_empty() {
+    if json_str.trim().is_empty() {
         return ParseResult {
             diagnostics,
             status: ParseStatus::Parsed,
@@ -58,7 +69,7 @@ pub fn parse(
         };
     }
 
-    let files: Vec<KtlintFile> = match serde_json::from_str(stdout) {
+    let files: Vec<KtlintFile> = match serde_json::from_str(json_str) {
         Ok(f) => f,
         Err(_) => {
             return ParseResult {
@@ -229,5 +240,36 @@ mod tests {
             result.diagnostics[0].location,
             o8v_core::diagnostic::Location::File(_)
         ));
+    }
+
+    #[test]
+    fn parse_no_errors_with_info_prefix() {
+        // Real ktlint output: INFO log line before the JSON array.
+        let stdout = "08:28:12.694 [main] INFO com.pinterest.ktlint.cli.internal.KtlintCommandLine -- Enable default patterns [**/*.kt, **/*.kts]\n[\n]\n";
+        let result = parse(
+            stdout,
+            "",
+            std::path::Path::new("/project"),
+            "ktlint",
+            "kotlin",
+        );
+        assert_eq!(result.diagnostics.len(), 0);
+        assert_eq!(result.status, ParseStatus::Parsed);
+    }
+
+    #[test]
+    fn parse_errors_with_info_prefix() {
+        // Real ktlint output: INFO + WARN before JSON with actual errors.
+        let stdout = "08:28:12.694 [main] INFO com.pinterest.ktlint.cli.internal.KtlintCommandLine -- Enable default patterns [**/*.kt, **/*.kts]\n08:28:13.000 [main] WARN com.pinterest.ktlint.cli.internal.KtlintCommandLine -- Lint has found errors\n[{\"file\":\"/project/test.kt\",\"errors\":[{\"line\":2,\"column\":1,\"message\":\"bad\",\"rule\":\"standard:rule\"}]}]\n";
+        let result = parse(
+            stdout,
+            "",
+            std::path::Path::new("/project"),
+            "ktlint",
+            "kotlin",
+        );
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.status, ParseStatus::Parsed);
+        assert_eq!(result.diagnostics[0].message, "bad");
     }
 }

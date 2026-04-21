@@ -30,6 +30,7 @@ pub fn tools() -> StackTools {
                 stack: "go",
                 parse_fn: crate::parse::govet::parse,
                 env: &[],
+                optional: false,
             }),
             Box::new(EnrichedToolCheck {
                 name: "staticcheck",
@@ -38,6 +39,7 @@ pub fn tools() -> StackTools {
                 stack: "go",
                 parse_fn: crate::parse::staticcheck::parse,
                 env: &[],
+                optional: true,
             }),
         ],
         formatter: Some(FormatTool {

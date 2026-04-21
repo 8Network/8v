@@ -17,6 +17,7 @@ pub fn tools() -> StackTools {
             stack: "java",
             parse_fn: crate::parse::javac::parse,
             env: &[],
+            optional: false,
         })],
         formatter: Some(FormatTool {
             program: "google-java-format",

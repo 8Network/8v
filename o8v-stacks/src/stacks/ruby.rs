@@ -13,6 +13,7 @@ pub fn tools() -> StackTools {
             stack: "ruby",
             parse_fn: crate::parse::rubocop::parse,
             env: &[],
+            optional: false,
         })],
         formatter: Some(FormatTool {
             program: "rubocop",

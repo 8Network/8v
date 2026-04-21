@@ -37,6 +37,7 @@ pub fn tools() -> StackTools {
                 stack: "rust",
                 parse_fn: crate::parse::cargo::parse,
                 env: &[],
+                optional: false,
             }),
             Box::new(EnrichedToolCheck {
                 name: "clippy",
@@ -53,6 +54,7 @@ pub fn tools() -> StackTools {
                 stack: "rust",
                 parse_fn: crate::parse::cargo::parse,
                 env: &[],
+                optional: false,
             }),
             Box::new(EnrichedToolCheck {
                 name: "cargo fmt",
@@ -61,6 +63,7 @@ pub fn tools() -> StackTools {
                 stack: "rust",
                 parse_fn: crate::parse::rustfmt::parse,
                 env: &[],
+                optional: false,
             }),
         ],
         formatter: Some(FormatTool {

@@ -32,6 +32,7 @@ pub fn tools() -> StackTools {
                 stack: "python",
                 parse_fn: crate::parse::ruff::parse,
                 env: &[],
+                optional: false,
             }),
             Box::new(EnrichedToolCheck {
                 name: "mypy",
@@ -40,6 +41,7 @@ pub fn tools() -> StackTools {
                 stack: "python",
                 parse_fn: crate::parse::mypy::parse,
                 env: &[],
+                optional: false,
             }),
         ],
         formatter: Some(FormatTool {

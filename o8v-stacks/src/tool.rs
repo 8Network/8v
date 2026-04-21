@@ -2,6 +2,7 @@
 
 use crate::enrich::{enrich, ParseFn};
 use crate::runner::run_tool;
+use o8v_core::diagnostic::ParseStatus;
 use o8v_core::{Check, CheckContext, CheckOutcome};
 use std::process::Command;
 
@@ -53,6 +54,9 @@ pub struct EnrichedToolCheck {
     pub parse_fn: ParseFn,
     /// Environment variables to set (e.g. `&[("NO_COLOR", "1")]`).
     pub env: &'static [(&'static str, &'static str)],
+    /// If true, missing tool → Passed (tool not installed on this machine).
+    /// If false (default), missing tool → Error.
+    pub optional: bool,
 }
 
 impl Check for EnrichedToolCheck {
@@ -66,6 +70,31 @@ impl Check for EnrichedToolCheck {
         for &(key, val) in self.env {
             cmd.env(key, val);
         }
+
+        if self.optional {
+            let config = o8v_process::ProcessConfig {
+                timeout: ctx.timeout,
+                interrupted: Some(ctx.interrupted),
+                ..o8v_process::ProcessConfig::default()
+            };
+            let result = o8v_process::run(cmd, &config);
+            if let o8v_process::ExitOutcome::SpawnError {
+                kind: std::io::ErrorKind::NotFound,
+                ..
+            } = &result.outcome
+            {
+                return CheckOutcome::passed(
+                    String::new(),
+                    String::new(),
+                    ParseStatus::Parsed,
+                    false,
+                    false,
+                );
+            }
+            let outcome = crate::runner::process_result_to_outcome(result, self.name);
+            return enrich(outcome, project_dir, self.name, self.stack, self.parse_fn);
+        }
+
         let outcome = run_tool(cmd, self.name, ctx.timeout, ctx.interrupted);
         enrich(outcome, project_dir, self.name, self.stack, self.parse_fn)
     }

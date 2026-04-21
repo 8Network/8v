@@ -13,6 +13,7 @@ pub fn tools() -> StackTools {
             stack: "terraform",
             parse_fn: crate::parse::tflint::parse,
             env: &[],
+            optional: false,
         })],
         formatter: Some(FormatTool {
             program: "terraform",

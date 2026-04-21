@@ -13,6 +13,7 @@ pub fn tools() -> StackTools {
             stack: "deno",
             parse_fn: crate::parse::deno::parse,
             env: &[("NO_COLOR", "1")],
+            optional: false,
         })],
         formatter: Some(FormatTool {
             program: "deno",

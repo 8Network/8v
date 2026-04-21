@@ -12,10 +12,11 @@ pub fn tools() -> StackTools {
         checks: vec![Box::new(EnrichedToolCheck {
             name: "ktlint",
             program: "ktlint",
-            args: &["--reporter=json"],
+            args: &["--reporter=json", "--log-level=error"],
             stack: "kotlin",
             parse_fn: crate::parse::ktlint::parse,
             env: &[],
+            optional: false,
         })],
         formatter: Some(FormatTool {
             program: "ktlint",
