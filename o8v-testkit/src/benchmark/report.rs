@@ -389,9 +389,13 @@ fn has_stuck_loop(details: &[super::types::ToolCallDetail]) -> bool {
     // Catches "thrashing" — agent fixated on one tool, varying args without
     // progressing. Observed in polyglot Run 6: 100 turns, 81 tool calls,
     // massive cost outlier, not caught by strict check.
+    //
+    // MCP tools (name starts with "mcp__") are excluded: when 8v is active,
+    // all operations route through a single MCP tool by design. Sequential
+    // calls are expected and do not indicate a stuck loop.
     let mut run_len = 1usize;
     for pair in details.windows(2) {
-        if pair[0].name == pair[1].name {
+        if pair[0].name == pair[1].name && !pair[0].name.starts_with("mcp__") {
             run_len += 1;
             if run_len >= 5 {
                 return true;
@@ -1035,6 +1039,38 @@ mod tests {
         let sample = make_sample("test", vec![obs]);
         let landmines = detect_landmines(&sample);
         assert_eq!(landmines.stuck_loop_runs, 0);
+    }
+
+    #[test]
+    fn landmine_mcp_sequential_not_flagged() {
+        // 8v routes all operations through mcp__8v__8v — 5+ consecutive calls
+        // are expected (ls → read → write → write → test) and must NOT trigger
+        // the loose stuck-loop detector.
+        let mut obs = make_observation(100, 0.01, 1, vec!["mcp__8v__8v"; 6]);
+        obs.tool_calls_detail = [
+            ("mcp__8v__8v", r#"{"command":"8v ls --tree"}"#),
+            ("mcp__8v__8v", r#"{"command":"8v read lib.go --full"}"#),
+            ("mcp__8v__8v", r#"{"command":"8v write lib.go:12 \"fix\""}"#),
+            (
+                "mcp__8v__8v",
+                r#"{"command":"8v write lib.go:10-11 --delete"}"#,
+            ),
+            ("mcp__8v__8v", r#"{"command":"8v test ."}"#),
+        ]
+        .iter()
+        .map(|(name, input)| ToolCallDetail {
+            name: (*name).into(),
+            input: (*input).into(),
+            output_bytes: 10,
+            is_error: false,
+        })
+        .collect();
+        let sample = make_sample("test", vec![obs]);
+        let landmines = detect_landmines(&sample);
+        assert_eq!(
+            landmines.stuck_loop_runs, 0,
+            "sequential mcp__8v__8v calls are not a stuck loop"
+        );
     }
 
     #[test]
