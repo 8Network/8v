@@ -78,7 +78,12 @@ native agents fix the bug in every run (6/6 external verification passes).
 
 Overall landmine rate: 6/12 runs = 50%. The >50% disqualification rule does NOT apply.
 The native-only landmines are part of the measured signal: 8v eliminates retry loops.
-Published result (v3, N=6): **-32.9% cost, CI 11.2%**, 66% fewer turns (24.0→8.2).
+
+**Published result (2026-04-21, N=6): -28.4% cost, CI ±8.2%, -72% tool calls, -67% turns.**
+
+8v sessions all show clean path: ls → read (batch src+test) → write (line range) → test.
+No retries, no errors. Token stddev=677 (8v) vs 3290 (native) — 8v path is deterministic.
+Native CV=5.1% (consistent landmine pattern), 8v CV=12.4% (different fix approaches).
 
 **Do not add "use `make test`" to the prompt.** Tested: pip install output destabilized
 agents ($0.34/619k tokens on one run, CV exploded to 46.3%). The Makefile is in the

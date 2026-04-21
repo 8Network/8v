@@ -76,3 +76,21 @@ The benchmark pipeline deleted `events.ndjson` before every run. This meant:
 **Fix:** timestamp-based isolation replaces file deletion. `collect_events()` now filters
 events by `timestamp_ms >= run_start_ms`. Events accumulate. Every benchmark run is a
 session visible in `8v log`.
+
+Second bug: `_8V_HOME=target/test-home` (cargo test isolation) was inherited by the
+`claude` subprocess, so the MCP server wrote events to the isolation path instead of
+`~/.8v`. Fix: `cmd.env_remove("_8V_HOME")` before spawning claude in `ClaudeDriver::run`.
+
+Third bug: `safe_read` 10 MB cap blocked reading a large `events.ndjson`. Fix: replaced
+`safe_read` with `std::fs::read_to_string` in `read_events()` — events.ndjson is internal.
+
+## Transient orphan warning in `8v log`
+
+`8v log show` may emit `warning: orphan CommandStarted run_id=... no matching Completed`
+for the last command in a session (typically `test`). This is a read-time artifact:
+`CommandCompleted` is written milliseconds after the session ends, so reading immediately
+after may miss it. Re-reading after a short delay shows the complete data.
+
+Verified: reading `events.ndjson` after any benchmark session shows 0 true orphans —
+every `CommandStarted.run_id` has a matching `CommandCompleted.run_id`. The warning
+is safe to ignore.
