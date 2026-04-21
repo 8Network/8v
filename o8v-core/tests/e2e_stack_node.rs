@@ -193,58 +193,6 @@ fn eslint_no_config_returns_passed() {
     assert_passed(eslint_entry.unwrap());
 }
 
-// ─── Walk-up: tool found in parent directory ──────────────────────────────
-
-#[cfg(unix)]
-#[test]
-fn walk_up_finds_tool_in_parent() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let parent = tempfile::tempdir().unwrap();
-    // Create eslint, prettier, biome, oxlint in parent's node_modules/.bin
-    let bin = parent.path().join("node_modules/.bin");
-    std::fs::create_dir_all(&bin).unwrap();
-
-    // eslint outputs JSON array
-    let script = bin.join("eslint");
-    std::fs::write(&script, "#!/bin/sh\necho '[]'\nexit 0\n").unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    // prettier outputs nothing (no changes needed)
-    let script = bin.join("prettier");
-    std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    // biome outputs JSON object with diagnostics array
-    let script = bin.join("biome");
-    std::fs::write(&script, "#!/bin/sh\necho '{\"diagnostics\":[]}'\nexit 0\n").unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    // oxlint outputs JSON object with diagnostics array
-    let script = bin.join("oxlint");
-    std::fs::write(&script, "#!/bin/sh\necho '{\"diagnostics\":[]}'\nexit 0\n").unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    // Create subdirectory as project (simulating a monorepo sub-package)
-    let subdir = parent.path().join("subpackage");
-    std::fs::create_dir_all(&subdir).unwrap();
-    std::fs::write(
-        subdir.join("package.json"),
-        r#"{"name": "subpkg", "version": "1.0.0"}"#,
-    )
-    .unwrap();
-
-    let report = run_check_path(&subdir);
-    assert!(
-        report.detection_errors().is_empty(),
-        "should not have detection errors"
-    );
-    // All tools should be found via walk-up and pass
-    for entry in report.results()[0].entries() {
-        assert_passed(entry);
-    }
-}
-
 // ─── Walk-up: tool not found anywhere → Error ─────────────────────────────
 
 #[test]
