@@ -77,4 +77,4 @@ This test fails under M4 (`.take(1)` applied) and passes on production code. It 
 
 - `o8v/tests/e2e_cli.rs` — added `read_full_returns_all_lines` test (1 new test)
 - `o8v/src/commands/read.rs` — unchanged (all mutations reverted; production code is identical to pre-audit state)
-- `docs/findings/test-reality-audit-slice1-2026-04-20.md` — this file
+- `docs/findings/test-reality-audit-1-2026-04-20.md` — this file

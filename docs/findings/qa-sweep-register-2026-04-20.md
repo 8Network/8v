@@ -1,7 +1,7 @@
 # QA Sweep Round 1 — Cross-Command Bug Register v2
 **Date:** 2026-04-20  
 **Scope:** All 12 subcommands (ls, read, write, search, check, fmt, test, build, init, hooks, upgrade, mcp)  
-**Inputs:** qa-sweep-round1-register-2026-04-20.md (v1), command-qa-init-hooks-upgrade-mcp-2026-04-20.md, command-qa-write-2026-04-20.md, error-contract-measurement-2026-04-20.md  
+**Inputs:** qa-sweep-register-2026-04-20.md (v1), command-qa-init-hooks-upgrade-mcp-2026-04-20.md, command-qa-write-2026-04-20.md, error-contract-measurement-2026-04-20.md  
 **Status:** Round 1 complete — all 12 subcommands swept
 
 ---

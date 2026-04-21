@@ -15,11 +15,11 @@ What this session produced, what's ready for review, what's blocked.
 | `init/hooks/upgrade/mcp` | `findings/command-qa-init-hooks-upgrade-mcp-2026-04-20.md` | 12 bugs incl. security-adjacent H-1 |
 
 Synthesis docs:
-- `findings/qa-sweep-round1-register-2026-04-20.md` — v1 register (partial)
-- `findings/qa-sweep-round1-register-v2-2026-04-20.md` — v2 register, slice ROI, pattern families, orphans
+- `findings/qa-sweep-register-2026-04-20.md` — v1 register (partial)
+- `findings/qa-sweep-register-2026-04-20.md` — v2 register, slice ROI, pattern families, orphans
 - `findings/error-contract-measurement-2026-04-20.md` — baseline error behavior
 - `findings/instruction-clarity-test-2026-04-20.md` — v4 benchmark (composite 5.39 vs v3 4.94)
-- `findings/test-reality-audit-slice{1,2,3}-2026-04-20.md` — 3 of 3 slices had theater; 5 new tests added
+- `findings/test-reality-audit-{1,2,3}-2026-04-20.md` — 3 of 3 slices had theater; 5 new tests added
 
 ## Designs (Level 1 only; no implementation started)
 
@@ -31,11 +31,11 @@ Narrow implementation slices, ordered by register v2 ROI:
 | Slice | Doc | Bugs closed | Depends on |
 | --- | --- | --- | --- |
 | B1 (docs) | `design/failure-behavior-{mcp,ai-section}-draft.md` | 3 | — |
-| B2a (stderr channel) | `design/slice-b2-decomposition.md` §B2a | 3+ | — |
+| B2a (stderr channel) | `design/error-routing-decomposition.md` §B2a | 3+ | — |
 | B2b (JSON envelope) | §B2b | 4+ | B2a |
 | B2c (exit codes) | §B2c | 4+ | B2a |
 | B2d (prefix unification) | §B2d — absorbs capital-E | 3+ | B2a |
-| B3 (search silent-failure) | `design/slice-b3-search-silent-failure.md` | 4 | — |
+| B3 (search silent-failure) | `design/search-silent-failure-l1.md` | 4 | — |
 | C1 (init/hooks) | `design/slice-c1-init-hooks-correctness.md` | 5 incl. H-1 security-adjacent | — |
 | C2 (upgrade) | `design/slice-c2-upgrade-contract.md` | 2 (U-3 deferred by feature freeze) | — |
 | C3 (write semantics) | `design/slice-c3-write-semantics.md` | 2 | — |
@@ -49,7 +49,7 @@ Capital-E follow-up (`findings/write-capital-e-prefix-superseded.md`) is superse
 
 ## Decided (2026-04-20)
 
-- **Decision A — CT-1 resolved**: Canonical subprocess-capture shape = `{"exit_code":...,"tool":"...","output":"...","duration_ms":...}`. Applied to `error-contract.md §2.4`, `slice-b2-decomposition.md §B2b`, and both B1 drafts.
+- **Decision A — CT-1 resolved**: Canonical subprocess-capture shape = `{"exit_code":...,"tool":"...","output":"...","duration_ms":...}`. Applied to `error-contract.md §2.4`, `error-routing-decomposition.md §B2b`, and both B1 drafts.
 - **Decision B — upgrade JSON shapes**: "Already current" = `{"upgraded":false,"current":true}`. Network failure = `{"error_kind":"network","error":"<human message>"}`. Applied to `slice-c2-upgrade-contract.md`.
 - **Decision C — capital-E superseded**: B2d is approved. `findings/write-capital-e-prefix-superseded.md` is superseded and absorbed into B2d. No A/B/C pick needed.
 - **Decision D — confirmed ship order**: B2a → B2c → B2b → B2d → B3 → C1 → C2 → C3 → B1 (last).

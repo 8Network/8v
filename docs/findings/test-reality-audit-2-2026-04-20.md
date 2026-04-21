@@ -146,4 +146,4 @@ Together these three checks pin the error to the `oversized_error()` code path, 
 
 - `o8v/tests/mcp_e2e.rs` — added `mcp_oc_invalid_cap_error_comes_from_validation` and `mcp_oc_post_render_error_is_from_post_render_path` (2 new tests)
 - `o8v/src/mcp/handler.rs` — unchanged (all mutations reverted; production code is identical to pre-audit state)
-- `docs/findings/test-reality-audit-slice2-2026-04-20.md` — this file
+- `docs/findings/test-reality-audit-2-2026-04-20.md` — this file

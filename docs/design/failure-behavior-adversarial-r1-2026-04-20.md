@@ -1,7 +1,7 @@
 # B1 CE Round 1 — Adversarial Review
 Date: 2026-04-20
 Reviewer: Claude (Sonnet 4.6)
-Inputs: failure-behavior-mcp-draft.md, failure-behavior-ai-section-draft.md, error-contract.md, slice-b2-decomposition.md, session-2026-04-20-index.md
+Inputs: failure-behavior-mcp-draft.md, failure-behavior-ai-section-draft.md, error-contract.md, error-routing-decomposition.md, session-2026-04-20-index.md
 
 ---
 
@@ -31,7 +31,7 @@ Draft ships a false invariant for the current binary.
 Draft teaches: discriminate by top-level key `"error"` vs `"exit_code"`.
 Field names for the subprocess-capture envelope:
   - error-contract §2.4: `{"exit_code","stdout","stderr","duration"}`
-  - slice-b2-decomposition.md B2b: `{"exit_code","tool","tool_output"}`
+  - error-routing-decomposition.md B2b: `{"exit_code","tool","tool_output"}`
 These two authoritative docs disagree. The draft does not state which shape the binary will implement.
 An agent parsing `"stdout"` will get null when the binary emits `"tool_output"`.
 
@@ -56,7 +56,7 @@ Same risk: agent acts on post-B2 contract against pre-B2 binary.
 **B1-AI-2 [BLOCKER] `"output"` field does not exist in any authoritative doc**
 Draft says: "inspect `output` for the tool's own diagnostics"
 error-contract §2.4 uses: `"stdout"`, `"stderr"`, `"duration"`
-slice-b2-decomposition B2b uses: `"tool_output"`
+error-routing-decomposition B2b uses: `"tool_output"`
 Neither doc uses `"output"`. The AI section draft teaches a field name that is wrong against both schemas.
 
 **B1-AI-3 [BLOCKER] `init` stdout exception missing from draft text (same as B1-MCP-2)**
@@ -78,7 +78,7 @@ Fix not applied.
 **CT-1 [CRITICAL] Three-way subprocess-capture field name conflict**
 Three docs, three different shapes for the `exit_code` envelope:
   1. error-contract §2.4:       `{"exit_code","stdout","stderr","duration"}`
-  2. slice-b2-decomposition B2b: `{"exit_code","tool","tool_output"}`
+  2. error-routing-decomposition B2b: `{"exit_code","tool","tool_output"}`
   3. ai-section draft:           `{"exit_code","output",...}`
 
 This is not a draft ambiguity — it is a design inconsistency between authoritative docs.

@@ -1,12 +1,12 @@
 # Adversarial Review — Round 1 — 2026-04-20
 
 Reviewer role: adversary. Goal is to find what the author missed, not to validate.
-Scope: six L1 design drafts. Context-only: error-contract.md, qa-sweep-round1-register-v2-2026-04-20.md.
+Scope: six L1 design drafts. Context-only: error-contract.md, qa-sweep-register-2026-04-20.md.
 Hard constraint: no source files touched. End with git status.
 
 ---
 
-## §1 slice-b2-decomposition.md
+## §1 error-routing-decomposition.md
 
 ### Blockers
 
@@ -38,13 +38,13 @@ No mutations listed. Decomposition doc — acceptable if sub-slice docs own muta
 
 ---
 
-## §2 slice-b2a-counterexamples.md
+## §2 stderr-channel-counterexamples.md
 
 ### Blockers
 
 **B1.** A6 is in the gate list ("A2, A6, A7, A8 have concrete answers before Level 2 starts") but the body says: "Level 2 must trace this path." A gate requirement that points to Level 2 for its own resolution is not a gate — it is a deferred decision dressed as a gate. Either remove A6 from the gate list or provide the concrete answer in this doc.
 
-**B2.** A2 resolution is stated in the CE doc: "B2a MUST preserve current stdout-on-json behavior for the path that will be formalized in B2b." This is labeled "Resolution needed" — not resolved. The decomp spec (slice-b2-decomposition.md) does not carry this resolution either. A2 is the doc's own highest-priority open tension, and neither doc resolves it. Level 2 cannot start until A2 has a definitive answer, not a statement of constraint.
+**B2.** A2 resolution is stated in the CE doc: "B2a MUST preserve current stdout-on-json behavior for the path that will be formalized in B2b." This is labeled "Resolution needed" — not resolved. The decomp spec (error-routing-decomposition.md) does not carry this resolution either. A2 is the doc's own highest-priority open tension, and neither doc resolves it. Level 2 cannot start until A2 has a definitive answer, not a statement of constraint.
 
 **B3.** A7 and A8 are listed in the gate as requiring concrete answers but neither is addressed in the resolution section. A7 and A8 are not even summarized in the doc as provided. The gate lists four requirements; the doc provides resolution for fewer than four. Gate is unmet on its own terms.
 
@@ -70,11 +70,11 @@ No mutations in this doc (CE doc, not slice spec — acceptable). Mutations belo
 
 ---
 
-## §3 slice-b3-search-silent-failure.md
+## §3 search-silent-failure-l1.md
 
 ### Blockers
 
-**B1.** Register §4 coverage map (qa-sweep-round1-register-v2-2026-04-20.md) claims B3 closes BR-39 (`8v search .` treats `.` as regex). B3 slice doc §4 explicitly lists BR-39 as out of scope: "BR-39 (dot-as-regex): regex engine behavior, not a silent failure — out of scope." One of these documents is wrong. The register is a shared reference; if it is wrong, every coverage claim built on it is suspect. Which document is authoritative, and what corrects the other?
+**B1.** Register §4 coverage map (qa-sweep-register-2026-04-20.md) claims B3 closes BR-39 (`8v search .` treats `.` as regex). B3 slice doc §4 explicitly lists BR-39 as out of scope: "BR-39 (dot-as-regex): regex engine behavior, not a silent failure — out of scope." One of these documents is wrong. The register is a shared reference; if it is wrong, every coverage claim built on it is suspect. Which document is authoritative, and what corrects the other?
 
 **B2.** `files_skipped_by_reason` is a new JSON output field. The doc defines its schema but provides no backward-compatibility note. If any consumer (benchmark harness, CI parser, test fixture) parses `--json` output by field name today, adding a new field silently changes the contract. The doc must either: (a) declare this is a purely additive change with no current consumers, or (b) identify the consumers and confirm they tolerate unknown fields.
 
@@ -202,7 +202,7 @@ No mutation list. For AF-4: invert the `\n` expansion (do not expand) — confir
 
 **B1.** "Pick A, B, or C. Implementation agent only starts after founder picks." No decision is recorded in this doc or in the B2d description in the decomp doc. The doc is in scope for review and the gate is blocked. This is not a Level 2 detail — it is an L1 architectural decision (where does prefix normalization happen: at source, at router, or in a shared wrapper). The decision must be recorded before B2d's Level 2 can begin.
 
-**B2.** B2d absorbs this doc (per slice-b2-decomposition.md) but neither doc records what happens to the A/B/C decision during absorption. Does B2d inherit the open decision? Is the capital-E doc deprecated? Who is authoritative? The handoff is undocumented. Level 2 for B2d cannot start with two conflicting or ambiguous parent docs.
+**B2.** B2d absorbs this doc (per error-routing-decomposition.md) but neither doc records what happens to the A/B/C decision during absorption. Does B2d inherit the open decision? Is the capital-E doc deprecated? Who is authoritative? The handoff is undocumented. Level 2 for B2d cannot start with two conflicting or ambiguous parent docs.
 
 ### Scope creep attempts
 
@@ -254,9 +254,9 @@ M3 is not a mutation plan item (see Untestable claims above). M1 and M2 are adeq
 
 | Draft | Gate | Required before Level 2 |
 |---|---|---|
-| slice-b2-decomposition.md | REVISE | Prove B2a→B2c dependency or drop claim. Document B2d/capital-E option handoff. Name one failing-first test per sub-slice. |
-| slice-b2a-counterexamples.md | REVISE | Resolve A2 concretely (not "resolution needed"). Provide concrete answers for A6, A7, A8 or remove them from gate list. Add --json/stderr test. |
-| slice-b3-search-silent-failure.md | REVISE | Resolve BR-39 conflict between register and slice doc. Add backward-compat note for `files_skipped_by_reason`. |
+| error-routing-decomposition.md | REVISE | Prove B2a→B2c dependency or drop claim. Document B2d/capital-E option handoff. Name one failing-first test per sub-slice. |
+| stderr-channel-counterexamples.md | REVISE | Resolve A2 concretely (not "resolution needed"). Provide concrete answers for A6, A7, A8 or remove them from gate list. Add --json/stderr test. |
+| search-silent-failure-l1.md | REVISE | Resolve BR-39 conflict between register and slice doc. Add backward-compat note for `files_skipped_by_reason`. |
 | slice-c1-init-hooks-correctness.md | REVISE | Fix H-1 exit code (exit 1, not 2, for runtime empty-stdin). Add failing-first test for I-3. Resolve BR-28 orphan. |
 | slice-c2-upgrade-contract.md | REVISE | Decide JSON shape at L1 (not deferred). Add test for "field absent when errored." Specify exit code for offline failure. |
 | slice-c3-write-semantics.md | REVISE | Fix CE-1 escape depth analysis. Resolve AF-1 L2 decision conflict with test. Resolve BR-38 orphan. Remove line number citations. |
@@ -284,9 +284,9 @@ Friction observed during this review session:
 
 | Draft | Blockers | Gate |
 |---|---|---|
-| slice-b2-decomposition.md | 3 | REVISE |
-| slice-b2a-counterexamples.md | 3 | REVISE |
-| slice-b3-search-silent-failure.md | 2 | REVISE |
+| error-routing-decomposition.md | 3 | REVISE |
+| stderr-channel-counterexamples.md | 3 | REVISE |
+| search-silent-failure-l1.md | 2 | REVISE |
 | slice-c1-init-hooks-correctness.md | 3 | REVISE |
 | slice-c2-upgrade-contract.md | 3 | REVISE |
 | slice-c3-write-semantics.md | 3 | REVISE |

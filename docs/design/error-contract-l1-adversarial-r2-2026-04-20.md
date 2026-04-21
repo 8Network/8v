@@ -8,7 +8,7 @@
 
 ## §1 — Round-1 Blocker Verdicts (19 total)
 
-### slice-b2-decomposition.md
+### error-routing-decomposition.md
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
@@ -16,7 +16,7 @@
 | B2-D-2 | Capital-E handoff undocumented — doc silent on what happens if B2d not approved | **PARTIALLY FIXED** — both handoff paths now documented (absorb if B2d approved; pick A/B/C from standalone doc if not); actual founder decision still pending |
 | B2-D-3 | No named failing tests per sub-slice | **FIXED** — 6+6+6+5 named tests across B2a–B2d |
 
-### slice-b2a-counterexamples.md
+### stderr-channel-counterexamples.md
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
@@ -24,7 +24,7 @@
 | B2A-2 | A2 (JSON paths on stderr) unresolved — two conflicting behaviors, no decision | **PARTIALLY FIXED** — options A/B named explicitly; remains BLOCKED ON FOUNDER; A2 is the most critical open tension per the doc itself |
 | B2A-3 | A7/A8 appear in gate without counterexample bodies | **FIXED** — both have "Pre-L2 required" survey notes clarifying they are entry conditions, not L1 answers |
 
-### slice-b3-search-silent-failure.md
+### search-silent-failure-l1.md
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
@@ -60,7 +60,7 @@
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
 | CAP-1 | No A/B/C decision recorded — doc presents options but makes no recommendation | **PARTIALLY FIXED** — Option C (strip at inner source) stated as recommendation at line ~40; but founder decision on absorb-into-B2d vs ship-standalone still pending; cannot implement either path without this gate |
-| CAP-2 | B2d absorption handoff undocumented — doc silent on what supersedes it | **FIXED** — gate at line 55: "If B2d is approved, this doc is superseded"; cross-referenced in slice-b2-decomposition §Register reconciliation |
+| CAP-2 | B2d absorption handoff undocumented — doc silent on what supersedes it | **FIXED** — gate at line 55: "If B2d is approved, this doc is superseded"; cross-referenced in error-routing-decomposition §Register reconciliation |
 
 ---
 
@@ -84,7 +84,7 @@ The draft specifies `--limit 0` is rejected at parse time with exit 2. Error-con
 The doc's own Verdict section explicitly states "Not yet ready for Level 2. A2 is the most important open tension." A doc that fails its own gate cannot advance. A2 (BLOCKED ON FOUNDER: option A or B for JSON paths on stderr) must be resolved before this doc can be marked READY. This is not a classification dispute — the doc authored the verdict itself.
 
 **NEW-3 (cross-doc: b2a ↔ b2-decomposition): A2 option B invalidates recommended slice order**  
-If the founder picks A2 option B (ship B2a + B2b together), the recommended execution order in slice-b2-decomposition §4 (B2a → B2c → B2b → B2d) becomes invalid: B2b can no longer trail B2a. This cross-document dependency is unresolved. The slice order must be reconsidered after A2 is decided.
+If the founder picks A2 option B (ship B2a + B2b together), the recommended execution order in error-routing-decomposition §4 (B2a → B2c → B2b → B2d) becomes invalid: B2b can no longer trail B2a. This cross-document dependency is unresolved. The slice order must be reconsidered after A2 is decided.
 
 ---
 

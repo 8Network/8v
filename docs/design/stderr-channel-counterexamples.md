@@ -1,6 +1,6 @@
 # Slice B2a — counterexample attack list
 
-Adversarial read of `slice-b2-decomposition.md` §B2a ("STDERR channel discipline"). Every attack below is a concrete scenario the implementation must handle. If any cannot be answered, B2a is not ready for Level 2.
+Adversarial read of `error-routing-decomposition.md` §B2a ("STDERR channel discipline"). Every attack below is a concrete scenario the implementation must handle. If any cannot be answered, B2a is not ready for Level 2.
 
 Author's note: I drafted B2a and this list. Founder should review as fresh eyes — do not treat this as "already reviewed".
 
