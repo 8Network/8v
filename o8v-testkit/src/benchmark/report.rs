@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use super::profiles::{default_profile_version, ToolProfile};
 use super::types::{ExperimentResult, Observation, Sample};
 
 // ── Report schema types ─────────────────────────────────────────────────────
@@ -130,6 +131,10 @@ pub struct RunRecord {
     /// Full tool call sequence — name, input args, output size, error flag.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls_detail: Vec<super::types::ToolCallDetail>,
+    #[serde(default)]
+    pub profile: ToolProfile,
+    #[serde(default = "default_profile_version")]
+    pub profile_version: String,
 }
 
 // ── Builder ─────────────────────────────────────────────────────────────────
@@ -221,6 +226,8 @@ fn build_condition(sample: &Sample, runs: &mut Vec<RunRecord>) -> ConditionRepor
             cache_read_tokens: obs.cache_read_input_tokens,
             cache_creation_tokens: obs.cache_creation_input_tokens,
             tool_calls_detail: obs.tool_calls_detail.clone(),
+            profile: obs.profile,
+            profile_version: obs.profile_version.clone(),
         });
     }
 
@@ -806,6 +813,8 @@ mod tests {
             },
             feedback: None,
             tool_calls_detail: vec![],
+            profile: Default::default(),
+            profile_version: crate::benchmark::profiles::default_profile_version(),
         }
     }
 
@@ -1190,5 +1199,51 @@ mod tests {
                 cond.description
             );
         }
+    }
+
+    #[test]
+    fn run_record_roundtrip_with_profile() {
+        use crate::benchmark::profiles::ToolProfile;
+        let rec = RunRecord {
+            run_index: 0,
+            condition: "test".to_string(),
+            tokens: 0,
+            cost_usd: None,
+            turns: 0,
+            tool_calls: 0,
+            tests_pass: None,
+            build_pass: None,
+            check_pass: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            tool_calls_detail: vec![],
+            profile: ToolProfile::Caveman,
+            profile_version: "stub-v0".to_string(),
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        let parsed: RunRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.profile, ToolProfile::Caveman);
+        assert_eq!(parsed.profile_version, "stub-v0");
+    }
+
+    #[test]
+    fn run_record_backcompat_no_profile_fields() {
+        use crate::benchmark::profiles::ToolProfile;
+        let json = r#"{
+            "run_index": 0,
+            "condition": "test",
+            "tokens": 0,
+            "turns": 0,
+            "tool_calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0
+        }"#;
+        let parsed: RunRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.profile, ToolProfile::Native);
+        assert_eq!(parsed.profile_version, "pre-2026-04");
     }
 }

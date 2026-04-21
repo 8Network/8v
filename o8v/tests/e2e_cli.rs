@@ -243,3 +243,116 @@ fn read_range_absolute_path_renders_relative_in_header() {
         "relative filename missing from range read output header:\n{stdout}"
     );
 }
+
+// ─── Multi --full flag acceptance ─────────────────────────────────────────────
+
+#[test]
+fn read_double_full_flag_accepted() {
+    // Clap's default SetTrue rejects `--full --full` with
+    // "the argument '--full' cannot be used multiple times".
+    // This test ensures the flag is accepted (exit 0) when passed twice.
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    std::fs::write(tmp.path().join("fixture.txt"), "hello\nworld\n").unwrap();
+
+    let abs_path = tmp.path().join("fixture.txt");
+    let abs_path_str = abs_path.to_str().unwrap();
+    let out = bin_in(tmp.path())
+        .args(["read", "--full", "--full", abs_path_str])
+        .output()
+        .expect("run 8v read");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "read --full --full must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("hello"),
+        "read --full --full must output file content; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn read_triple_full_flag_accepted_matches_single() {
+    // TG-1 (review R1): triple --full must produce byte-for-byte identical
+    // output to single --full. This is a byte-level diff, not a substring check.
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    std::fs::write(tmp.path().join("fixture.txt"), "hello\nworld\n").unwrap();
+
+    let abs_path = tmp.path().join("fixture.txt");
+    let abs_path_str = abs_path.to_str().unwrap();
+
+    let single = bin_in(tmp.path())
+        .args(["read", "--full", abs_path_str])
+        .output()
+        .expect("run 8v read single --full");
+
+    let triple = bin_in(tmp.path())
+        .args(["read", "--full", "--full", "--full", abs_path_str])
+        .output()
+        .expect("run 8v read triple --full");
+
+    assert_eq!(
+        single.status.code(),
+        Some(0),
+        "single --full must exit 0; stderr: {}",
+        String::from_utf8_lossy(&single.stderr)
+    );
+    assert_eq!(
+        triple.status.code(),
+        Some(0),
+        "triple --full must exit 0; stderr: {}",
+        String::from_utf8_lossy(&triple.stderr)
+    );
+    // Byte-level diff: stdout must be identical, not merely contain the same substrings.
+    assert_eq!(
+        single.stdout,
+        triple.stdout,
+        "stdout must be byte-for-byte identical between single and triple --full;\n\
+         single ({} bytes): {}\n\
+         triple ({} bytes): {}",
+        single.stdout.len(),
+        String::from_utf8_lossy(&single.stdout),
+        triple.stdout.len(),
+        String::from_utf8_lossy(&triple.stdout),
+    );
+}
+
+#[test]
+fn read_full_returns_all_lines() {
+    // M4 gap: a mutation that truncates output to the first line (.take(1))
+    // survives both `read_double_full_flag_accepted` (checks only "hello") and
+    // `read_triple_full_flag_accepted_matches_single` (equality between two
+    // equally-truncated outputs). This test closes that gap by asserting that
+    // BOTH lines of the two-line fixture appear in the output.
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    std::fs::write(tmp.path().join("fixture.txt"), "hello\nworld\n").unwrap();
+
+    let abs_path = tmp.path().join("fixture.txt");
+    let abs_path_str = abs_path.to_str().unwrap();
+    let out = bin_in(tmp.path())
+        .args(["read", "--full", abs_path_str])
+        .output()
+        .expect("run 8v read --full");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "read --full must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("hello"),
+        "read --full must output first line; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("world"),
+        "read --full must output second line (catches truncation mutations); got:\n{stdout}"
+    );
+}

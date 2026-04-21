@@ -6,8 +6,8 @@
 
 use o8v_core::types::{DurationMs, TimestampMs};
 
-/// Partition `records` into maximal contiguous runs where every consecutive pair
-/// is within `window` milliseconds of each other.
+/// Partition `records` into maximal contiguous runs where the first-to-last span
+/// (i.e. `ts[end] - ts[start]`) is within `window` milliseconds.
 ///
 /// Runs shorter than 2 elements are discarded (a single event cannot cluster).
 /// Reversed timestamps (where `ts(records[i]) > ts(records[i+1])`) break the
@@ -26,9 +26,9 @@ pub(crate) fn sliding_windows<T>(
     while end <= records.len() {
         // Decide whether to extend the current run or flush it.
         let gap_ok = if end < records.len() {
-            // Check the gap between end-1 and end.
+            // Check total span from run start to candidate next element.
             ts(&records[end])
-                .checked_sub(ts(&records[end - 1]))
+                .checked_sub(ts(&records[start]))
                 .map(|d| d <= window)
                 .unwrap_or(false) // reversed timestamp → break
         } else {
@@ -129,6 +129,47 @@ mod tests {
         );
         assert_eq!(runs[0][0], TimestampMs::from_millis(500));
         assert_eq!(runs[0][1], TimestampMs::from_millis(2_000));
+    }
+
+    #[test]
+    fn total_span_exceeds_window_not_one_cluster() {
+        // Three events at 0ms, 29_000ms, 58_000ms.
+        // Each consecutive gap is 29_000ms ≤ 30_000ms window — so the
+        // consecutive-gap check (the bug) would accept all three as one cluster.
+        // Design §6 requires "first-to-last span ≤ window": 58_000 > 30_000 → NOT one cluster.
+        let times = ts_slice(&[0, 29_000, 58_000]);
+        let window = DurationMs::from_millis(30_000);
+        let runs = sliding_windows(&times, window, |t| *t);
+        assert!(
+            runs.iter().all(|r| r.len() < 3),
+            "a cluster spanning 58s must not be emitted under a 30s window; got {runs:?}"
+        );
+    }
+
+    #[test]
+    fn boundary_inclusive_span_equals_window() {
+        // Two events exactly 30_000ms apart — span == window → must form one cluster (≤ is inclusive).
+        let times = ts_slice(&[0, 30_000]);
+        let window = DurationMs::from_millis(30_000);
+        let runs = sliding_windows(&times, window, |t| *t);
+        assert_eq!(
+            runs.len(),
+            1,
+            "span == window must still form one cluster; got {runs:?}"
+        );
+        assert_eq!(runs[0].len(), 2);
+    }
+
+    #[test]
+    fn boundary_exclusive_span_one_over_window() {
+        // Two events 30_001ms apart — span > window → must NOT form a cluster.
+        let times = ts_slice(&[0, 30_001]);
+        let window = DurationMs::from_millis(30_000);
+        let runs = sliding_windows(&times, window, |t| *t);
+        assert!(
+            runs.is_empty(),
+            "span > window must not form a cluster; got {runs:?}"
+        );
     }
 
     #[test]

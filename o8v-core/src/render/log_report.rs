@@ -615,7 +615,7 @@ pub enum LogReport {
     Drill(Box<DrillReport>),
     Search(Box<SearchResults>),
     /// Returned when `--session <id>` is supplied but no matching session exists.
-    /// The dispatch layer converts this into exit code 2.
+    /// The dispatch layer converts this into exit code 1 (user error).
     Empty,
 }
 

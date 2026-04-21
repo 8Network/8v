@@ -12,18 +12,20 @@
 //! run; if it fails a warning is logged and the record is still returned. Persistence
 //! failure does not abort the benchmark.
 
-mod claude;
+pub mod claude;
 mod codex;
 pub mod experiment;
 mod pipeline;
 pub mod preflight;
+pub mod profiles;
 pub mod report;
 mod store;
 mod types;
 pub use types::PermissionMode;
 
-pub use experiment::run_experiment;
+pub use experiment::{run_experiment, run_experiment_with_matrix, ExperimentMatrix};
 pub use pipeline::run_scenario;
+pub use profiles::ToolProfile;
 pub use store::BenchmarkStore;
 pub use types::{
     Agent, AgentFeedback, Effect, Environment, ExperimentConfig, ExperimentResult, Observation,

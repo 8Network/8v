@@ -17,8 +17,148 @@ use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 
 use super::pipeline::{current_git_commit, events_ndjson_path, run_scenario, unix_ms};
 use super::preflight::preflight_fixture;
+use super::profiles::ToolProfile;
 use super::store::BenchmarkStore;
 use super::types::*;
+
+/// Cartesian product of scenarios × profiles.
+///
+/// Every scenario in `scenarios` is run under each profile in `profiles`, producing
+/// one `Sample` per (scenario, profile) pair. Use this when you want to sweep all
+/// combinations rather than hand-wiring each pair.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let matrix = ExperimentMatrix {
+///     profiles: vec![ToolProfile::Native, ToolProfile::EightV],
+/// };
+/// let samples = matrix.run(&[&SCENARIO_A, &SCENARIO_B], n, binary);
+/// ```
+pub struct ExperimentMatrix {
+    /// Profiles to sweep. Defaults to `[Native, EightV]` if empty.
+    pub profiles: Vec<ToolProfile>,
+}
+
+impl Default for ExperimentMatrix {
+    fn default() -> Self {
+        Self {
+            profiles: vec![ToolProfile::Native, ToolProfile::EightV],
+        }
+    }
+}
+
+impl ExperimentMatrix {
+    /// Run every (scenario, profile) pair N times and return all samples.
+    ///
+    /// Samples are ordered: scenario 0 × all profiles, scenario 1 × all profiles, …
+    pub fn run(&self, scenarios: &[&Scenario], n: usize, binary: &str) -> Vec<Sample> {
+        let profiles = if self.profiles.is_empty() {
+            &[ToolProfile::Native, ToolProfile::EightV][..]
+        } else {
+            &self.profiles[..]
+        };
+
+        let mut samples = Vec::with_capacity(scenarios.len() * profiles.len());
+        for scenario in scenarios {
+            for &profile in profiles {
+                samples.push(run_sample_with_profile(scenario, n, binary, profile));
+            }
+        }
+        samples
+    }
+}
+
+/// Run an experiment with explicit profile control using `ExperimentMatrix`.
+///
+/// The first profile in the matrix is the control; the rest are treatments.
+/// Runs `scenario` N times under each profile. All other pipeline steps
+/// (preflight, compute_effects, render_table, write_structured_report,
+/// persist_experiment) are identical to `run_experiment`.
+///
+/// Use this instead of `run_experiment` when you need profiles that cannot be
+/// inferred from `scenario.env.setup_8v` (e.g. `ToolProfile::ToolSearch`).
+pub fn run_experiment_with_matrix(
+    name: &str,
+    task_name: &str,
+    scenario: &Scenario,
+    matrix: &ExperimentMatrix,
+    n: usize,
+    binary: &str,
+) -> ExperimentResult {
+    assert!(
+        n >= 1,
+        "experiment requires at least 1 observation per scenario"
+    );
+
+    let profiles = if matrix.profiles.is_empty() {
+        vec![ToolProfile::Native, ToolProfile::EightV]
+    } else {
+        matrix.profiles.clone()
+    };
+
+    assert!(
+        profiles.len() >= 2,
+        "matrix must have at least 2 profiles (control + 1 treatment)"
+    );
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("EXPERIMENT: {} (N={})", name, n);
+    eprintln!("Task: {}", task_name);
+    eprintln!("Control: {:?}", profiles[0]);
+    for p in &profiles[1..] {
+        eprintln!("Treatment: {:?}", p);
+    }
+    eprintln!("{}\n", "=".repeat(70));
+
+    // ── Preflight gate ──────────────────────────────────────────────────
+    preflight_fixture(scenario);
+
+    // ── Run control (first profile) ─────────────────────────────────────
+    let control = run_sample_with_profile(scenario, n, binary, profiles[0]);
+
+    // ── Run treatments (remaining profiles) ─────────────────────────────
+    let treatments: Vec<Sample> = profiles[1..]
+        .iter()
+        .map(|&profile| run_sample_with_profile(scenario, n, binary, profile))
+        .collect();
+
+    // ── Compute effects ─────────────────────────────────────────────────
+    let effects = compute_effects(&control, &treatments, n);
+
+    // ── Build result ────────────────────────────────────────────────────
+    let result = ExperimentResult {
+        name: name.to_string(),
+        task: task_name.to_string(),
+        git_commit: current_git_commit(),
+        timestamp_ms: unix_ms(),
+        n,
+        control,
+        treatments,
+        effects,
+    };
+
+    // ── Render table ────────────────────────────────────────────────────
+    render_table(&result);
+
+    // ── Open store once for report + persist ────────────────────────────
+    let store = match BenchmarkStore::open() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("  [benchmark] warning: failed to open benchmark store: {e}");
+            None
+        }
+    };
+
+    // ── Structured report ───────────────────────────────────────────────
+    let report = super::report::build_report(&result);
+    write_structured_report(&report, name, store.as_ref());
+
+    // ── Persist ─────────────────────────────────────────────────────────
+    persist_experiment(&result, store.as_ref());
+
+    result
+}
 
 /// Run an experiment: N observations per scenario, compare treatments against control.
 pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResult {
@@ -97,7 +237,35 @@ fn run_sample(scenario: &Scenario, n: usize, binary: &str) -> Sample {
         // Clean events between observations for isolation
         clean_events();
 
-        let observation = run_scenario(scenario, binary, false);
+        let profile = if scenario.env.setup_8v {
+            ToolProfile::EightV
+        } else {
+            ToolProfile::Native
+        };
+        let observation = run_scenario(scenario, binary, false, profile);
+        observations.push(observation);
+    }
+
+    Sample {
+        scenario: scenario.name.to_string(),
+        description: scenario.description.to_string(),
+        observations,
+    }
+}
+
+/// Run a scenario N times with an explicit profile override.
+fn run_sample_with_profile(
+    scenario: &Scenario,
+    n: usize,
+    binary: &str,
+    profile: ToolProfile,
+) -> Sample {
+    let mut observations = Vec::with_capacity(n);
+
+    for i in 0..n {
+        eprintln!("\n--- {} ({}/{}) ---", scenario.description, i + 1, n);
+        clean_events();
+        let observation = run_scenario(scenario, binary, false, profile);
         observations.push(observation);
     }
 

@@ -46,7 +46,13 @@ fn make_orphan_started(session_id: &str, run_id: &str, command: &str) -> String 
     format!("{}\n", serde_json::to_string(&started).unwrap())
 }
 
-fn make_event_pair(session_id: &str, run_id: &str, command: &str, success: bool) -> String {
+fn make_event_pair(
+    session_id: &str,
+    run_id: &str,
+    command: &str,
+    success: bool,
+    output_bytes: u64,
+) -> String {
     let started = serde_json::json!({
         "event": "CommandStarted",
         "run_id": run_id,
@@ -64,7 +70,7 @@ fn make_event_pair(session_id: &str, run_id: &str, command: &str, success: bool)
         "event": "CommandCompleted",
         "run_id": run_id,
         "timestamp_ms": 1_700_000_003_000_i64,
-        "output_bytes": 512_u64,
+        "output_bytes": output_bytes,
         "token_estimate": 128_u64,
         "duration_ms": 42_u64,
         "success": success,
@@ -86,7 +92,7 @@ fn orphan_warning_does_not_leak_across_sessions() {
     // Session A: orphan CommandStarted (no CommandCompleted)
     let session_a_events = make_orphan_started(SESSION_A, "run_orphan_a", "check");
     // Session B: clean pair
-    let session_b_events = make_event_pair(SESSION_B, "run_clean_b", "check", true);
+    let session_b_events = make_event_pair(SESSION_B, "run_clean_b", "check", true, 256);
 
     let all_events = format!("{}{}", session_a_events, session_b_events);
     let home = home_with_events(&all_events);

@@ -6,8 +6,10 @@
 //!
 //! This is the "external data" source: tool calls, tokens, cost, response text.
 
+use super::profiles::ProfileArtifacts;
 use super::types::{PermissionMode, ToolCallDetail};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
@@ -213,7 +215,21 @@ impl ClaudeDriver {
         mcp_config: Option<&Path>,
         permission_mode: Option<PermissionMode>,
         settings_path: Option<&Path>,
+        artifacts: &ProfileArtifacts,
     ) -> Result<AgentResult, String> {
+        // ── Apply ProfileArtifacts before spawning ──────────────────────────
+        // MCP json merge: if fragment present, merge its mcpServers into the
+        // existing .mcp.json file.
+        if let (Some(frag), Some(mcp_path)) = (&artifacts.mcp_json_fragment, mcp_config) {
+            apply_mcp_fragment(mcp_path, frag)
+                .map_err(|e| format!("failed to merge mcp_json_fragment: {e}"))?;
+        }
+        // CLAUDE.md prepend
+        if let Some(prepend) = &artifacts.claude_md_prepend {
+            let claude_md = working_dir.join("CLAUDE.md");
+            apply_claude_md_prepend(&claude_md, prepend)
+                .map_err(|e| format!("failed to prepend CLAUDE.md: {e}"))?;
+        }
         let mut args = vec![
             "--output-format",
             "stream-json",
@@ -254,6 +270,9 @@ impl ClaudeDriver {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        for (k, v) in &artifacts.env {
+            cmd.env(k, v);
+        }
 
         let mut child = cmd
             .spawn()
@@ -439,6 +458,144 @@ impl ClaudeDriver {
     }
 }
 
+// ── Dry-dump / assembly ───────────────────────────────────────────────────────
+
+/// The fully-assembled context that would be passed to the agent.
+///
+/// `assemble_agent_context` produces this in-memory without touching disk or
+/// spawning a subprocess, making it useful for smoke-testing and diffing.
+pub struct AssembledContext {
+    /// Final CLAUDE.md text (baseline content + any profile prepend).
+    pub claude_md: String,
+    /// Final .mcp.json value (baseline merged with any profile fragment).
+    pub mcp_json: serde_json::Value,
+}
+
+/// Build the assembled agent context from a baseline and `ProfileArtifacts`,
+/// **without** touching disk or spawning any process.
+///
+/// * `baseline_claude_md` — the CLAUDE.md text already in the workspace (pass
+///   `""` if the workspace starts empty).
+/// * `baseline_mcp_json` — the .mcp.json already in the workspace (pass
+///   `serde_json::json!({})` if absent).
+pub fn assemble_agent_context(
+    baseline_claude_md: &str,
+    baseline_mcp_json: serde_json::Value,
+    artifacts: &super::profiles::ProfileArtifacts,
+) -> anyhow::Result<AssembledContext> {
+    // ── CLAUDE.md ────────────────────────────────────────────────────────────
+    // Order: (1) profile prepend — frames everything below it (e.g. Caveman terse rule wraps
+    // project docs), (2) common base — shared project rules every profile sees equally,
+    // (3) task-specific baseline — kept last so task instructions are never shadowed.
+    const COMMON_BASE: &str = include_str!("profiles/assets/common_base_claude.md");
+
+    let claude_md = {
+        let mut parts: Vec<&str> = Vec::new();
+        let prepend_owned: String;
+        if let Some(prepend) = &artifacts.claude_md_prepend {
+            prepend_owned = prepend.clone();
+            parts.push(&prepend_owned);
+        }
+        parts.push(COMMON_BASE);
+        if !baseline_claude_md.is_empty() {
+            parts.push(baseline_claude_md);
+        }
+        parts.join("\n\n")
+    };
+
+    // ── .mcp.json ────────────────────────────────────────────────────────────
+    let mcp_json = match &artifacts.mcp_json_fragment {
+        None => baseline_mcp_json,
+        Some(frag) => {
+            let frag_servers = match frag.get("mcpServers") {
+                Some(serde_json::Value::Object(m)) => m.clone(),
+                _ => {
+                    return Ok(AssembledContext {
+                        claude_md,
+                        mcp_json: baseline_mcp_json,
+                    })
+                }
+            };
+            let mut merged = baseline_mcp_json;
+            let servers = merged
+                .as_object_mut()
+                .ok_or_else(|| anyhow::anyhow!("mcp config root is not an object"))?
+                .entry("mcpServers")
+                .or_insert_with(|| serde_json::Value::Object(Default::default()))
+                .as_object_mut()
+                .ok_or_else(|| anyhow::anyhow!("mcpServers is not an object"))?;
+            for (k, v) in frag_servers {
+                servers.insert(k, v);
+            }
+            merged
+        }
+    };
+
+    Ok(AssembledContext {
+        claude_md,
+        mcp_json,
+    })
+}
+
+// ── ProfileArtifacts helpers ─────────────────────────────────────────────────
+
+/// Merge `frag.mcpServers.*` into the existing MCP JSON file at `path`.
+///
+/// If the file doesn't exist yet, write the fragment as-is.
+/// Keys in `frag.mcpServers` override existing keys.
+fn apply_mcp_fragment(path: &Path, frag: &Value) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+
+    let frag_servers = match frag.get("mcpServers") {
+        Some(Value::Object(m)) => m.clone(),
+        _ => return Ok(()), // nothing to merge
+    };
+
+    let mut existing: Value = if path.exists() {
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+        serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?
+    } else {
+        serde_json::json!({})
+    };
+
+    let servers = existing
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("mcp config root is not an object"))?
+        .entry("mcpServers")
+        .or_insert_with(|| Value::Object(Default::default()))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("mcpServers is not an object"))?;
+
+    for (k, v) in frag_servers {
+        servers.insert(k, v);
+    }
+
+    let out = serde_json::to_string_pretty(&existing).context("serialize merged mcp config")?;
+    std::fs::write(path, out).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+/// Prepend `text` to `CLAUDE.md` (creating it if absent).
+fn apply_claude_md_prepend(path: &Path, text: &str) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+
+    let existing = if path.exists() {
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?
+    } else {
+        String::new()
+    };
+
+    let combined = if existing.is_empty() {
+        text.to_string()
+    } else {
+        format!("{}\n\n{}", text, existing)
+    };
+
+    std::fs::write(path, combined).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,5 +638,50 @@ mod tests {
         assert_eq!(res.tool_calls_detail.len(), 1);
         assert_eq!(res.tool_calls_detail[0].output_bytes, 6);
         assert!(res.tool_calls_detail[0].is_error);
+    }
+
+    #[test]
+    fn profile_artifacts_mcp_merge_and_claude_md_prepend() {
+        use crate::benchmark::profiles::ProfileArtifacts;
+        use std::collections::HashMap;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let mcp_path = dir.path().join(".mcp.json");
+        let claude_md = dir.path().join("CLAUDE.md");
+
+        // Seed existing .mcp.json with server "a"
+        let existing_mcp = serde_json::json!({
+            "mcpServers": { "a": { "command": "a-cmd" } }
+        });
+        std::fs::write(&mcp_path, serde_json::to_string(&existing_mcp).unwrap()).unwrap();
+
+        // Seed existing CLAUDE.md
+        std::fs::write(&claude_md, "hello").unwrap();
+
+        // Fragment adds server "b"
+        let artifacts = ProfileArtifacts {
+            mcp_json_fragment: Some(serde_json::json!({
+                "mcpServers": { "b": { "command": "b-cmd" } }
+            })),
+            claude_md_prepend: Some("CAVE TEXT".to_string()),
+            env: HashMap::new(),
+        };
+
+        // Apply MCP merge
+        apply_mcp_fragment(&mcp_path, artifacts.mcp_json_fragment.as_ref().unwrap()).unwrap();
+        // Apply CLAUDE.md prepend
+        apply_claude_md_prepend(&claude_md, artifacts.claude_md_prepend.as_ref().unwrap()).unwrap();
+
+        // Verify MCP: both "a" and "b" present
+        let merged: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&mcp_path).unwrap()).unwrap();
+        assert!(merged["mcpServers"]["a"].is_object(), "server 'a' missing");
+        assert!(merged["mcpServers"]["b"].is_object(), "server 'b' missing");
+
+        // Verify CLAUDE.md: prepend + separator + original
+        let content = std::fs::read_to_string(&claude_md).unwrap();
+        assert!(content.starts_with("CAVE TEXT"), "prepend missing");
+        assert!(content.contains("hello"), "original content missing");
     }
 }

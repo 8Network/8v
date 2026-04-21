@@ -203,6 +203,8 @@ mod tests {
             agent_version: None,
             mcp_protocol_version: None,
             agent_capabilities: vec![],
+            profile: Default::default(),
+            profile_version: crate::benchmark::profiles::default_profile_version(),
         }
     }
 

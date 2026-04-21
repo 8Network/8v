@@ -21,7 +21,7 @@ pub struct Args {
     pub paths: Vec<String>,
 
     /// Show full file content instead of symbols
-    #[arg(long)]
+    #[arg(long, overrides_with = "full")]
     pub full: bool,
 
     #[command(flatten)]

@@ -13,6 +13,7 @@ use std::time::SystemTime;
 
 use super::claude::{AgentResult, ClaudeDriver};
 use super::codex::CodexDriver;
+use super::profiles::ToolProfile;
 use super::store::BenchmarkStore;
 use super::types::*;
 use crate::scaffold::{fixture_path, TempProject};
@@ -28,7 +29,12 @@ use crate::scaffold::{fixture_path, TempProject};
 ///
 /// Panics on infrastructure failures (cannot create temp dir, cannot spawn claude).
 /// Agent failures are recorded in the Observation, not panicked.
-pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observation {
+pub fn run_scenario(
+    scenario: &Scenario,
+    binary: &str,
+    persist: bool,
+    profile: ToolProfile,
+) -> Observation {
     // NOTE: Benchmark scenarios must run sequentially (--test-threads=1) because events.ndjson is global.
     let prompt = scenario.task.resolved_prompt();
 
@@ -47,6 +53,13 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
     let fixture = fixture_path("o8v", scenario.task.fixture);
     let project = TempProject::from_fixture(&fixture);
     setup_git(project.path());
+
+    // ── 1a. Profile setup ───────────────────────────────────────────────────
+    let profile_harness = profile.harness();
+    let artifacts = profile_harness
+        .setup(project.path(), scenario.env.agent)
+        .expect("profile setup failed");
+    let profile_version = profile_harness.version();
 
     let mcp_config;
     let settings_path;
@@ -102,6 +115,7 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
             mcp_config.as_deref(),
             scenario.env.permission_mode,
             settings_path.as_deref(),
+            &artifacts,
         )
         .expect("claude driver failed"),
         Agent::Codex => {
@@ -175,6 +189,8 @@ pub fn run_scenario(scenario: &Scenario, binary: &str, persist: bool) -> Observa
         verification,
         feedback: None, // TODO: agent feedback in a later increment
         tool_calls_detail: agent_result.tool_calls_detail.clone(),
+        profile,
+        profile_version,
     };
 
     // ── 6. Persist ──────────────────────────────────────────────────────────

@@ -260,6 +260,12 @@ pub struct Observation {
     // ── Tool call detail ────────────────────────────────────────────────
     #[serde(default)]
     pub tool_calls_detail: Vec<ToolCallDetail>,
+
+    // ── Tool profile ────────────────────────────────────────────────────
+    #[serde(default)]
+    pub profile: super::profiles::ToolProfile,
+    #[serde(default = "super::profiles::default_profile_version")]
+    pub profile_version: String,
 }
 
 /// A single tool invocation with full detail — name, input, output size, and error status.
@@ -557,6 +563,8 @@ mod tests {
             },
             feedback: None,
             tool_calls_detail: vec![],
+            profile: Default::default(),
+            profile_version: crate::benchmark::profiles::default_profile_version(),
         };
         let sample = Sample {
             scenario: "s".to_string(),

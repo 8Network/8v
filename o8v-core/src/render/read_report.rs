@@ -77,7 +77,9 @@ impl super::Renderable for ReadReport {
             } => {
                 let mut output = format!("{path} ({total_lines} lines)\n");
                 if symbols.is_empty() {
-                    output.push_str("\n  (no symbols found)\n");
+                    output.push_str(&format!(
+                        "\n  (no symbols found \u{2014} use `8v read {path} --full` to read as text)\n"
+                    ));
                 } else {
                     output.push('\n');
                     for sym in symbols {
@@ -177,6 +179,11 @@ mod tests {
         // Line numbers are right-aligned in 4 chars
         assert!(text.contains("  10  pub fn main()"));
         assert!(text.contains("   5  struct MyStruct {"));
+        // Hint must NOT appear when symbols are present
+        assert!(
+            !text.contains("no symbols found"),
+            "hint must not appear when symbols present; got: {text:?}"
+        );
     }
 
     #[test]
@@ -190,7 +197,85 @@ mod tests {
         let output = report.render_plain();
         let text = output.to_string();
         assert!(text.contains("empty.txt (10 lines)"));
-        assert!(text.contains("no symbols found"));
+        assert!(text
+            .contains("no symbols found \u{2014} use `8v read empty.txt --full` to read as text"));
+    }
+
+    #[test]
+    fn test_render_plain_symbols_empty_hint_text() {
+        let report = ReadReport::Symbols {
+            path: "lib.rs".to_string(),
+            total_lines: 5,
+            symbols: vec![],
+        };
+
+        let output = report.render_plain();
+        let text = output.to_string();
+        assert!(
+            text.contains("no symbols found \u{2014} use `8v read lib.rs --full` to read as text"),
+            "hint must contain em-dash and --full redirect; got: {text:?}"
+        );
+    }
+
+    #[test]
+    fn test_render_plain_symbols_empty_hint_path_substitution() {
+        // Two different paths must produce hints with their own path.
+        let report_a = ReadReport::Symbols {
+            path: "src/alpha.rs".to_string(),
+            total_lines: 1,
+            symbols: vec![],
+        };
+        let report_b = ReadReport::Symbols {
+            path: "src/beta.rs".to_string(),
+            total_lines: 1,
+            symbols: vec![],
+        };
+
+        let text_a = report_a.render_plain().to_string();
+        let text_b = report_b.render_plain().to_string();
+
+        assert!(
+            text_a.contains("8v read src/alpha.rs --full"),
+            "hint must embed alpha path; got: {text_a:?}"
+        );
+        assert!(
+            text_b.contains("8v read src/beta.rs --full"),
+            "hint must embed beta path; got: {text_b:?}"
+        );
+        // Cross-check: alpha hint must NOT mention beta, and vice-versa.
+        assert!(
+            !text_a.contains("beta"),
+            "alpha hint must not leak beta path; got: {text_a:?}"
+        );
+        assert!(
+            !text_b.contains("alpha"),
+            "beta hint must not leak alpha path; got: {text_b:?}"
+        );
+    }
+
+    #[test]
+    fn test_render_json_symbols_empty_unchanged() {
+        // JSON output for an empty symbol list must remain a plain empty array —
+        // no hint text injected into the machine-readable surface.
+        let report = ReadReport::Symbols {
+            path: "empty.rs".to_string(),
+            total_lines: 3,
+            symbols: vec![],
+        };
+
+        let text = report.render_json().to_string();
+        assert!(
+            text.contains("\"symbols\":[]"),
+            "JSON must keep empty symbols array; got: {text:?}"
+        );
+        assert!(
+            !text.contains("--full"),
+            "JSON must not contain hint text; got: {text:?}"
+        );
+        assert!(
+            !text.contains("\u{2014}"),
+            "JSON must not contain em-dash; got: {text:?}"
+        );
     }
 
     #[test]
@@ -317,5 +402,52 @@ mod tests {
         let plain = report.render_plain();
         let human = report.render_human();
         assert_eq!(plain.to_string(), human.to_string());
+    }
+
+    // Gap-closing tests added by mutation audit 2026-04-20.
+    // M4 gap: trailing \n on the hint was undetected — all slice-3 tests use contains() only.
+    #[test]
+    fn test_render_plain_symbols_empty_hint_ends_with_newline() {
+        let report = ReadReport::Symbols {
+            path: "gap.rs".to_string(),
+            total_lines: 4,
+            symbols: vec![],
+        };
+        let text = report.render_plain().to_string();
+        // The hint line must itself be terminated by a newline so multi-file
+        // output doesn't run hint and next header together.
+        assert!(
+            text.ends_with('\n'),
+            "plain output for empty symbols must end with newline; got: {text:?}"
+        );
+        // More precisely: the hint itself must end with \n before any trailing
+        // content. Check the hint substring ends with newline.
+        let hint_start = text
+            .find("no symbols found")
+            .expect("hint must be present; got: {text:?}");
+        let after_hint = &text[hint_start..];
+        assert!(
+            after_hint.contains('\n'),
+            "hint block must contain a trailing newline; got after_hint: {after_hint:?}"
+        );
+    }
+
+    // M2/M3 gap: path_substitution test does not assert "no symbols found" wording or em-dash.
+    #[test]
+    fn test_render_plain_symbols_empty_hint_path_substitution_full_text() {
+        // Verifies both path embedding AND the canonical wording+punctuation together.
+        let report = ReadReport::Symbols {
+            path: "src/gamma.rs".to_string(),
+            total_lines: 7,
+            symbols: vec![],
+        };
+        let text = report.render_plain().to_string();
+        // Full canonical hint string (wording + em-dash + path + flag).
+        assert!(
+            text.contains(
+                "no symbols found \u{2014} use `8v read src/gamma.rs --full` to read as text"
+            ),
+            "hint must contain canonical wording, em-dash, path, and --full flag; got: {text:?}"
+        );
     }
 }

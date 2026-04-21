@@ -15,6 +15,7 @@ o8v-check = { path = "../o8v-check", version = "0.1.0" }
 o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+anyhow = "1"
 tempfile = "3"
 tiny_http = "0.12"
 sha2 = "0.10"

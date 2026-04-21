@@ -19,7 +19,9 @@
 
 mod scenarios;
 
-use o8v_testkit::benchmark::{run_experiment, run_scenario};
+use o8v_testkit::benchmark::{
+    run_experiment, run_experiment_with_matrix, run_scenario, ExperimentMatrix, ToolProfile,
+};
 
 /// Panic with a clear message if the named gate is not `Some(true)`.
 ///
@@ -41,7 +43,12 @@ fn require_pass(gate: &str, result: Option<bool>) {
 #[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
 fn fix_test_baseline() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TEST_BASELINE, binary, true);
+    let record = run_scenario(
+        &scenarios::FIX_TEST_BASELINE,
+        binary,
+        true,
+        ToolProfile::Native,
+    );
 
     require_pass("cargo test", record.verification.tests_pass);
 }
@@ -50,7 +57,7 @@ fn fix_test_baseline() {
 #[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
 fn fix_test_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TEST_8V, binary, true);
+    let record = run_scenario(&scenarios::FIX_TEST_8V, binary, true, ToolProfile::EightV);
 
     require_pass("cargo test", record.verification.tests_pass);
 }
@@ -61,7 +68,12 @@ fn fix_test_8v() {
 #[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
 fn diagnose_baseline() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::DIAGNOSE_BASELINE, binary, true);
+    let record = run_scenario(
+        &scenarios::DIAGNOSE_BASELINE,
+        binary,
+        true,
+        ToolProfile::Native,
+    );
 
     require_pass("cargo clippy", record.verification.check_pass);
 }
@@ -70,7 +82,7 @@ fn diagnose_baseline() {
 #[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
 fn diagnose_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::DIAGNOSE_8V, binary, true);
+    let record = run_scenario(&scenarios::DIAGNOSE_8V, binary, true, ToolProfile::EightV);
 
     require_pass("cargo clippy", record.verification.check_pass);
 }
@@ -81,7 +93,12 @@ fn diagnose_8v() {
 #[ignore = "requires: `claude` in PATH, `python3` + `pytest` (~60s, costs tokens)"]
 fn fix_python_baseline() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_PYTHON_BASELINE, binary, true);
+    let record = run_scenario(
+        &scenarios::FIX_PYTHON_BASELINE,
+        binary,
+        true,
+        ToolProfile::Native,
+    );
 
     require_pass("pytest", record.verification.tests_pass);
 }
@@ -90,7 +107,7 @@ fn fix_python_baseline() {
 #[ignore = "requires: `claude` in PATH, `python3` + `pytest` (~60s, costs tokens)"]
 fn fix_python_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_PYTHON_8V, binary, true);
+    let record = run_scenario(&scenarios::FIX_PYTHON_8V, binary, true, ToolProfile::EightV);
 
     require_pass("pytest", record.verification.tests_pass);
 }
@@ -101,7 +118,12 @@ fn fix_python_8v() {
 #[ignore = "requires: `claude` in PATH, `go` toolchain (~60s, costs tokens)"]
 fn fix_go_baseline() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_GO_BASELINE, binary, true);
+    let record = run_scenario(
+        &scenarios::FIX_GO_BASELINE,
+        binary,
+        true,
+        ToolProfile::Native,
+    );
 
     require_pass("go test ./...", record.verification.tests_pass);
 }
@@ -110,7 +132,7 @@ fn fix_go_baseline() {
 #[ignore = "requires: `claude` in PATH, `go` toolchain (~60s, costs tokens)"]
 fn fix_go_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_GO_8V, binary, true);
+    let record = run_scenario(&scenarios::FIX_GO_8V, binary, true, ToolProfile::EightV);
 
     require_pass("go test ./...", record.verification.tests_pass);
 }
@@ -121,7 +143,12 @@ fn fix_go_8v() {
 #[ignore = "requires: `claude` in PATH, `tsc` toolchain (~60s, costs tokens)"]
 fn fix_typescript_baseline() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TS_BASELINE, binary, true);
+    let record = run_scenario(
+        &scenarios::FIX_TS_BASELINE,
+        binary,
+        true,
+        ToolProfile::Native,
+    );
 
     require_pass("tsc --noEmit", record.verification.tests_pass);
 }
@@ -130,9 +157,25 @@ fn fix_typescript_baseline() {
 #[ignore = "requires: `claude` in PATH, `tsc` toolchain (~60s, costs tokens)"]
 fn fix_typescript_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TS_8V, binary, true);
+    let record = run_scenario(&scenarios::FIX_TS_8V, binary, true, ToolProfile::EightV);
 
     require_pass("tsc --noEmit", record.verification.tests_pass);
+}
+
+// ── Caveman profile ──────────────────────────────────────────────────────────
+
+#[test]
+#[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
+fn fix_test_caveman() {
+    let binary = env!("CARGO_BIN_EXE_8v");
+    let record = run_scenario(
+        &scenarios::FIX_TEST_BASELINE,
+        binary,
+        true,
+        ToolProfile::Caveman,
+    );
+
+    require_pass("cargo test", record.verification.tests_pass);
 }
 
 // ── Experiments (N=3 per condition) ──────────────────────────────────────────
@@ -240,6 +283,78 @@ fn experiment_fix_typescript() {
     let result = run_experiment(&scenarios::EXPERIMENT_FIX_TS, binary);
 
     // Every condition must actually fix the bugs — tsc --noEmit must pass
+    assert!(
+        result.control.tests_pass_count() == result.n,
+        "Control failed to fix bug in {}/{} runs",
+        result.control.tests_pass_count(),
+        result.n
+    );
+    for sample in &result.treatments {
+        assert!(
+            sample.tests_pass_count() == result.n,
+            "{} failed to fix bug in {}/{} runs",
+            sample.description,
+            sample.tests_pass_count(),
+            result.n
+        );
+    }
+}
+
+// ── Tool Search experiments ───────────────────────────────────────────────
+
+#[test]
+#[ignore = "experiment: native + tool-search × N runs (~9 min, costs tokens)"]
+fn experiment_fix_test_tool_search() {
+    let binary = env!("CARGO_BIN_EXE_8v");
+    let matrix = ExperimentMatrix {
+        profiles: vec![ToolProfile::Native, ToolProfile::ToolSearch],
+    };
+    let result = run_experiment_with_matrix(
+        "tool-search-vs-native",
+        "fix-test-rust",
+        &scenarios::FIX_TEST_BASELINE,
+        &matrix,
+        6,
+        binary,
+    );
+
+    // Every condition must actually fix the bug
+    assert!(
+        result.control.tests_pass_count() == result.n,
+        "Control failed to fix bug in {}/{} runs",
+        result.control.tests_pass_count(),
+        result.n
+    );
+    for sample in &result.treatments {
+        assert!(
+            sample.tests_pass_count() == result.n,
+            "{} failed to fix bug in {}/{} runs",
+            sample.description,
+            sample.tests_pass_count(),
+            result.n
+        );
+    }
+}
+
+// ── mcp2cli experiments ───────────────────────────────────────────────────
+
+#[test]
+#[ignore = "experiment: native + mcp2cli × N runs (~9 min, costs tokens)"]
+fn experiment_fix_test_mcp2cli() {
+    let binary = env!("CARGO_BIN_EXE_8v");
+    let matrix = ExperimentMatrix {
+        profiles: vec![ToolProfile::Native, ToolProfile::Mcp2cli],
+    };
+    let result = run_experiment_with_matrix(
+        "mcp2cli-vs-native",
+        "fix-test-rust",
+        &scenarios::FIX_TEST_BASELINE,
+        &matrix,
+        6,
+        binary,
+    );
+
+    // Every condition must actually fix the bug
     assert!(
         result.control.tests_pass_count() == result.n,
         "Control failed to fix bug in {}/{} runs",
