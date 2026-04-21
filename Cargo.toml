@@ -10,9 +10,6 @@ members = [
 ]
 exclude = [
     "o8v-core/tests/fixtures",
-    # absorbed into o8v-stacks and o8v; kept as reference until deletion is confirmed
-    "o8v-project",
-    "o8v-workspace",
 ]
 resolver = "2"
 

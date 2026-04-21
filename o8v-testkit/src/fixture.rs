@@ -34,7 +34,7 @@ impl Fixture {
             "fixture name must not contain path separators or '..': {name}"
         );
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../o8v-project/tests/fixtures/corpus")
+            .join("../o8v-core/tests/fixtures/corpus")
             .join(name);
         match std::fs::metadata(&path) {
             Ok(m) if m.is_dir() => Self { path },

@@ -585,7 +585,7 @@ fn streaming_human_verbose_shows_path() {
 #[test]
 fn rust_fixture_full_check() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../o8v-project/tests/fixtures/corpus/rust-standalone-app");
+        .join("../o8v-core/tests/fixtures/corpus/rust-standalone-app");
 
     let out = bin()
         .args(["check", fixture.to_str().unwrap()])
@@ -605,7 +605,7 @@ fn rust_fixture_full_check() {
 #[test]
 fn rust_fixture_json_output_valid() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../o8v-project/tests/fixtures/corpus/rust-standalone-app");
+        .join("../o8v-core/tests/fixtures/corpus/rust-standalone-app");
 
     let out = bin()
         .args(["check", "--json", fixture.to_str().unwrap()])
@@ -622,7 +622,7 @@ fn rust_fixture_json_output_valid() {
 #[test]
 fn rust_fixture_plain_output() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../o8v-project/tests/fixtures/corpus/rust-standalone-app");
+        .join("../o8v-core/tests/fixtures/corpus/rust-standalone-app");
 
     let out = bin()
         .args(["check", "--plain", fixture.to_str().unwrap()])
@@ -642,7 +642,7 @@ fn rust_fixture_plain_output() {
 #[test]
 fn rust_fixture_verbose() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../o8v-project/tests/fixtures/corpus/rust-standalone-app");
+        .join("../o8v-core/tests/fixtures/corpus/rust-standalone-app");
 
     let out = bin()
         .args(["check", "--verbose", fixture.to_str().unwrap()])
