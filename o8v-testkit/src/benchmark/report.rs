@@ -595,13 +595,23 @@ pub fn render_markdown(report: &ReportJson) -> String {
     }
     md.push('\n');
 
-    if !report.confidence.publishable {
+    // Always show confidence — readers need this to assess reliability.
+    if report.confidence.publishable {
+        md.push_str(&format!(
+            "> Confidence: {}. Results are publishable.\n\n",
+            report.confidence.reason
+        ));
+    } else {
         md.push_str(&format!("> {}\n\n", report.confidence.reason));
     }
 
     // Token breakdown
     if report.conditions.len() >= 2 {
         md.push_str("## Token breakdown (means)\n\n");
+        md.push_str(
+            "> `cache_read` dominates — most input is served from the prompt cache. \
+`input` (non-cached) is minimal by design.\n\n",
+        );
         md.push_str("| Category | ");
         for cond in &report.conditions {
             md.push_str(&format!("{} | ", cond.description));
@@ -736,6 +746,7 @@ pub fn render_markdown(report: &ReportJson) -> String {
 
     // Per-run raw data
     md.push_str("## Per-run raw data\n\n");
+    md.push_str("> ✔ = passed, ✘ = failed, N/A = gate not applicable to this task type.\n\n");
     md.push_str("| Run | Condition | Tokens | Cost | Turns | Tools | Tests | Build | Check |\n");
     md.push_str("|-----|-----------|-------:|-----:|------:|------:|:-----:|:-----:|:-----:|\n");
     for run in &report.runs {
@@ -744,9 +755,9 @@ pub fn render_markdown(report: &ReportJson) -> String {
             .map(|c| format!("${:.4}", c))
             .unwrap_or_else(|| "n/a".into());
         let check = |v: Option<bool>| match v {
-            Some(true) => "\u{2714}",
-            Some(false) => "\u{2718}",
-            None => "\u{2014}",
+            Some(true) => "✔",
+            Some(false) => "✘",
+            None => "N/A", // gate not applicable to this task
         };
         md.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
