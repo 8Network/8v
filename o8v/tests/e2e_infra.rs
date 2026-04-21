@@ -4,7 +4,8 @@
 
 //! End-to-end tests for `8v` on infrastructure stacks: Terraform, Dockerfile, Helm.
 //!
-//! Terraform: `check-terraform` has an unused variable declaration → tflint fails.
+//! Terraform: `check-terraform` is clean; `check-terraform-violations` has unused
+//!   variable declarations → tflint fails.
 //! Dockerfile: `check-dockerfile` is clean; `check-dockerfile-violations` has
 //!   DL3007/DL3008 (latest tag, unpinned apt) → hadolint fails.
 //! Helm: `check-helm` has incomplete templates → helm lint fails.
@@ -25,7 +26,7 @@ fn fixture(name: &str) -> TempProject {
 
 #[test]
 fn terraform_check_unused_var_exits_1() {
-    let project = fixture("check-terraform");
+    let project = fixture("check-terraform-violations");
 
     let out = bin()
         .args(["check", project.path().to_str().unwrap()])
@@ -76,7 +77,7 @@ fn terraform_check_json_has_tflint() {
 
 #[test]
 fn terraform_check_json_diagnostic_rule() {
-    let project = fixture("check-terraform");
+    let project = fixture("check-terraform-violations");
 
     let out = bin()
         .args(["check", "--json", project.path().to_str().unwrap()])
