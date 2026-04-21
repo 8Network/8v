@@ -6,7 +6,7 @@
 //!
 //! These tests pin the exact JSON field names and value types emitted by the
 //! stats renderer.  Each test maps 1-to-1 to a contract clause from
-//! `docs/design/log_stats_implementation_v2.md` §3.4 + §10.
+//! `docs/design/log-stats-implementation.md` §3.4 + §10.
 //!
 //! Confirmed field names (from `o8v-core/src/render/stats_report.rs`):
 //!   top-level:  kind  label_key  rows  warnings  failure_hotspots  [shape — drill only]
