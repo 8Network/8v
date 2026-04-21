@@ -45,11 +45,14 @@ impl std::error::Error for EventReadError {}
 /// Empty lines are skipped (valid in NDJSON).
 pub fn read_events(storage: &StorageDir) -> Result<Vec<Event>, EventReadError> {
     let path = storage.events();
-    let config = o8v_fs::FsConfig::default();
-    let content = o8v_fs::safe_read(&path, storage.containment(), &config)
-        .map_err(|e| EventReadError::Io(e.to_string()))?;
-
-    parse_events(content.content())
+    // Use raw fs instead of safe_read: events.ndjson is written by 8v itself
+    // (not user-supplied), so the safe_read size cap does not apply.
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(EventReadError::Io(e.to_string())),
+    };
+    parse_events(&content)
 }
 
 /// Parse NDJSON content into typed events — lenient mode.
@@ -181,11 +184,15 @@ pub fn read_events_lenient(
     warnings: &mut WarningSink,
 ) -> Result<Vec<Event>, EventReadError> {
     let path = storage.events();
-    let config = o8v_fs::FsConfig::default();
-    let content = o8v_fs::safe_read(&path, storage.containment(), &config)
-        .map_err(|e| EventReadError::Io(e.to_string()))?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return parse_events_lenient("", strict, warnings)
+        }
+        Err(e) => return Err(EventReadError::Io(e.to_string())),
+    };
 
-    parse_events_lenient(content.content(), strict, warnings)
+    parse_events_lenient(&content, strict, warnings)
 }
 
 /// Parse NDJSON content into typed events.
