@@ -149,6 +149,6 @@ not just a doc edit.
  M o8v/tests/e2e_stats_session.rs
  M o8v/tests/mcp_e2e.rs
  M o8v/tests/regression_orphan_session_filter.rs
-?? docs/design/failure-behavior-adversarial-r1-2026-04-20.md
+?? docs/design/failure-behavior-adversarial-2026-04-20.md
 ... (other untracked docs/design/ and docs/findings/ files)
 ```

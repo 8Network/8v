@@ -2,8 +2,8 @@
 
 Sources: instruction-clarity-test-2026-04-18.md (v1), instruction-clarity-test-2026-04-19.md (v2),
 instruction-clarity-test-2026-04-19-v3.md (v3), read-full-scope-and-delimiter.md (broad design),
-read-full-scope-and-delimiter-review-r1.md (broad review), read-multi-full-accept.md (narrow design),
-read-multi-full-accept-review-r1.md (narrow review).
+read-full-scope-and-delimiter-adversarial.md (broad review), read-multi-full-accept.md (narrow design),
+read-multi-full-accept-adversarial.md (narrow review).
 
 Context: three consecutive instruction-clarity benchmark runs against `o8v/src/init/ai_section.txt` and
 `o8v/src/mcp/instructions.txt`, each with 2 models × 3 runs = 6 total, using a 24-question structured
@@ -69,7 +69,7 @@ narrow enough.
 
 ## L4 — Adversarial review on narrow slices surfaces hardening notes, not blockers
 
-**Observation.** The narrow design review (read-multi-full-accept-review-r1.md) found 0 blockers, 1 test
+**Observation.** The narrow design review (read-multi-full-accept-adversarial.md) found 0 blockers, 1 test
 gap (TG-1: triple test should byte-diff against single-`--full` output, not substring-check), 1 risk
 (R-1: `overrides_with_self` adds `[may be specified multiple times]` to `--help` output), and 2 nits.
 All findings were actionable with no design rework required.
