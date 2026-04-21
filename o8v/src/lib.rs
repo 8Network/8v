@@ -23,6 +23,6 @@ pub mod hook;
 pub(crate) mod hooks;
 pub mod init;
 pub mod mcp;
+pub(crate) mod path_util;
 pub mod signal;
 pub mod tracing;
-pub(crate) mod util;

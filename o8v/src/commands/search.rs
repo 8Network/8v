@@ -175,7 +175,7 @@ fn search_file_contents(
     }
 
     let lines: Vec<&str> = content.lines().collect();
-    let rel_path = crate::util::relative_to(root, path);
+    let rel_path = crate::path_util::relative_to(root, path);
 
     let mut file_matches = Vec::new();
     let mut file_had_match = false;
@@ -248,7 +248,7 @@ fn search_file_names(path: &Path, root: &Path, regex: &Regex, result: &mut Searc
     };
 
     if regex.is_match(file_name) {
-        let rel_path = crate::util::relative_to(root, path);
+        let rel_path = crate::path_util::relative_to(root, path);
         result.files.push(FileMatches {
             path: rel_path,
             matches: vec![Match {
@@ -316,7 +316,7 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
             continue;
         }
 
-        if !crate::util::matches_extension(path, args.extension.as_deref()) {
+        if !crate::path_util::matches_extension(path, args.extension.as_deref()) {
             continue;
         }
 
@@ -334,7 +334,7 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
             let skip_reason =
                 search_file_contents(path, &root, containment, &config, &regex, args, &mut result);
             if let Some(reason) = skip_reason {
-                let rel_path = crate::util::relative_to(&root, path);
+                let rel_path = crate::path_util::relative_to(&root, path);
                 *result
                     .files_skipped_by_reason
                     .entry(reason.clone())

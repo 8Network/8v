@@ -175,7 +175,7 @@ fn collect_file_metadata(
 
     let symlink_target = if is_symlink {
         match std::fs::read_link(path) {
-            Ok(t) => Some(crate::util::relative_to(root, &t)),
+            Ok(t) => Some(crate::path_util::relative_to(root, &t)),
             Err(_) => None,
         }
     } else {
@@ -291,7 +291,7 @@ pub(crate) fn do_ls(
         .map(|p| ProjectEntry {
             name: p.name().to_string(),
             stack: p.stack().to_string(),
-            path: crate::util::relative_to(&root, &PathBuf::from(p.path().to_string())),
+            path: crate::path_util::relative_to(&root, &PathBuf::from(p.path().to_string())),
             files: Vec::new(),
         })
         .collect();
@@ -365,7 +365,7 @@ pub(crate) fn do_ls(
         total_files += 1;
 
         // Apply extension filter
-        if !crate::util::matches_extension(path, args.extension.as_deref()) {
+        if !crate::path_util::matches_extension(path, args.extension.as_deref()) {
             files_filtered += 1;
             continue;
         }
@@ -382,7 +382,7 @@ pub(crate) fn do_ls(
             break 'walk;
         }
 
-        let rel_path = crate::util::relative_to(&root, path);
+        let rel_path = crate::path_util::relative_to(&root, path);
 
         // Apply depth filter: depth N means at most N directory components above the file.
         // e.g. depth 1 allows "src/main.rs" (1 dir) but not "src/deep/nested/bottom.rs" (3 dirs).
