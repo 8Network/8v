@@ -34,9 +34,9 @@ writes a `report.md` and `report.json` to a named subdirectory.
 
 | File | Task | Fixture | Verification | Known variance sources |
 |------|------|---------|--------------|------------------------|
-| fix_rust.rs | Fix a failing Rust test | fix-test-rust | cargo test | None |
+| fix_rust.rs | Fix a failing Rust test | fix-test-rust | cargo test | Trivial fix — native can solve in 4 calls; 8v schema overhead may cost more |
 | diagnose_rust.rs | Diagnose and fix Rust issues | diagnose-rust | cargo clippy | None |
-| fix_python.rs | Fix failing Python tests | fix-test-python | pytest | None |
+| fix_python.rs | Fix failing Python tests | fix-test-python | pytest | Native landmines: pytest not in PATH; agent retries ≥5×. 8v side unaffected. |
 | fix_go.rs | Fix failing Go tests | fix-go | go test | `// BUG:` comment — agents sometimes clean it up (extra write, ~19k more tokens) |
 | fix_typescript.rs | Fix TypeScript type errors | fix-typescript | tsc --noEmit | High variance observed; stuck-loop landmines on both conditions |
 
@@ -50,11 +50,23 @@ This creates two valid solution paths:
 Both paths pass verification. The variance is real model non-determinism, not a detector
 artifact. The comment is intentional — it tests whether agents use hints efficiently.
 
-**fix-failing-test (Rust)**: Agent Bash calls to `go test`/`cargo test` during a session
-will fail if the agent does not `cd` into the project directory first. The external
-verification in `pipeline.rs` runs from the correct directory and is authoritative.
-High native variance often traces to agents retrying after in-session test failures
-that are actually CWD errors, not fix failures.
+**fix-failing-test (Rust)**: At N=9 this task shows +1.9% cost for 8v (not publishable,
+CV 24.2%). The task is too trivial — native solves it in 4 tool calls (~$0.06); 8v's
+schema-loading overhead is not amortized. Good at demonstrating turn reduction (9.1→7.1)
+but not cost savings. Use a more complex fixture for cost claims.
+
+Agent Bash calls to `cargo test` during a session will fail if the agent does not `cd`
+into the project directory first. The external verification in `pipeline.rs` runs from
+the correct directory and is authoritative. High native variance traces to agents retrying
+after in-session test failures that are CWD errors, not fix failures.
+
+**fix-python-traversal**: Native condition has 100% landmine rate (6/6 runs). Root cause:
+`pytest` is a dev dependency (`pip install -e ".[dev]"`) not installed globally. Agents
+try `python -m pytest` which fails immediately; they retry 5+ times → landmine detector
+fires. Despite landmines, native agents DO fix the bug (6/6 pass external verification).
+The -35.9% cost delta and CI 8.5% are real, but 100% native landmine rate means this
+result cannot be published. To fix: install pytest globally on benchmark hosts, or add
+a `Makefile` test target that does `pip install -e ".[dev]" && pytest`.
 
 ## Interpreting results
 
