@@ -65,8 +65,15 @@ after in-session test failures that are CWD errors, not fix failures.
 try `python -m pytest` which fails immediately; they retry 5+ times → landmine detector
 fires. Despite landmines, native agents DO fix the bug (6/6 pass external verification).
 The -35.9% cost delta and CI 8.5% are real, but 100% native landmine rate means this
-result cannot be published. To fix: install pytest globally on benchmark hosts, or add
-a `Makefile` test target that does `pip install -e ".[dev]" && pytest`.
+result cannot be published as-is.
+
+**Do not add "use `make test`" to the prompt.** Tested: pip install output destabilizes
+agents (run 2 cost $0.34/619k tokens vs ~$0.12 baseline). CV exploded to 46.3%.
+Native landmines went from 6/6 identical retries to 1 stuck loop + 1 error storm.
+The Makefile is in the fixture for discoverability but should not be forced via prompt.
+
+**To fix for publication**: install pytest globally on benchmark hosts (`pip install pytest`).
+This is the only clean fix. Prompt engineering and Makefile both cause regressions.
 
 ## Interpreting results
 

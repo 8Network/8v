@@ -7,7 +7,7 @@ use o8v_testkit::benchmark::{ExperimentConfig, Scenario, Task};
 pub static FIX_PYTHON_TRAVERSAL: Task = Task {
     name: "fix-python-traversal",
     fixture: "agent-benchmark/fix-test-python",
-    prompt: "Some tests in this Python project are failing. Find the bugs and fix them. Use `make test` to run tests.",
+    prompt: "Some tests in this Python project are failing. Find the bugs and fix them.",
     variables: &[],
 };
 
