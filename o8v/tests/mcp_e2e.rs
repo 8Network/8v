@@ -309,15 +309,15 @@ fn mcp_upgrade_help_returns_ok() {
     assert!(!is_error, "upgrade --help should succeed, got: {resp}");
 }
 
-// ─── F13: init via MCP ───────────────────────────────────────────────────────
+// ─── init via MCP ──────────────────────────────────────────────────────────
 //
 // These tests FAIL on pre-fix code (init returns "not a dispatchable command")
 // and PASS after the fix (init --yes succeeds via MCP).
 
-/// F13: `init --yes` via MCP must succeed (isError = false).
+/// `init --yes` via MCP must succeed (isError = false).
 ///
-/// PRE-FIX: fails with `error: not a dispatchable command`.
-/// POST-FIX: succeeds; init runs non-interactively via --yes.
+/// Pre-rename: failed with `error: not a dispatchable command`.
+/// Post-rename: succeeds; init runs non-interactively via --yes.
 #[test]
 fn init_yes_via_mcp_succeeds() {
     let ws = make_workspace();
@@ -326,11 +326,13 @@ fn init_yes_via_mcp_succeeds() {
     let (is_error, text) = parse_call_result(&resp);
     assert!(
         !is_error,
-        "init --yes via MCP should succeed (F13 fix required)\ncontent: {text}\nfull: {resp}"
+        "init --yes via MCP should succeed
+content: {text}
+full: {resp}"
     );
 }
 
-/// F13: `init --yes` result must not contain "not a dispatchable command".
+/// `init --yes` result must not contain "not a dispatchable command".
 #[test]
 fn init_yes_via_mcp_does_not_return_not_dispatchable_error() {
     let ws = make_workspace();
@@ -339,7 +341,8 @@ fn init_yes_via_mcp_does_not_return_not_dispatchable_error() {
     let (_is_error, text) = parse_call_result(&resp);
     assert!(
         !text.contains("not a dispatchable command"),
-        "F13: 'not a dispatchable command' must be gone after fix\ncontent: {text}"
+        "'not a dispatchable command' must not appear in MCP init response
+content: {text}"
     );
 }
 
@@ -580,7 +583,7 @@ fn mcp_oc_invalid_cap_empty() {
 
 /// MCP-OC Gap-1 test — Invalid cap errors come from cap validation, not post-render.
 ///
-/// M4 and M5 revealed that the four invalid-cap tests only check for
+/// Prior mutation testing revealed that the four invalid-cap tests only check for
 /// "O8V_MCP_OUTPUT_CAP", which appears in BOTH `get_output_cap()` error messages
 /// AND in `oversized_error()`. When a mutant silently converts an invalid cap to 0
 /// or 5, any non-empty command output triggers `oversized_error()`, which also
@@ -653,7 +656,7 @@ fn mcp_oc_invalid_cap_error_comes_from_validation() {
 
 /// MCP-OC Gap-2 test — Post-render path is distinct from pre-flight.
 ///
-/// M3 (remove post-render check) was caught by `mcp_oc_post_render_fires`, but
+/// A mutation removing the post-render check was caught by `mcp_oc_post_render_fires`, but
 /// that test has no discriminator proving the post-render path fired rather than
 /// some other error path. This test strengthens the assertion by verifying:
 ///   - The error does NOT contain "bytes" (which is unique to the pre-flight

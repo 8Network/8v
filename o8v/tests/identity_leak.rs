@@ -170,11 +170,11 @@ fn search_nonexistent_path_no_home_leak() {
     assert_no_home_leak("search/nonexistent", &out.stdout, &out.stderr);
 }
 
-// ─── F12: find-replace escape sequences ──────────────────────────────────────
+// ─── find-replace escape sequences ─────────────────────────────────────────
 
 #[test]
 fn write_find_replace_unescapes_newline() {
-    // F12: `--replace "a\nb"` must write two lines, not the literal \n.
+    // `--replace "a\nb"` must write two lines, not the literal \n.
     let tmp = tempfile::tempdir().expect("tmpdir");
     setup_project(&tmp);
     let file = tmp.path().join("f.txt");

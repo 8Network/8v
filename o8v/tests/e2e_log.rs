@@ -634,8 +634,8 @@ fn log_search_success_field_reflects_outcome() {
 
 #[test]
 fn log_search_limit_flag_after_subcommand_filters_results() {
-    // F14: `8v log search <query> --limit N` must filter results.
-    // Before the fix, --limit placed after the subcommand is rejected with
+    // `8v log search <query> --limit N` must filter results.
+    // Before this fix, --limit placed after the subcommand was rejected with
     // "unexpected argument '--limit' found".
     let ndjson = [
         make_event_pair("ses_01AAAAAAAAAAAAAAAAAAAAAAA", "run_1", "check", true),

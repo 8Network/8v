@@ -341,9 +341,9 @@ fn has_lone_cr(content: &str) -> bool {
 /// Validate that the file's line endings are supported for line-based operations.
 ///
 /// Returns Err for:
-/// - Lone `\r` (classic Mac, no `\n` at all) — CE6
+/// - Lone `\r` (classic Mac, no `\n` at all)
 /// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`)
-/// - Mixed `\r\n` and lone `\n` — CE19
+/// - Mixed `\r\n` and lone `\n`
 fn validate_line_endings(content: &str) -> Result<(), String> {
     let has_crlf = content.contains("\r\n");
     let lone_cr = has_lone_cr(content);
@@ -1059,7 +1059,7 @@ mod tests {
 
     #[test]
     fn find_replace_operation_unescapes_newline() {
-        // F12: --replace must unescape \n just like --append/--insert
+        // --replace must unescape \n just like --append/--insert
         let args = Args {
             path: "f.txt".to_string(),
             content: None,

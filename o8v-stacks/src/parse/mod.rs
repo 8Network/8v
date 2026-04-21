@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn find_location_rejects_parens_in_message() {
-        // H1: (3,4) in the message must NOT match — only (N,N): counts.
+        // (3,4) in the message must NOT match — only (N,N): with a trailing colon counts.
         let line = "file.ts(10,5): error TS2345: Argument of type '(3,4)' is not assignable";
         let (file, line_num, col, _) = super::find_location(line).unwrap();
         assert_eq!(file, "file.ts");

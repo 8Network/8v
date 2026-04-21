@@ -186,10 +186,10 @@ fn build_rust_broken_fails() {
     );
 }
 
-// ── test (F9 regression + F10 structured output) ─────────────────────────────
+// ── test output format for passing and failing tests ───────────────────────
 
-/// F9 REGRESSION — `8v test` must not error with "Option 'format' given more than once".
-/// On unfixed HEAD this test will fail because the command exits nonzero with that error.
+/// `8v test` must not error with "Option 'format' given more than once".
+/// Regression: on earlier builds this command exited nonzero with that duplicate-flag error.
 #[test]
 fn test_rust_pass_exits_0() {
     let project = fixture("test-rust-pass");
@@ -230,7 +230,7 @@ fn test_rust_pass_json_valid() {
     );
 }
 
-/// F10 REGRESSION — failing tests must produce structured output, not a raw stderr dump.
+/// Failing tests must produce structured output, not a raw stderr dump.
 /// Line like "tests N passed M failed" must appear.
 #[test]
 fn test_rust_fail_shows_structured_output() {
@@ -245,21 +245,25 @@ fn test_rust_fail_shows_structured_output() {
         !stderr.contains("given more than once"),
         "F9: duplicate --format flag\nstderr:{stderr}"
     );
-    // F10: structured summary line must appear
+    // structured summary line must appear
     assert!(
         stdout.contains("passed") || stdout.contains("failed"),
-        "F10: structured test count line expected\nstdout:{stdout}\nstderr:{stderr}"
+        "structured test count line expected
+stdout:{stdout}
+stderr:{stderr}"
     );
     // The degenerate fallback just does "<project> rust\ntests failed <ms>\n<raw stderr>".
     // Structured output includes "passed" counts. If only "tests failed" with no "passed" appears,
     // the render is still degenerate.
     assert!(
         stdout.contains("passed"),
-        "F10: 'passed' count missing — degenerate render detected\nstdout:{stdout}\nstderr:{stderr}"
+        "'passed' count missing — degenerate render detected
+stdout:{stdout}
+stderr:{stderr}"
     );
 }
 
-/// F10 — JSON output on failing tests must have structured fields.
+/// JSON output on failing tests must have structured fields.
 #[test]
 fn test_rust_fail_json_has_counts() {
     let project = fixture("test-rust-fail");

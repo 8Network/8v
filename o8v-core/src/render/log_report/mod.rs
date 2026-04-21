@@ -422,7 +422,7 @@ mod tests {
         );
     }
 
-    // B1: retries section must use retry_window_ms, not hardcoded 90
+    // retries section must use retry_window_ms, not a hardcoded value
     #[test]
     fn drill_plain_retry_shows_window_from_field() {
         let mut drill = make_drill();

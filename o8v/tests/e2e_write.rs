@@ -432,7 +432,7 @@ fn empty_content_rejected_on_insert() {
     );
 }
 
-/// CE6: Lone-\r (classic Mac) files are rejected for line-based operations.
+/// Lone-\r (classic Mac) files are rejected for line-based operations.
 #[test]
 fn lone_cr_file_rejected() {
     let tmp = tempfile::tempdir().expect("tmpdir");
@@ -461,7 +461,7 @@ fn lone_cr_file_rejected() {
     );
 }
 
-/// CE19: Mixed LF+CRLF files are rejected for line-based operations.
+/// Mixed LF+CRLF files are rejected for line-based operations.
 #[test]
 fn mixed_line_endings_rejected() {
     let tmp = tempfile::tempdir().expect("tmpdir");
@@ -700,9 +700,9 @@ fn replace_multiline_content_with_blank_middle() {
     assert_eq!(result, "line1\na\n\nb\nline3\n");
 }
 
-// ─── HIGH-3 / HIGH-2: content line-ending validation ─────────────────────────
+// ─── content line-ending validation ────────────────────────────────────────
 
-/// HIGH-3: Content with embedded lone \r is rejected.
+/// Content with embedded lone \r is rejected.
 #[test]
 fn content_with_embedded_lone_cr_rejected() {
     let tmp = tempfile::tempdir().expect("tmpdir");
@@ -730,7 +730,7 @@ fn content_with_embedded_lone_cr_rejected() {
     );
 }
 
-/// HIGH-2: Content with mixed CRLF+LF endings is rejected.
+/// Content with mixed CRLF+LF endings is rejected.
 #[test]
 fn content_with_mixed_endings_rejected() {
     let tmp = tempfile::tempdir().expect("tmpdir");
@@ -758,7 +758,7 @@ fn content_with_mixed_endings_rejected() {
     );
 }
 
-/// HIGH-3 (CRLF): Content with pure CRLF endings is rejected — was silently
+/// Content with pure CRLF endings is rejected — was silently
 /// allowed by the old validator, causing \r to be written into LF files.
 #[test]
 fn content_with_crlf_rejected() {
@@ -793,9 +793,9 @@ fn content_with_crlf_rejected() {
     );
 }
 
-// ─── HIGH-6: mid-line \r in a \n-terminated file ─────────────────────────────
+// ─── mid-line \r in a \n-terminated file ──────────────────────────────────
 
-/// HIGH-6: A file containing "A\nB\rC\nD\n" (mid-line \r, not part of \r\n)
+/// A file containing "A\nB\rC\nD\n" (mid-line \r, not part of \r\n)
 /// must be rejected — not silently corrupted.
 #[test]
 fn mid_line_cr_file_rejected() {
@@ -824,9 +824,9 @@ fn mid_line_cr_file_rejected() {
     );
 }
 
-// ─── HIGH-9: CreateFile empty content ────────────────────────────────────────
+// ─── CreateFile empty content ──────────────────────────────────────────────
 
-/// HIGH-9: CreateFile with empty content is rejected with a clear error.
+/// CreateFile with empty content is rejected with a clear error.
 #[test]
 fn create_file_empty_content_rejected() {
     let tmp = tempfile::tempdir().expect("tmpdir");
@@ -885,7 +885,7 @@ fn crlf_file_byte_exact_preservation_with_blank_lines() {
     );
 }
 
-// ─── B1: Append uses the file's existing line ending as separator ────────────
+// ─── Append uses the file's existing line ending as separator ───────────────
 
 /// Append to a CRLF file without a trailing terminator must use \r\n as the
 /// separator, not a hardcoded \n (which would create mixed endings).
@@ -931,7 +931,7 @@ fn append_to_lf_file_without_trailing_newline_uses_lf() {
     assert_eq!(result, b"a\nb\nc");
 }
 
-// ─── H1: --find --replace validates strings for \r ───────────────────────────
+// ─── --find --replace validates strings for \r ──────────────────────────────
 
 /// Find/replace must reject a replacement containing \r — would contaminate
 /// an LF file with stray carriage returns.

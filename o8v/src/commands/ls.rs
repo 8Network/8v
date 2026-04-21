@@ -506,7 +506,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// F15: `--match` with a nested pattern (e.g. `src/*.rs`) must match files
+    /// `--match` with a nested pattern (e.g. `src/*.rs`) must match files
     /// inside subdirectories. Previously `matches_glob` used `file_name()` (basename
     /// only) so `src/*.rs` never matched — only `*.rs` would.
     #[test]

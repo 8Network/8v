@@ -324,7 +324,7 @@ fn read_triple_full_flag_accepted_matches_single() {
 
 #[test]
 fn read_full_returns_all_lines() {
-    // M4 gap: a mutation that truncates output to the first line (.take(1))
+    // A mutation that truncates output to the first line (.take(1))
     // survives both `read_double_full_flag_accepted` (checks only "hello") and
     // `read_triple_full_flag_accepted_matches_single` (equality between two
     // equally-truncated outputs). This test closes that gap by asserting that

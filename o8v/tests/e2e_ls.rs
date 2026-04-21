@@ -337,7 +337,7 @@ fn ls_empty_directory() {
     );
 }
 
-/// F15: `8v ls --match <glob>` must show matched files at non-root depth.
+/// `8v ls --match <glob>` must show matched files at non-root depth.
 ///
 /// Previously, `--match *.rs` without `--files` or `--tree` rendered only
 /// project headers (Projects mode), making the output appear as "no files".
