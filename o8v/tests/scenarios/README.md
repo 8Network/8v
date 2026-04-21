@@ -44,11 +44,21 @@ writes a `report.md` and `report.json` to a named subdirectory.
 
 **fix-go**: `lib.go` contains an explicit `// BUG: off-by-one` comment labeling the bug.
 This creates two valid solution paths:
-1. Agent replaces only the loop condition (5 MCP calls, ~103k tokens)
-2. Agent fixes the loop AND deletes the BUG comment (6 MCP calls, ~122k tokens)
+1. Agent replaces only the loop condition (4 MCP calls, ~103k tokens)
+2. Agent fixes the loop AND deletes the BUG comment (5 MCP calls, ~122k tokens)
 
 Both paths pass verification. The variance is real model non-determinism, not a detector
 artifact. The comment is intentional — it tests whether agents use hints efficiently.
+
+**Published result (2026-04-21, N=6): -28.3% cost, CI ±11.1%, -50.8% tool calls, -43% turns.**
+
+Behavioral finding: native baseline always spawns a sub-agent for exploration (Agent tool call)
+then uses Bash(find) + Bash(ls) + Read × 3-4. 8v does ls --tree --loc + read a b --full = 2
+calls for the same information. Native has 2+ errors per run (Edit failures, test failures);
+8v has 0 errors across all 6 runs. 8v CV=5.0% vs native CV=13.4% (tighter distribution).
+
+8v sessions visible in `8v log` show the consistent pattern:
+  ls → read (batch) → write [--find or :line] → [write :line --delete] → test
 
 **fix-failing-test (Rust)**: At N=9 this task shows +1.9% cost for 8v (not publishable,
 CV 24.2%). The task is too trivial — native solves it in 4 tool calls (~$0.06); 8v's
