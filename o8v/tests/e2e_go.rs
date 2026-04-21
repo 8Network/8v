@@ -204,3 +204,172 @@ fn go_build_succeeds() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// ─── go vet violations ──────────────────────────────────────────────────────
+
+#[test]
+fn go_vet_violations_exits_1() {
+    let project = TempProject::from_fixture(&fixture_path("o8v", "check-go-violations"));
+    let out = bin()
+        .args(["check", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check on check-go-violations");
+    assert_eq!(
+        out.status.code().unwrap_or(99),
+        1,
+        "go vet violation must exit 1
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn go_vet_violations_outcome_is_failed_not_error() {
+    // outcome="error" means the tool couldn't run; outcome="failed" means it ran
+    // and caught something. These must not be confused.
+    let project = TempProject::from_fixture(&fixture_path("o8v", "check-go-violations"));
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-go-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let go_result = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("go"))
+        .expect("go result");
+    let go_vet = go_result["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"].as_str() == Some("go vet"))
+        .expect("go vet check");
+    assert_eq!(
+        go_vet["outcome"].as_str(),
+        Some("failed"),
+        "go vet must be 'failed', not 'error', when it catches issues: {go_vet}"
+    );
+}
+
+#[test]
+fn go_vet_violations_exactly_one_diagnostic() {
+    // main.go has exactly one vet error (Printf format mismatch on line 7).
+    // If the parser duplicates or drops it, this test catches it.
+    let project = TempProject::from_fixture(&fixture_path("o8v", "check-go-violations"));
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-go-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let go_result = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("go"))
+        .expect("go result");
+    let go_vet = go_result["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"].as_str() == Some("go vet"))
+        .expect("go vet check");
+    let diags = go_vet["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(
+        diags.len(), 1,
+        "check-go-violations has exactly one vet error — parser must not duplicate or drop it: {diags:?}"
+    );
+}
+
+#[test]
+fn go_vet_violations_severity_is_error() {
+    // go vet findings are errors, not warnings. Catches severity mapping regressions.
+    let project = TempProject::from_fixture(&fixture_path("o8v", "check-go-violations"));
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-go-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let go_result = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("go"))
+        .expect("go result");
+    let go_vet = go_result["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"].as_str() == Some("go vet"))
+        .expect("go vet check");
+    let diags = go_vet["diagnostics"].as_array().expect("diagnostics");
+    assert!(!diags.is_empty(), "expected diagnostics");
+    assert_eq!(
+        diags[0]["severity"].as_str(),
+        Some("error"),
+        "go vet diagnostic must have severity=error: {:?}",
+        diags[0]
+    );
+}
+
+#[test]
+fn go_vet_violations_message_and_line() {
+    // The specific vet error: Printf format %d reads arg #2, but call has 1 arg.
+    // Line 7 of main.go. If message extraction or span parsing regresses, this catches it.
+    let project = TempProject::from_fixture(&fixture_path("o8v", "check-go-violations"));
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-go-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let go_result = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("go"))
+        .expect("go result");
+    let go_vet = go_result["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|c| c["name"].as_str() == Some("go vet"))
+        .expect("go vet check");
+    let diag = &go_vet["diagnostics"].as_array().expect("diagnostics")[0];
+    assert!(
+        diag["message"].as_str().unwrap_or("").contains("Printf"),
+        "diagnostic message must reference Printf format error: {diag}"
+    );
+    assert_eq!(
+        diag["span"]["line"].as_u64(),
+        Some(7),
+        "Printf error is on line 7 of main.go: {diag}"
+    );
+}

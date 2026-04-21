@@ -43,6 +43,7 @@ pub fn parse(
     stack: &str,
 ) -> ParseResult {
     let mut diagnostics = Vec::new();
+    let mut in_failure_footer = false;
 
     // Maven writes to stdout, javac/gradle write to stderr. Parse both.
     if !stderr.is_empty() && !stdout.is_empty() {
@@ -66,7 +67,16 @@ pub fn parse(
         };
 
         // Skip header lines that don't contain file paths
-        if line.starts_with("COMPILATION ERROR") || line.starts_with("Failed to execute") {
+        if line.starts_with("COMPILATION ERROR") {
+            continue;
+        }
+
+        // Maven failure footer repeats every diagnostic — stop to avoid duplicates.
+        if line.starts_with("Failed to execute") {
+            in_failure_footer = true;
+            continue;
+        }
+        if in_failure_footer {
             continue;
         }
 
@@ -336,6 +346,31 @@ mod tests {
         );
 
         assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn maven_failure_footer_does_not_duplicate_diagnostics() {
+        // Maven repeats each error in the failure footer after "Failed to execute goal".
+        // The parser must stop at that line and not emit duplicates.
+        let stdout = "[ERROR] COMPILATION ERROR : 
+\n                      [ERROR] /path/App.java:[5,17] type mismatch
+\n                      [ERROR] /path/App.java:[6,28] undefined symbol
+\n                      [ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:compile
+\n                      [ERROR] /path/App.java:[5,17] type mismatch
+\n                      [ERROR] /path/App.java:[6,28] undefined symbol
+";
+        let result = parse(
+            stdout,
+            "",
+            std::path::Path::new("/project"),
+            "javac",
+            "java",
+        );
+        assert_eq!(
+            result.diagnostics.len(),
+            2,
+            "footer errors must not be re-emitted as diagnostics"
+        );
     }
 
     #[test]

@@ -129,3 +129,164 @@ fn kotlin_violations_json_has_diagnostics() {
         "ktlint should report diagnostics for tab/wildcard violations"
     );
 }
+
+// ─── Kotlin violations — specific content assertions ────────────────────────
+
+#[test]
+fn kotlin_violations_exactly_three_diagnostics() {
+    // Bad.kt has a wildcard import (line 1) and tab indentation on line 4
+    // (reported twice by ktlint). If the parser drops or duplicates diagnostics,
+    // this test catches it.
+    let project = fixture("check-kotlin-violations");
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-kotlin-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let checks = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("kotlin"))
+        .expect("kotlin result")["checks"]
+        .as_array()
+        .expect("checks");
+    let ktlint = checks
+        .iter()
+        .find(|c| c["name"].as_str() == Some("ktlint"))
+        .expect("ktlint check");
+    let diags = ktlint["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(
+        diags.len(),
+        3,
+        "Bad.kt has exactly 3 ktlint violations (1 wildcard import + 2 indent): {diags:?}"
+    );
+}
+
+#[test]
+fn kotlin_violations_has_wildcard_import_rule() {
+    // Bad.kt line 1: `import java.util.*` — triggers standard:no-wildcard-imports.
+    // If ktlint rule name extraction regresses, this catches it.
+    let project = fixture("check-kotlin-violations");
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-kotlin-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let checks = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("kotlin"))
+        .expect("kotlin result")["checks"]
+        .as_array()
+        .expect("checks");
+    let ktlint = checks
+        .iter()
+        .find(|c| c["name"].as_str() == Some("ktlint"))
+        .expect("ktlint check");
+    let diags = ktlint["diagnostics"].as_array().expect("diagnostics");
+    let has_wildcard = diags.iter().any(|d| {
+        d["rule"]
+            .as_str()
+            .map(|r| r.contains("no-wildcard-imports"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_wildcard,
+        "expected standard:no-wildcard-imports rule in diagnostics: {diags:?}"
+    );
+}
+
+#[test]
+fn kotlin_violations_has_indent_rule() {
+    // Bad.kt uses tab indentation — triggers standard:indent.
+    let project = fixture("check-kotlin-violations");
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-kotlin-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let checks = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("kotlin"))
+        .expect("kotlin result")["checks"]
+        .as_array()
+        .expect("checks");
+    let ktlint = checks
+        .iter()
+        .find(|c| c["name"].as_str() == Some("ktlint"))
+        .expect("ktlint check");
+    let diags = ktlint["diagnostics"].as_array().expect("diagnostics");
+    let has_indent = diags.iter().any(|d| {
+        d["rule"]
+            .as_str()
+            .map(|r| r.contains("indent"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_indent,
+        "expected standard:indent rule in diagnostics: {diags:?}"
+    );
+}
+
+#[test]
+fn kotlin_violations_all_severity_error() {
+    // ktlint reports all violations as errors. Catches severity mapping regression.
+    let project = fixture("check-kotlin-violations");
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-kotlin-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "invalid JSON: {e}
+output: {stdout}"
+        ),
+    };
+    let checks = json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("kotlin"))
+        .expect("kotlin result")["checks"]
+        .as_array()
+        .expect("checks");
+    let ktlint = checks
+        .iter()
+        .find(|c| c["name"].as_str() == Some("ktlint"))
+        .expect("ktlint check");
+    let diags = ktlint["diagnostics"].as_array().expect("diagnostics");
+    for d in diags {
+        assert_eq!(
+            d["severity"].as_str(),
+            Some("error"),
+            "ktlint diagnostic must be severity=error: {d}"
+        );
+    }
+}
