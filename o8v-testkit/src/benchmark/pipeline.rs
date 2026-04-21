@@ -105,21 +105,7 @@ pub fn run_scenario(
 
     // ── 2. Run agent ────────────────────────────────────────────────────────
     let start_ms = unix_ms();
-
-    // Clean events before this run so we only collect this scenario's events.
-    // When persist=false the caller (experiment.rs) owns isolation — skip here.
     let events_path = events_ndjson_path();
-    if persist {
-        match std::fs::remove_file(&events_path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => eprintln!(
-                "  [benchmark] warning: failed to remove events file {}: {}",
-                events_path.display(),
-                e
-            ),
-        }
-    }
 
     let agent_result = match scenario.env.agent {
         Agent::Claude => ClaudeDriver::run(
@@ -148,7 +134,7 @@ pub fn run_scenario(
     }
 
     // ── 3. Collect internal events ──────────────────────────────────────────
-    let events = collect_events(&events_path);
+    let events = collect_events(&events_path, start_ms);
 
     // ── 4. Verify ───────────────────────────────────────────────────────────
     let verification = run_verification(project.path(), binary);
@@ -357,7 +343,7 @@ struct CollectedEvents {
     agent: EventAgentInfo,
 }
 
-fn collect_events(events_path: &Path) -> CollectedEvents {
+fn collect_events(events_path: &Path, since_ms: i64) -> CollectedEvents {
     let content = match std::fs::read_to_string(events_path) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -397,6 +383,14 @@ fn collect_events(events_path: &Path) -> CollectedEvents {
             );
             continue;
         };
+        // Skip events from before this run — timestamp isolation replaces file deletion.
+        let ts = raw
+            .get("timestamp_ms")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        if ts < since_ms {
+            continue;
+        }
         let Some(event_type) = raw.get("event").and_then(|v| v.as_str()) else {
             no_type_events += 1;
             eprintln!(

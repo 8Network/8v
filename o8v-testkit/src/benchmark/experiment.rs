@@ -15,7 +15,7 @@
 
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 
-use super::pipeline::{current_git_commit, events_ndjson_path, run_scenario, unix_ms};
+use super::pipeline::{current_git_commit, run_scenario, unix_ms};
 use super::preflight::preflight_fixture;
 use super::profiles::ToolProfile;
 use super::store::BenchmarkStore;
@@ -234,9 +234,6 @@ fn run_sample(scenario: &Scenario, n: usize, binary: &str) -> Sample {
     for i in 0..n {
         eprintln!("\n--- {} ({}/{}) ---", scenario.description, i + 1, n);
 
-        // Clean events between observations for isolation
-        clean_events();
-
         let profile = if scenario.env.setup_8v {
             ToolProfile::EightV
         } else {
@@ -264,7 +261,6 @@ fn run_sample_with_profile(
 
     for i in 0..n {
         eprintln!("\n--- {} ({}/{}) ---", scenario.description, i + 1, n);
-        clean_events();
         let observation = run_scenario(scenario, binary, false, profile);
         observations.push(observation);
     }
@@ -607,15 +603,6 @@ fn format_cost(v: f64) -> String {
 
 fn format_delta_pct(pct: f64) -> String {
     format!("{:+.1}%", pct)
-}
-
-fn clean_events() {
-    let path = events_ndjson_path();
-    match std::fs::remove_file(&path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => eprintln!("  [benchmark] warning: failed to clean events: {e}"),
-    }
 }
 
 fn write_structured_report(
