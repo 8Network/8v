@@ -105,4 +105,4 @@ B2a through B2d each get their own Level 1 review + CE round before implementati
 
 After this decomposition:
 - B2 is no longer a single slice; its row in register v2 §4 gets replaced by 4 rows.
-- The capital-E follow-up design (`write-capital-e-prefix-followup.md`) is absorbed into B2d. B2d is approved (2026-04-20). The follow-up doc is superseded; no A/B/C pick is needed.
+- The capital-E follow-up design (`write-capital-e-prefix-superseded.md`, now in findings/) is absorbed into B2d. B2d is approved (2026-04-20). The follow-up doc is superseded; no A/B/C pick is needed.

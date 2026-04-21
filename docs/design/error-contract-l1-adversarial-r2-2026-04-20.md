@@ -55,7 +55,7 @@
 | C3-2 | AF-1 test presupposes L2 branch decision (behavior change vs help-text only) | **FIXED** — fix explicitly scoped to help-text correction only; no behavior change, no L2 branch needed |
 | C3-3 | BR-38 orphaned — doc claimed to close it but register lists it under C3 | **NOT FIXED** — BR-38 silently removed from the doc; register v2 §5 lists BR-38 under C3 with "symlink error text wrong for non-symlink"; C3 still claims to close BR-38 in register §4 but the design doc no longer mentions it; ownership undocumented |
 
-### write-capital-e-prefix-followup.md
+### write-capital-e-prefix-superseded.md (findings/)
 
 | # | Round-1 Blocker | Verdict |
 |---|---|---|
@@ -93,7 +93,7 @@ If the founder picks A2 option B (ship B2a + B2b together), the recommended exec
 Three decisions gate all remaining PARTIALLY FIXED items:
 
 1. **A2 (B2a):** JSON paths on stderr — option A (exclude them) or option B (ship B2a+B2b together). Resolves NEW-2 and NEW-3. Unblocks b2a-counterexamples and the slice order in b2-decomposition.
-2. **Capital-E / B2d gate:** Absorb write-capital-e-prefix-followup into B2d (doc superseded) or ship standalone (pick A/B/C). Resolves CAP-1 and B2-D-2. Documented in both docs, waiting for gate decision.
+2. **Capital-E / B2d gate:** Absorb write-capital-e-prefix-superseded (findings/) into B2d (doc superseded) or ship standalone (pick A/B/C). Resolves CAP-1 and B2-D-2. Documented in both docs, waiting for gate decision.
 3. **C2 JSON shape:** Option A (`status` enum) or option B (`upgraded: false + current: true`). Resolves C2-1. Unblocks slice-c2 Level 2 start.
 
 ---

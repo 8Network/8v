@@ -1,7 +1,7 @@
 # B1 CE Round 1 — Adversarial Review
 Date: 2026-04-20
 Reviewer: Claude (Sonnet 4.6)
-Inputs: slice-b1-failure-behavior-mcp-draft.md, slice-b1-failure-behavior-ai-section-draft.md, error-contract.md, slice-b2-decomposition.md, session-2026-04-20-index.md
+Inputs: failure-behavior-mcp-draft.md, failure-behavior-ai-section-draft.md, error-contract.md, slice-b2-decomposition.md, session-2026-04-20-index.md
 
 ---
 
@@ -13,7 +13,7 @@ Three blockers span both drafts and must be resolved before either ships.
 
 ---
 
-## Per-draft findings — MCP draft (slice-b1-failure-behavior-mcp-draft.md)
+## Per-draft findings — MCP draft (failure-behavior-mcp-draft.md)
 
 **B1-MCP-1 [BLOCKER] Pre-B2 NOTE positioned after target**
 The NOTE "Pre-B2 binary — do not parse stderr as JSON yet" appears after the post-B2 target description.
@@ -46,7 +46,7 @@ A reader can understand the rule but cannot verify understanding without an exam
 
 ---
 
-## Per-draft findings — AI section draft (slice-b1-failure-behavior-ai-section-draft.md)
+## Per-draft findings — AI section draft (failure-behavior-ai-section-draft.md)
 
 **B1-AI-1 [BLOCKER] Pre-B2 NOTE positioned after target (same as B1-MCP-1)**
 NOTE appears in a blockquote after the JSON code example block.
@@ -97,8 +97,8 @@ Without both fixes, shipping before B2 teaches agents things that are false toda
 
 | Draft | Verdict | Blockers |
 |---|---|---|
-| slice-b1-failure-behavior-mcp-draft.md | REVISE | B1-MCP-1, B1-MCP-2, B1-MCP-3 (3 blockers) |
-| slice-b1-failure-behavior-ai-section-draft.md | REVISE | B1-AI-1, B1-AI-2, B1-AI-3 (3 blockers) |
+| failure-behavior-mcp-draft.md | REVISE | B1-MCP-1, B1-MCP-2, B1-MCP-3 (3 blockers) |
+| failure-behavior-ai-section-draft.md | REVISE | B1-AI-1, B1-AI-2, B1-AI-3 (3 blockers) |
 
 Neither draft is REJECT — the structure and coverage are correct. All blockers are fixable.
 
@@ -149,6 +149,6 @@ not just a doc edit.
  M o8v/tests/e2e_stats_session.rs
  M o8v/tests/mcp_e2e.rs
  M o8v/tests/regression_orphan_session_filter.rs
-?? docs/design/slice-b1-review-round1-2026-04-20.md
+?? docs/design/failure-behavior-adversarial-r1-2026-04-20.md
 ... (other untracked docs/design/ and docs/findings/ files)
 ```

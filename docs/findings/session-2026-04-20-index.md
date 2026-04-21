@@ -30,7 +30,7 @@ Narrow implementation slices, ordered by register v2 ROI:
 
 | Slice | Doc | Bugs closed | Depends on |
 | --- | --- | --- | --- |
-| B1 (docs) | `design/slice-b1-failure-behavior-{mcp,ai-section}-draft.md` | 3 | — |
+| B1 (docs) | `design/failure-behavior-{mcp,ai-section}-draft.md` | 3 | — |
 | B2a (stderr channel) | `design/slice-b2-decomposition.md` §B2a | 3+ | — |
 | B2b (JSON envelope) | §B2b | 4+ | B2a |
 | B2c (exit codes) | §B2c | 4+ | B2a |
@@ -40,7 +40,7 @@ Narrow implementation slices, ordered by register v2 ROI:
 | C2 (upgrade) | `design/slice-c2-upgrade-contract.md` | 2 (U-3 deferred by feature freeze) | — |
 | C3 (write semantics) | `design/slice-c3-write-semantics.md` | 2 | — |
 
-Capital-E follow-up (`design/write-capital-e-prefix-followup.md`) is superseded — absorbed into B2d (approved 2026-04-20).
+Capital-E follow-up (`findings/write-capital-e-prefix-superseded.md`) is superseded — absorbed into B2d (approved 2026-04-20).
 
 ## Process
 
@@ -51,7 +51,7 @@ Capital-E follow-up (`design/write-capital-e-prefix-followup.md`) is superseded 
 
 - **Decision A — CT-1 resolved**: Canonical subprocess-capture shape = `{"exit_code":...,"tool":"...","output":"...","duration_ms":...}`. Applied to `error-contract.md §2.4`, `slice-b2-decomposition.md §B2b`, and both B1 drafts.
 - **Decision B — upgrade JSON shapes**: "Already current" = `{"upgraded":false,"current":true}`. Network failure = `{"error_kind":"network","error":"<human message>"}`. Applied to `slice-c2-upgrade-contract.md`.
-- **Decision C — capital-E superseded**: B2d is approved. `write-capital-e-prefix-followup.md` is superseded and absorbed into B2d. No A/B/C pick needed.
+- **Decision C — capital-E superseded**: B2d is approved. `findings/write-capital-e-prefix-superseded.md` is superseded and absorbed into B2d. No A/B/C pick needed.
 - **Decision D — confirmed ship order**: B2a → B2c → B2b → B2d → B3 → C1 → C2 → C3 → B1 (last).
 - **Decision E — B1 timing**: Both B1 drafts ship AFTER B2a (error-routing/stderr) lands. Applied as timing note at top of each B1 draft.
 

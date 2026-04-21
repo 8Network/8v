@@ -196,7 +196,7 @@ No mutation list. For AF-4: invert the `\n` expansion (do not expand) — confir
 
 ---
 
-## §7 write-capital-e-prefix-followup.md
+## §7 write-capital-e-prefix-superseded.md (findings/)
 
 ### Blockers
 
@@ -260,7 +260,7 @@ M3 is not a mutation plan item (see Untestable claims above). M1 and M2 are adeq
 | slice-c1-init-hooks-correctness.md | REVISE | Fix H-1 exit code (exit 1, not 2, for runtime empty-stdin). Add failing-first test for I-3. Resolve BR-28 orphan. |
 | slice-c2-upgrade-contract.md | REVISE | Decide JSON shape at L1 (not deferred). Add test for "field absent when errored." Specify exit code for offline failure. |
 | slice-c3-write-semantics.md | REVISE | Fix CE-1 escape depth analysis. Resolve AF-1 L2 decision conflict with test. Resolve BR-38 orphan. Remove line number citations. |
-| write-capital-e-prefix-followup.md | REVISE | Record A/B/C decision. Document handoff into B2d. Convert M3 from open question to deterministic assertion. |
+| write-capital-e-prefix-superseded.md (findings/) | REVISE | Record A/B/C decision. Document handoff into B2d. Convert M3 from open question to deterministic assertion. |
 
 **READY: 0. REVISE: 7. REJECT: 0.**
 
@@ -290,7 +290,7 @@ Friction observed during this review session:
 | slice-c1-init-hooks-correctness.md | 3 | REVISE |
 | slice-c2-upgrade-contract.md | 3 | REVISE |
 | slice-c3-write-semantics.md | 3 | REVISE |
-| write-capital-e-prefix-followup.md | 2 | REVISE |
+| write-capital-e-prefix-superseded.md (findings/) | 2 | REVISE |
 
 **Total blockers: 19. READY: 0. REVISE: 7. REJECT: 0.**
 
