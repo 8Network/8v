@@ -10,6 +10,12 @@
 //! Types (Check trait, CheckReport, CheckOutcome, etc.) live in o8v-core.
 //! Stack definitions and tool execution live in o8v-stacks.
 //! This crate is the orchestration glue.
+//!
+//! ```text
+//! o8v-fs  ──┐
+//! o8v-core ─┼──▶  o8v-check  ──▶  o8v (cli)
+//! o8v-stacks┘
+//! ```
 
 use o8v_core::project::ProjectRoot;
 use o8v_core::{
