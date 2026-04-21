@@ -16,15 +16,20 @@ use serde::{Deserialize, Serialize};
 const HOOK_LINE_MARKER: &str = "hooks git on-commit";
 const COMMIT_MSG_HOOK_LINE_MARKER: &str = "hooks git on-commit-msg";
 
-/// Absolute path to the currently running 8v binary — used to generate
+/// POSIX sh single-quote escaping: `'...'` with internal `'` escaped as `'\''`.
+/// Handles paths with spaces, parentheses, or any character except NUL.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Absolute path to the currently running 8v binary, shell-quoted for use in
 /// installed hook scripts so they don't depend on PATH at hook fire time.
-/// Falls back to the bare name if env::current_exe() fails (extremely rare;
-/// platform-dependent — keeps installation working rather than aborting).
+/// Falls back to the bare name `8v` (no quoting needed) if resolution fails.
 fn resolved_8v_command() -> String {
     match std::env::current_exe() {
         Ok(p) => match p.canonicalize() {
-            Ok(abs) => abs.to_string_lossy().into_owned(),
-            Err(_) => p.to_string_lossy().into_owned(),
+            Ok(abs) => shell_quote(&abs.to_string_lossy()),
+            Err(_) => shell_quote(&p.to_string_lossy()),
         },
         Err(_) => "8v".to_string(),
     }
@@ -474,6 +479,26 @@ mod tests {
 
     fn canonical(dir: &TempDir) -> PathBuf {
         std::fs::canonicalize(dir.path()).unwrap()
+    }
+
+    // ── shell_quote ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn shell_quote_plain_path() {
+        assert_eq!(shell_quote("/usr/local/bin/8v"), "'/usr/local/bin/8v'");
+    }
+
+    #[test]
+    fn shell_quote_path_with_spaces() {
+        assert_eq!(
+            shell_quote("/Users/john doe/bin/8v"),
+            "'/Users/john doe/bin/8v'"
+        );
+    }
+
+    #[test]
+    fn shell_quote_path_with_single_quote() {
+        assert_eq!(shell_quote("/tmp/it's/8v"), "'/tmp/it'\\''s/8v'");
     }
 
     // ── Git pre-commit ──────────────────────────────────────────────────────
