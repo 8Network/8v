@@ -499,11 +499,19 @@ fn assess_confidence(n: usize, max_cv: f64) -> (bool, String) {
 }
 
 fn hash_hex(s: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    s.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    // FNV-1a: stable across Rust versions and machines (unlike DefaultHasher).
+    // Produces a deterministic 64-bit hash of the prompt text, used as a
+    // short fingerprint (first 8 hex chars) to identify prompt versions.
+    fn fnv1a(s: &str) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in s.bytes() {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash
+    }
+    let full = format!("{:016x}", fnv1a(s));
+    full[..8].to_string()
 }
 
 fn now_ms() -> i64 {

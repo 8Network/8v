@@ -16,6 +16,15 @@
 //! # One scenario
 //! cargo test -p o8v --test agent_benchmark fix_test_8v -- --ignored --nocapture
 //! ```
+//!
+//! ## IMPORTANT: run experiments sequentially
+//!
+//! Experiments share `~/.8v/events.ndjson`. Running them in parallel produces
+//! corrupted measurements. Always pass `--test-threads=1`:
+//!
+//! ```sh
+//! cargo test --test agent_benchmark experiment_fix_test -- --ignored --nocapture --test-threads=1
+//! ```
 
 mod scenarios;
 
@@ -210,16 +219,18 @@ fn experiment_diagnose() {
     let binary = env!("CARGO_BIN_EXE_8v");
     let result = run_experiment(&scenarios::EXPERIMENT_DIAGNOSE, binary);
 
-    // Agent must fix the issues — cargo check/clippy must pass
+    // Agent must fix the issues — cargo check/clippy must pass in every run.
+    // Uses the same 100%-pass gate as all other experiments: anything less
+    // means the agent is not reliably solving the task.
     assert!(
-        result.control.check_pass_count() > 0,
+        result.control.check_pass_count() == result.n,
         "Control failed to fix issues in {}/{} runs",
         result.control.check_pass_count(),
         result.n
     );
     for sample in &result.treatments {
         assert!(
-            sample.check_pass_count() > 0,
+            sample.check_pass_count() == result.n,
             "{} failed to fix issues in {}/{} runs",
             sample.description,
             sample.check_pass_count(),
@@ -380,15 +391,19 @@ fn experiment_fix_test_codex() {
     let binary = env!("CARGO_BIN_EXE_8v");
     let result = run_experiment(&scenarios::EXPERIMENT_FIX_TEST_CODEX, binary);
 
+    // Codex is an experimental agent: MCP sandbox constraints mean it cannot
+    // always complete the task. The gate here requires 100% pass (same as all
+    // other experiments) — a weaker gate would let this test pass even if
+    // Codex never reliably solves the task.
     assert!(
-        result.control.tests_pass_count() > 0,
+        result.control.tests_pass_count() == result.n,
         "Codex control failed to fix the test in {}/{} runs",
         result.control.tests_pass_count(),
         result.n
     );
     for sample in &result.treatments {
         assert!(
-            sample.tests_pass_count() > 0,
+            sample.tests_pass_count() == result.n,
             "{} failed to fix the test in {}/{} runs",
             sample.description,
             sample.tests_pass_count(),
