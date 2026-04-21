@@ -428,10 +428,10 @@ fn init_yes_malformed_settings_json_exits_nonzero_holds() {
     );
 }
 
-// ── H-1 fail-closed (slice-c1-init-hooks-correctness) ─────────────────────────
+// ── H-1 fail-closed ─────────────────────────────────────────────────────────────
 
 /// Empty stdin at the PreToolUse gate is not a legitimate invocation.
-/// Fail-closed per slice-c1 H-1: exit 1 (block), not exit 0 (silent allow).
+/// Fail-closed: exit 1 (block), not exit 0 (silent allow).
 #[test]
 fn pre_tool_use_empty_stdin_fails_closed_exit_1() {
     let dir = home();
@@ -447,7 +447,7 @@ stderr: {}",
 }
 
 /// Malformed JSON at the PreToolUse gate is not a legitimate invocation.
-/// Fail-closed per slice-c1 H-1: exit 1 (block), not exit 0 (silent allow).
+/// Fail-closed: exit 1 (block), not exit 0 (silent allow).
 #[test]
 fn pre_tool_use_malformed_json_fails_closed_exit_1() {
     let dir = home();
@@ -478,11 +478,11 @@ stderr: {}",
     );
 }
 
-// ── I-3 installed hooks use absolute 8v path (slice-c1) ─────────────────────
+// ── I-3 installed hooks use absolute 8v path ───────────────────────────────────
 
 /// Generated pre-commit hook must invoke 8v by absolute path, not the
 /// bare name. PATH at install time may differ from PATH at hook fire time
-/// (git runs hooks with a sanitized environment). Per slice-c1 I-3 +
+/// (git runs hooks with a sanitized environment). Per I-3 +
 /// counterexample 4: prefer absolute path discovered at install.
 #[test]
 fn i3_git_pre_commit_hook_uses_absolute_8v_path() {

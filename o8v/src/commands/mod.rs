@@ -422,7 +422,7 @@ pub async fn dispatch_command_with_agent(
                 HookCommand::Post => (handle_post(&stdin_buf, &storage), false),
             };
 
-            // Per slice-c1 H-1: Pre with invalid input (empty or malformed JSON)
+            // Pre with invalid input (empty or malformed JSON)
             // is not a legitimate tool invocation. Fail-closed at the gate
             // boundary (exit 1 = block). IO failures while emitting are still
             // non-blocking (exit 0) to preserve the observability principle —

@@ -135,7 +135,7 @@ fn search_json_is_valid() {
 
 #[test]
 fn search_no_match_exits_1_with_empty_stderr() {
-    // Per error-contract §7 (CE-2 resolution): no matches + no I/O errors = exit 1
+    // Per error-contract §7: no matches + no I/O errors = exit 1
     // with stderr empty. Agents distinguish clean no-match (stderr empty) from
     // partial I/O failure (stderr non-empty).
     let path = o8v_testkit::fixture_path("o8v", "build-rust");
