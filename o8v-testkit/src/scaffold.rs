@@ -124,6 +124,22 @@ fn copy_dir_recursive(src: &Path, dest: &Path, root: &ContainmentRoot) {
         } else if file_type.is_file() {
             let content = std::fs::read(&entry_path).expect("read fixture source file");
             o8v_fs::safe_write(&dest_path, root, &content).expect("safe_write in fixture copy");
+            // Preserve the executable bit so wrapper scripts in node_modules/.bin work.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = std::fs::metadata(&entry_path) {
+                    let mode = meta.permissions().mode();
+                    if mode & 0o111 != 0 {
+                        let mut perms = match std::fs::metadata(&dest_path) {
+                            Ok(m) => m.permissions(),
+                            Err(_) => std::fs::Permissions::from_mode(0o644),
+                        };
+                        perms.set_mode(mode & 0o777);
+                        let _ = std::fs::set_permissions(&dest_path, perms);
+                    }
+                }
+            }
         }
         // Symlinks are intentionally skipped — fixtures should not contain symlinks.
     }

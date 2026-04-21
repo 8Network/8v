@@ -29,6 +29,22 @@ pub fn parse(
         }
     }
 
+    // MSBuild emits each diagnostic twice (compile pass + summary pass), but the
+    // two occurrences are not adjacent — dedup_by won't work. Use a seen-set keyed
+    // on (location_str, line, col, rule) to retain first occurrence only.
+    let mut seen = std::collections::HashSet::new();
+    diagnostics.retain(|d| {
+        let line = d.span.as_ref().map(|s| s.line).unwrap_or(0);
+        let col = d.span.as_ref().map(|s| s.column).unwrap_or(0);
+        let key = (
+            format!("{:?}", d.location),
+            line,
+            col,
+            d.rule.as_deref().unwrap_or("").to_string(),
+        );
+        seen.insert(key)
+    });
+
     // Text parser: we scanned every line looking for ": error " / ": warning "
     // patterns. If we found none, the output is build noise — not "unparsed".
     let status = ParseStatus::Parsed;
@@ -197,6 +213,24 @@ mod tests {
         let result = run(input);
         assert_eq!(result.diagnostics.len(), 0);
         assert_eq!(result.status, ParseStatus::Parsed);
+    }
+
+    #[test]
+    fn msbuild_duplicate_errors_deduplicated() {
+        // MSBuild emits each error twice (compile pass + summary pass).
+        // The parser must collapse them into a single diagnostic each.
+        let input = "Program.cs(2,9): error CS0029: Cannot convert [/path/app.csproj]
+                      Program.cs(3,1): error CS0103: Name not found [/path/app.csproj]
+                      Program.cs(2,9): error CS0029: Cannot convert [/path/app.csproj]
+                      Program.cs(3,1): error CS0103: Name not found [/path/app.csproj]
+";
+        let result = run(input);
+        assert_eq!(
+            result.diagnostics.len(),
+            2,
+            "MSBuild duplicates must be collapsed to 2, got: {:?}",
+            result.diagnostics
+        );
     }
 
     #[test]
