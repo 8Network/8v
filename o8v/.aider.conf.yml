@@ -1,0 +1,4 @@
+lint-cmd: 8v check .
+test-cmd: 8v test .
+auto-lint: true
+no-auto-commits: true

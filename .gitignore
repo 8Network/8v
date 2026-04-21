@@ -32,3 +32,9 @@ rustc-ice-*.txt
 # Stray text files (allow specific exception)
 *.txt
 !o8v/src/init/ai_section.txt
+
+# Agent/skill runtime state
+.agents/
+skills-lock.json
+.aider.chat.history.md
+rebar.lock
