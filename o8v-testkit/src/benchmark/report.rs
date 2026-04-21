@@ -540,10 +540,15 @@ pub fn render_markdown(report: &ReportJson) -> String {
 
     // Header
     md.push_str(&format!("# Benchmark — {}\n\n", report.experiment));
+    let version_summary = report
+        .version_8v
+        .as_deref()
+        .map(summarize_8v_version)
+        .unwrap_or_else(|| "unknown".into());
     md.push_str(&format!(
-        "**Commit:** {}  |  **8v version:** {}  |  **Runs:** N={} per condition\n",
-        report.commit,
-        report.version_8v.as_deref().unwrap_or("unknown"),
+        "**8v:** {}  |  **Benchmark commit:** `{}`  |  **Runs:** N={} per condition\n",
+        version_summary,
+        &report.commit[..8.min(report.commit.len())],
         report.confidence.n_per_condition,
     ));
     md.push_str(&format!(
@@ -774,6 +779,40 @@ pub fn render_markdown(report: &ReportJson) -> String {
     }
 
     md
+}
+
+/// Condense the multi-line `8v --version` output into a single readable token.
+///
+/// Input (example):
+/// ```text
+/// 8v 0.1.0
+/// commit:       c43e772 (dirty, 61 files modified)
+/// commit_date:  2026-04-21 16:11:42 UTC
+/// profile:      release
+/// ...
+/// ```
+/// Output: `v0.1.0 @ c43e772 (dirty)` or `v0.1.0 @ c43e772 (clean)`.
+fn summarize_8v_version(raw: &str) -> String {
+    let mut version = None::<&str>;
+    let mut commit_short = None::<&str>;
+    let mut dirty = false;
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.starts_with("8v ") && version.is_none() {
+            version = line.strip_prefix("8v ");
+        } else if let Some(rest) = line.strip_prefix("commit:") {
+            let val = rest.trim();
+            // val looks like "c43e772 (dirty, 61 files modified)" or just "c43e772"
+            commit_short = Some(val.split_whitespace().next().unwrap_or(val));
+            dirty = val.contains("dirty");
+        }
+    }
+
+    let ver = version.unwrap_or("0.1.0");
+    let sha = commit_short.unwrap_or("unknown");
+    let state = if dirty { "dirty" } else { "clean" };
+    format!("v{ver} @ {sha} ({state})")
 }
 
 fn format_number(n: u64) -> String {
@@ -1119,7 +1158,8 @@ mod tests {
         let report = build_report(&make_result());
         let md = render_markdown(&report);
         assert!(md.starts_with("# Benchmark — test-experiment\n"));
-        assert!(md.contains("**Commit:**"));
+        assert!(md.contains("**8v:**"));
+        assert!(md.contains("**Benchmark commit:**"));
         assert!(md.contains("**Task:** test-task"));
         assert!(md.contains("**Agent:** claude-code v1.0.0"));
     }
