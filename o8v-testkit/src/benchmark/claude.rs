@@ -269,7 +269,11 @@ impl ClaudeDriver {
             .current_dir(working_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            // Remove the cargo-test isolation override so the spawned MCP server
+            // falls back to HOME and writes to ~/.8v/events.ndjson — making
+            // benchmark sessions visible in `8v log` and `8v stats`.
+            .env_remove("_8V_HOME");
         for (k, v) in &artifacts.env {
             cmd.env(k, v);
         }

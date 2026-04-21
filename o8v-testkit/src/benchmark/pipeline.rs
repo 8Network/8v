@@ -290,42 +290,6 @@ fn run_8v_init(project: &Path, binary: &str) {
         "8v init --yes --mcp-command {binary} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    // Patch .mcp.json so the spawned MCP server writes to ~/.8v/events.ndjson
-    // (the real user store), not the cargo-test isolation dir (_8V_HOME).
-    // This makes benchmark sessions visible via `8v log` and `8v stats`.
-    patch_mcp_home_env(project);
-}
-
-fn patch_mcp_home_env(project: &Path) {
-    let mcp_path = project.join(".mcp.json");
-    let Ok(content) = std::fs::read_to_string(&mcp_path) else {
-        return;
-    };
-    let Ok(mut config) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return;
-    };
-    let Ok(real_home) = std::env::var("HOME") else {
-        return;
-    };
-    if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-        for server in servers.values_mut() {
-            let obj = server
-                .as_object_mut()
-                .expect("mcp server entry is an object");
-            let env = obj
-                .entry("env")
-                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-            if let Some(env_map) = env.as_object_mut() {
-                env_map.insert(
-                    "_8V_HOME".into(),
-                    serde_json::Value::String(real_home.clone()),
-                );
-            }
-        }
-    }
-    if let Ok(patched) = serde_json::to_string_pretty(&config) {
-        let _ = std::fs::write(&mcp_path, patched.as_bytes());
-    }
 }
 
 fn write_codex_config(project: &Path, binary: &str) {
