@@ -4,9 +4,9 @@
 
 //! Library crate backing the 8v CLI binary.
 //!
-//! Contains all command implementations (check, fmt, test, read, write,
-//! search, ls, init, hooks, log, stats, upgrade, mcp) plus the
-//! aggregator, event reader, and MCP server adapter.
+//! Contains all command implementations (check, fmt, test, build, read, write,
+//! search, ls, init, hooks, log, stats, upgrade) plus the aggregator, event
+//! reader, and MCP server adapter (see `src/mcp/` — not a regular command).
 
 pub mod aggregator;
 pub mod dispatch;

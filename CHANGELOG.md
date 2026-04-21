@@ -51,7 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - `--plain` — plain text output (no colors, no formatting)
   - `--verbose` — verbose output including tool stderr
   - `--no-color` — disable colored output
-  - `--timeout <seconds>` — per-tool timeout (default: 30s)
+  - `--timeout <seconds>` — per-tool timeout (default: 300s / 5 minutes)
   - `--limit <count>` — limit errors shown per tool
 - Per-tool execution timing in human output
 - Signal handling:
@@ -63,7 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - 2 — nothing to check (no supported files detected)
   - 130 — interrupted by signal
 - StackTools architecture: each language stack defines checks, formatter, and optional test runner
-- 577+ tests across all 10 crates (o8v-fs, o8v-project, o8v-process, o8v-core, o8v-stacks, o8v-check, o8v-events, o8v-testkit, o8v-workspace, o8v)
+- 577+ tests across all 7 crates (o8v-fs, o8v-process, o8v-core, o8v-stacks, o8v-check, o8v-testkit, o8v)
 - BSL-1.1 license
 - Multi-platform support:
   - macOS (arm64, x86_64) — code-signed and notarized

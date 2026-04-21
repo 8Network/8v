@@ -11,7 +11,8 @@ curl -fsSL https://releases.8vast.io/install.sh | sh
 Or build from source:
 
 ```sh
-cargo install --path o8v
+cargo build -p o8v
+# binary at target/debug/o8v
 ```
 
 ## Usage
@@ -22,8 +23,12 @@ cargo install --path o8v
 8v read src/main.rs     # symbol extraction + line ranges for AI agents
 8v write src/main.rs    # safe file editing (find/replace, insert, delete)
 8v search "fn main"     # regex search, 3 output modes (compact/text/context)
+8v ls .                 # file hierarchy with project labels and line counts
 8v test .               # run project test runner
 8v init                 # set up MCP, hooks, permissions
+8v log                  # show recent 8v command history
+8v stats                # token and call aggregates by command
+8v upgrade              # upgrade to the latest release
 ```
 
 ## MCP Integration
@@ -78,7 +83,7 @@ cargo build -p o8v       # CLI binary
 8v check .                   # self-check
 ```
 
-Workspace: 10 crates (o8v-fs, o8v-process, o8v-project, o8v-core, o8v-stacks, o8v-check, o8v-events, o8v-testkit, o8v-workspace, o8v).
+Workspace: 7 crates (o8v-fs, o8v-process, o8v-core, o8v-stacks, o8v-check, o8v-testkit, o8v).
 
 ## License
 
