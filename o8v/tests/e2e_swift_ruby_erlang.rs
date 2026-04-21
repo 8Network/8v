@@ -351,3 +351,152 @@ fn erlang_check_json_has_rebar3_entries() {
         "erlang checks must include at least one rebar3 tool, got: {names:?}"
     );
 }
+
+// ─── Ruby violations ─────────────────────────────────────────────────────────
+//
+// Fixture: check-ruby-violations/
+//   broken.rb — 3 rubocop offenses (error severity):
+//     line 1  Lint/UselessAssignment   — `x = 1` is never read
+//     line 1  Style/FrozenStringLiteralComment — missing magic comment
+//     line 2  Style/StringLiterals     — double-quoted string "hello"
+//
+// These tests require rubocop on PATH.  When rubocop is absent, outcome="error"
+// (not "failed") and all diagnostic-count assertions are moot — each test
+// guards against that case explicitly.
+
+fn ruby_violations_rubocop_check(project: &TempProject) -> serde_json::Value {
+    let out = bin()
+        .args(["check", "--json", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check --json on check-ruby-violations");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!("invalid JSON: {e}\noutput: {stdout}"),
+    }
+}
+
+fn ruby_violations_find_rubocop(json: &serde_json::Value) -> &serde_json::Value {
+    json["results"]
+        .as_array()
+        .expect("results array")
+        .iter()
+        .find(|r| r["stack"].as_str() == Some("ruby"))
+        .expect("ruby result not found")["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|c| c["name"].as_str() == Some("rubocop"))
+        .expect("rubocop check not found")
+}
+
+#[test]
+fn ruby_violations_exits_1() {
+    let project = fixture("check-ruby-violations");
+    let out = bin()
+        .args(["check", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check on check-ruby-violations");
+    assert_eq!(
+        out.status.code().unwrap_or(99),
+        1,
+        "rubocop violations must exit 1\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn ruby_violations_outcome_failed() {
+    let project = fixture("check-ruby-violations");
+    let json = ruby_violations_rubocop_check(&project);
+    let rubocop = ruby_violations_find_rubocop(&json);
+    let outcome = rubocop["outcome"].as_str().unwrap_or("missing");
+    // When rubocop is absent the outcome is "error", not "failed".
+    // The test is meaningful only when rubocop ran successfully.
+    if outcome == "error" {
+        let cause = rubocop["cause"].as_str().unwrap_or("");
+        assert!(
+            cause.contains("NotFound") || cause.contains("not found"),
+            "outcome=error but cause is unexpected: {cause}"
+        );
+        return; // rubocop not installed — skip the behavioral assertion
+    }
+    assert_eq!(
+        outcome, "failed",
+        "rubocop must report 'failed' (not 'error') when violations exist: {rubocop}"
+    );
+}
+
+#[test]
+fn ruby_violations_exactly_three_diagnostics() {
+    // broken.rb has exactly 3 violations. Catches parser duplication or silent-drop.
+    let project = fixture("check-ruby-violations");
+    let json = ruby_violations_rubocop_check(&project);
+    let rubocop = ruby_violations_find_rubocop(&json);
+    if rubocop["outcome"].as_str() == Some("error") {
+        return; // rubocop not installed
+    }
+    let diags = rubocop["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(
+        diags.len(),
+        3,
+        "broken.rb has exactly 3 rubocop violations — got: {diags:?}"
+    );
+}
+
+#[test]
+fn ruby_violations_has_frozen_string_literal_cop() {
+    // broken.rb is missing the `# frozen_string_literal: true` magic comment.
+    let project = fixture("check-ruby-violations");
+    let json = ruby_violations_rubocop_check(&project);
+    let rubocop = ruby_violations_find_rubocop(&json);
+    if rubocop["outcome"].as_str() == Some("error") {
+        return; // rubocop not installed
+    }
+    let diags = rubocop["diagnostics"].as_array().expect("diagnostics");
+    let has_cop = diags.iter().any(|d| {
+        d["rule"]
+            .as_str()
+            .map(|r| r == "Style/FrozenStringLiteralComment")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_cop,
+        "expected Style/FrozenStringLiteralComment in diagnostics: {diags:?}"
+    );
+}
+
+#[test]
+fn ruby_violations_all_severity_error() {
+    // .rubocop.yml sets Severity: error for all three cops.
+    let project = fixture("check-ruby-violations");
+    let json = ruby_violations_rubocop_check(&project);
+    let rubocop = ruby_violations_find_rubocop(&json);
+    if rubocop["outcome"].as_str() == Some("error") {
+        return; // rubocop not installed
+    }
+    let diags = rubocop["diagnostics"].as_array().expect("diagnostics");
+    for d in diags {
+        assert_eq!(
+            d["severity"].as_str(),
+            Some("error"),
+            "rubocop diagnostic must be severity=error (cops set to Severity: error): {d}"
+        );
+    }
+}
+
+#[test]
+fn ruby_violations_span_has_line() {
+    // rubocop provides start_line — the parser must extract it.
+    let project = fixture("check-ruby-violations");
+    let json = ruby_violations_rubocop_check(&project);
+    let rubocop = ruby_violations_find_rubocop(&json);
+    if rubocop["outcome"].as_str() == Some("error") {
+        return; // rubocop not installed
+    }
+    let diags = rubocop["diagnostics"].as_array().expect("diagnostics");
+    for d in diags {
+        let line = d["span"]["line"].as_u64().unwrap_or(0);
+        assert!(line > 0, "diagnostic must have span.line > 0: {d}");
+    }
+}

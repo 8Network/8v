@@ -331,3 +331,77 @@ fn dotnet_violations_all_severity_error() {
         );
     }
 }
+
+// ─── JavaScript clean ─────────────────────────────────────────────────────────
+//
+// Fixture: check-javascript/
+//   good.js — `const x = 42; console.log(x);`
+//   eslint.config.mjs — same no-unused-vars + no-undef rules as violations fixture,
+//                        plus node globals so console is defined.
+//
+// These tests invert the violations tests: eslint must exit 0 with zero diagnostics.
+
+#[test]
+fn js_clean_exits_0() {
+    let project = fixture("check-javascript");
+    let out = bin()
+        .args(["check", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check on check-javascript");
+    assert_eq!(
+        out.status.code().unwrap_or(99),
+        0,
+        "clean JS project must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn js_clean_zero_diagnostics() {
+    let project = fixture("check-javascript");
+    let json = check_json(&project);
+    let eslint = find_check(&json, "javascript", "eslint");
+    let diags = eslint["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(
+        diags.len(),
+        0,
+        "clean JS project must produce zero eslint diagnostics — got: {diags:?}"
+    );
+}
+
+// ─── .NET clean ───────────────────────────────────────────────────────────────
+//
+// Fixture: check-dotnet/
+//   Program.cs — `using System; Console.WriteLine("Hello, World!");`
+//   Clean.csproj — net10.0 exe project
+//
+// These tests invert the violations tests: dotnet build must exit 0 with zero
+// diagnostics.
+
+#[test]
+fn dotnet_clean_exits_0() {
+    let project = fixture("check-dotnet");
+    let out = bin()
+        .args(["check", project.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check on check-dotnet");
+    assert_eq!(
+        out.status.code().unwrap_or(99),
+        0,
+        "clean .NET project must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn dotnet_clean_zero_diagnostics() {
+    let project = fixture("check-dotnet");
+    let json = check_json(&project);
+    let build = find_check(&json, "dotnet", "dotnet build");
+    let diags = build["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(
+        diags.len(),
+        0,
+        "clean .NET project must produce zero build diagnostics — got: {diags:?}"
+    );
+}

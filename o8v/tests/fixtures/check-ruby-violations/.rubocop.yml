@@ -1,0 +1,20 @@
+AllCops:
+  NewCops: enable
+  DisabledByDefault: true
+
+# Enforce the frozen string literal magic comment at the top of every file.
+Style/FrozenStringLiteralComment:
+  Enabled: true
+  EnforcedStyle: always
+  Severity: error
+
+# Prefer single-quoted strings unless interpolation or special symbols are needed.
+Style/StringLiterals:
+  Enabled: true
+  EnforcedStyle: single_quotes
+  Severity: error
+
+# Flag assignments whose value is never read.
+Lint/UselessAssignment:
+  Enabled: true
+  Severity: error
