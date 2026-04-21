@@ -186,7 +186,7 @@ pub fn run_scenario(
         mcp_protocol_version: events.agent.protocol_version,
         agent_capabilities: events.agent.capabilities,
         verification,
-        feedback: None, // TODO: agent feedback in a later increment
+        feedback: None,
         tool_calls_detail: agent_result.tool_calls_detail.clone(),
         profile,
         profile_version,
