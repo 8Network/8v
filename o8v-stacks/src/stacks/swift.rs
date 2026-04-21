@@ -12,7 +12,7 @@ pub fn tools() -> StackTools {
         checks: vec![Box::new(EnrichedToolCheck {
             name: "swiftlint",
             program: "swiftlint",
-            args: &["lint", "--reporter", "json", "--exclude", ".build"],
+            args: &["lint", "--reporter", "json"],
             stack: "swift",
             parse_fn: crate::parse::swiftlint::parse,
             env: &[],

@@ -21,6 +21,9 @@ pub fn parse(
     let mut diagnostics = Vec::new();
     let mut parsed_count = 0u32;
     let mut skipped = 0u32;
+    // True only when a line is neither empty, nor a progress prefix, nor a
+    // parseable diagnostic — i.e. genuinely unrecognised content.
+    let mut has_unparseable_lines = false;
 
     for line in stdout.lines() {
         let trimmed = line.trim();
@@ -30,8 +33,12 @@ pub fn parse(
             continue;
         }
 
-        // Skip rebar3 progress indicators (lines starting with "===> ")
-        if trimmed.starts_with("===> ") {
+        // rebar3 always writes progress to stdout with ANSI color codes.
+        // Strip those before checking for the "===> " progress prefix.
+        // Also skip lines that are pure ANSI resets ("\x1b[0m").
+        let plain = strip_ansi(trimmed);
+        let plain = plain.trim();
+        if plain.is_empty() || plain.starts_with("===> ") {
             skipped += 1;
             continue;
         }
@@ -62,6 +69,7 @@ pub fn parse(
                 });
             }
             None => {
+                has_unparseable_lines = true;
                 skipped += 1;
                 tracing::debug!("skipping malformed xref line: {}", trimmed);
                 continue;
@@ -77,7 +85,10 @@ pub fn parse(
         );
     }
 
-    let status = if !diagnostics.is_empty() || stdout.trim().is_empty() {
+    // Parsed when we found diagnostics OR when every non-empty line was
+    // either a recognised progress prefix or a valid diagnostic format.
+    // Only Unparsed when lines existed that were neither.
+    let status = if !diagnostics.is_empty() || !has_unparseable_lines {
         ParseStatus::Parsed
     } else {
         ParseStatus::Unparsed
@@ -88,6 +99,23 @@ pub fn parse(
         status,
         parsed_items: parsed_count,
     }
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            for ch in chars.by_ref() {
+                if ch.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Parse a single xref output line.
@@ -377,6 +405,29 @@ src/helper.erl:10: Warning: msg2 (Xref)
         let input = "src/file.erl:-5: Warning: msg (Xref)";
         let result = run(input);
         // parse::<u32>() fails on negative, line is skipped
+        assert_eq!(result.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn ansi_prefixed_progress_lines_skipped() {
+        // rebar3 writes ANSI color codes to stdout before "===> " progress lines
+        let input = "\x1b[0;32m===> Verifying dependencies...\x1b[0m
+src/flight.erl:5: Warning: flight:book/2 is unused export (Xref)
+\x1b[0m";
+        let result = run(input);
+        assert_eq!(result.status, ParseStatus::Parsed);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.parsed_items, 1);
+    }
+
+    #[test]
+    fn only_ansi_progress_is_parsed_not_error() {
+        // All output is ANSI-colored rebar3 progress — no diagnostics, but status=Parsed
+        let input = "\x1b[0;32m===> Verifying dependencies...\x1b[0m
+\x1b[0;32m===> Running xref checks...\x1b[0m
+";
+        let result = run(input);
+        assert_eq!(result.status, ParseStatus::Parsed);
         assert_eq!(result.diagnostics.len(), 0);
     }
 
