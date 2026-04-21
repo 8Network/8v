@@ -287,7 +287,7 @@ fn mcp_hooks_help_returns_ok() {
 /// PRE-FIX: fails because use_stderr is hardcoded to true for hooks.
 /// POST-FIX: passes because use_stderr follows audience (Agent → false).
 #[test]
-fn m5_hooks_successful_run_is_not_mcp_error() {
+fn hooks_exit_0_is_not_mcp_error() {
     let ws = make_workspace();
     let mut client = McpClient::spawn(&file_uri(&ws));
     // `hooks claude post-tool-use` is a noop that always exits 0.
@@ -319,7 +319,7 @@ fn mcp_upgrade_help_returns_ok() {
 /// PRE-FIX: fails with `error: not a dispatchable command`.
 /// POST-FIX: succeeds; init runs non-interactively via --yes.
 #[test]
-fn f13_init_yes_via_mcp_succeeds() {
+fn init_yes_via_mcp_succeeds() {
     let ws = make_workspace();
     let mut client = McpClient::spawn(&file_uri(&ws));
     let resp = client.tools_call("init --yes");
@@ -332,7 +332,7 @@ fn f13_init_yes_via_mcp_succeeds() {
 
 /// F13: `init --yes` result must not contain "not a dispatchable command".
 #[test]
-fn f13_init_not_dispatchable_error_is_gone() {
+fn init_yes_via_mcp_does_not_return_not_dispatchable_error() {
     let ws = make_workspace();
     let mut client = McpClient::spawn(&file_uri(&ws));
     let resp = client.tools_call("init --yes");

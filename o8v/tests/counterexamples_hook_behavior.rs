@@ -433,7 +433,7 @@ fn init_yes_malformed_settings_json_exits_nonzero_holds() {
 /// Empty stdin at the PreToolUse gate is not a legitimate invocation.
 /// Fail-closed per slice-c1 H-1: exit 1 (block), not exit 0 (silent allow).
 #[test]
-fn h1_pre_empty_stdin_fails_closed_exit_1() {
+fn pre_tool_use_empty_stdin_fails_closed_exit_1() {
     let dir = home();
     let out = run_pre(&dir, "");
     assert_eq!(
@@ -449,7 +449,7 @@ stderr: {}",
 /// Malformed JSON at the PreToolUse gate is not a legitimate invocation.
 /// Fail-closed per slice-c1 H-1: exit 1 (block), not exit 0 (silent allow).
 #[test]
-fn h1_pre_malformed_json_fails_closed_exit_1() {
+fn pre_tool_use_malformed_json_fails_closed_exit_1() {
     let dir = home();
     let out = run_pre(&dir, "this is not json at all");
     assert_eq!(
@@ -465,7 +465,7 @@ stderr: {}",
 /// Valid PreToolUse stdin still exits 0 — the fail-closed behavior must
 /// only trigger on invalid input, not on the happy path.
 #[test]
-fn h1_pre_valid_stdin_still_exits_0() {
+fn pre_tool_use_valid_stdin_exits_0() {
     let dir = home();
     let payload = pre_payload("sess-h1-ok", "tu-ok", "Bash", "echo ok");
     let out = run_pre(&dir, &payload);
