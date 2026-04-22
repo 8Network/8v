@@ -1033,6 +1033,7 @@ name = "o8v"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "base64 0.22.1",
  "clap",
  "ctrlc",
  "dialoguer",
@@ -1079,6 +1080,7 @@ dependencies = [
 name = "o8v-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "o8v-fs",
  "o8v-process",
  "o8v-testkit",

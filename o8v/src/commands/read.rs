@@ -24,8 +24,43 @@ pub struct Args {
     #[arg(long, overrides_with = "full")]
     pub full: bool,
 
+    /// For readable binary files (PDF, images), return base64-encoded content
+    /// with MIME type. Without this flag, only metadata is returned.
+    #[arg(long)]
+    pub binary: bool,
+
     #[command(flatten)]
     pub format: super::output_format::OutputFormat,
+}
+
+/// Extensions where the symbol map is not meaningful and raw text is the
+/// expected output: data, markup, and config files. When symbol extraction
+/// returns empty for these, fall back to rendering the full content.
+fn is_data_or_markup_ext(ext: &str) -> bool {
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "svg"
+            | "md"
+            | "markdown"
+            | "txt"
+            | "text"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "json"
+            | "json5"
+            | "jsonc"
+            | "xml"
+            | "html"
+            | "htm"
+            | "csv"
+            | "tsv"
+            | "ini"
+            | "conf"
+            | "cfg"
+            | "env"
+            | "rst"
+    )
 }
 
 // ─── Path Parsing ────────────────────────────────────────────────────────────
@@ -57,8 +92,11 @@ fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
 fn read_one(
     label: &str,
     full: bool,
+    binary: bool,
     workspace: &crate::workspace::WorkspaceRoot,
 ) -> Result<o8v_core::render::read_report::ReadReport, String> {
+    use base64::Engine;
+    use o8v_core::mime::{detect_kind, mime_for_ext, FileKind};
     use o8v_core::render::read_report::{LineEntry, ReadReport, SymbolEntry};
 
     let (file_path, range) = parse_path_range(label);
@@ -82,6 +120,49 @@ fn read_one(
     };
 
     let config = o8v_fs::FsConfig::default();
+
+    // Classify by extension before attempting a text read — binary files
+    // (PDF, images) take the bytes path, not the UTF-8 path.
+    let extension = Path::new(&file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let kind = detect_kind(extension);
+
+    if matches!(kind, FileKind::ReadableBinary) {
+        let bytes =
+            o8v_fs::safe_read_bytes(&abs_path, root, &config).map_err(|e| format!("8v: {e}"))?;
+        let mime_type = mime_for_ext(extension)
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        let size_bytes = bytes.len() as u64;
+        if binary {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            return Ok(ReadReport::BinaryContent {
+                path: display_path,
+                mime_type,
+                size_bytes,
+                base64: b64,
+            });
+        }
+        return Ok(ReadReport::BinaryMeta {
+            path: display_path,
+            mime_type,
+            size_bytes,
+        });
+    }
+
+    if matches!(kind, FileKind::OpaqueBinary) {
+        let size_bytes = match o8v_fs::safe_metadata(&abs_path, root) {
+            Ok(m) => m.len(),
+            Err(e) => return Err(format!("8v: {e}")),
+        };
+        let mime_type = mime_for_ext(extension).unwrap_or("application/octet-stream");
+        return Err(format!(
+            "8v: {file_path}: cannot read opaque binary file ({mime_type}, {size_bytes} bytes)"
+        ));
+    }
+
     let file = match o8v_fs::safe_read(&abs_path, root, &config) {
         Ok(f) => f,
         Err(o8v_fs::FsError::Io { cause, .. })
@@ -159,10 +240,6 @@ fn read_one(
             lines,
         }
     } else {
-        let extension = Path::new(&file_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
         let symbols = o8v_core::symbols::extract_symbols(content, extension);
         let entries: Vec<SymbolEntry> = symbols
             .into_iter()
@@ -173,10 +250,30 @@ fn read_one(
                 signature: s.signature,
             })
             .collect();
-        ReadReport::Symbols {
-            path: display_path,
-            total_lines,
-            symbols: entries,
+        // For text files with no extractable symbols (SVG, Markdown, plain
+        // text, TOML, YAML, etc.), fall back to returning the full content.
+        // The symbol map is empty and unhelpful; the raw text is what the
+        // agent actually wants.
+        if entries.is_empty() && is_data_or_markup_ext(extension) {
+            let lines: Vec<LineEntry> = content
+                .lines()
+                .enumerate()
+                .map(|(i, line)| LineEntry {
+                    line: i + 1,
+                    text: line.to_string(),
+                })
+                .collect();
+            ReadReport::Full {
+                path: display_path,
+                total_lines,
+                lines,
+            }
+        } else {
+            ReadReport::Symbols {
+                path: display_path,
+                total_lines,
+                symbols: entries,
+            }
         }
     };
 
@@ -200,7 +297,7 @@ pub fn read_to_report(
 
     if args.paths.len() == 1 {
         // Single path — backward-compatible: return the sub-report directly (no Multi wrapper).
-        return read_one(&args.paths[0], args.full, workspace);
+        return read_one(&args.paths[0], args.full, args.binary, workspace);
     }
 
     // Multiple paths — collect into Multi, errors are inline.
@@ -223,7 +320,7 @@ pub fn read_to_report(
                 Ok(rel) => format!("{}{}", rel.to_string_lossy(), range_suffix),
                 Err(_) => label.clone(),
             };
-            let result = match read_one(label, args.full, workspace) {
+            let result = match read_one(label, args.full, args.binary, workspace) {
                 Ok(report) => MultiResult::Ok {
                     report: Box::new(report),
                 },

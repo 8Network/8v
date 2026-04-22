@@ -66,6 +66,20 @@ pub fn safe_read(
     guard::guarded_read(path, root.as_path(), config)
 }
 
+/// Read a file as raw bytes safely within a containment boundary.
+///
+/// Same guard pipeline as `safe_read` (canonicalize, containment, type check,
+/// size limit, TOCTOU narrowing) but does not interpret the bytes as UTF-8.
+/// Use for binary files — images, PDFs, and anything else you intend to
+/// base64-encode or inspect as bytes.
+pub fn safe_read_bytes(
+    path: &std::path::Path,
+    root: &ContainmentRoot,
+    config: &FsConfig,
+) -> Result<Vec<u8>, FsError> {
+    guard::guarded_read_bytes(path, root.as_path(), config)
+}
+
 /// Check if a path exists safely (no symlink following for the final component).
 ///
 /// Returns `Err(IsSymlink)` if the path is a symlink (dangling or not — this

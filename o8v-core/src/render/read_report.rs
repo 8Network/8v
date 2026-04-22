@@ -30,6 +30,19 @@ pub enum ReadReport {
     },
     /// Multiple files read in one call.
     Multi { entries: Vec<MultiEntry> },
+    /// Readable binary file — metadata only. Use `--binary` to get base64.
+    BinaryMeta {
+        path: String,
+        mime_type: String,
+        size_bytes: u64,
+    },
+    /// Readable binary file — base64-encoded content + MIME type.
+    BinaryContent {
+        path: String,
+        mime_type: String,
+        size_bytes: u64,
+        base64: String,
+    },
 }
 
 /// One entry in a multi-file read — either success or error.
@@ -112,6 +125,21 @@ impl super::Renderable for ReadReport {
                 }
                 Output::new(output)
             }
+            ReadReport::BinaryMeta {
+                path,
+                mime_type,
+                size_bytes,
+            } => Output::new(format!(
+                "{path}: {mime_type}, {size_bytes} bytes (use --binary to read)\n"
+            )),
+            ReadReport::BinaryContent {
+                path,
+                mime_type,
+                size_bytes,
+                base64,
+            } => Output::new(format!(
+                "{path}: {mime_type}, {size_bytes} bytes\nbase64: {base64}\n"
+            )),
             ReadReport::Multi { entries } => {
                 let mut output = String::new();
                 for (i, entry) in entries.iter().enumerate() {

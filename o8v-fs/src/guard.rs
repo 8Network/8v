@@ -105,3 +105,69 @@ pub(crate) fn guarded_read(
 fn meta_to_kind(meta: &std::fs::Metadata) -> FileKind {
     crate::error::meta_to_kind(meta)
 }
+
+/// Read a file as raw bytes with all safety guards.
+///
+/// Mirrors `guarded_read` steps 1-6 (canonicalize, containment, type check,
+/// TOCTOU narrowing, size check) then reads bytes instead of a UTF-8 string.
+/// No BOM handling — the caller gets exactly what's on disk.
+pub(crate) fn guarded_read_bytes(
+    path: &Path,
+    root: &Path,
+    config: &FsConfig,
+) -> Result<Vec<u8>, FsError> {
+    use std::io::Read;
+
+    let canonical = std::fs::canonicalize(path).map_err(|e| classify_io_error(path, e))?;
+
+    if !canonical.starts_with(root) {
+        tracing::debug!(
+            path = %path.display(),
+            root = %root.display(),
+            "path escapes project root"
+        );
+        return Err(FsError::SymlinkEscape {
+            path: path.to_path_buf(),
+        });
+    }
+
+    let pre_meta = std::fs::metadata(&canonical).map_err(|e| classify_io_error(path, e))?;
+    if !pre_meta.is_file() {
+        return Err(FsError::NotRegularFile {
+            path: path.to_path_buf(),
+            kind: meta_to_kind(&pre_meta),
+        });
+    }
+
+    let file = std::fs::File::open(&canonical).map_err(|e| classify_io_error(path, e))?;
+
+    let fd_meta = file.metadata().map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+    if !fd_meta.is_file() {
+        return Err(FsError::RaceCondition {
+            path: path.to_path_buf(),
+        });
+    }
+
+    if fd_meta.len() > config.max_file_size {
+        return Err(FsError::TooLarge {
+            path: path.to_path_buf(),
+            size: fd_meta.len(),
+            limit: config.max_file_size,
+        });
+    }
+
+    let capacity = usize::try_from(fd_meta.len())
+        .expect("file size bounded by max_file_size — always fits in usize");
+    let mut bytes = Vec::with_capacity(capacity);
+    std::io::BufReader::new(file)
+        .read_to_end(&mut bytes)
+        .map_err(|e| FsError::Io {
+            path: path.to_path_buf(),
+            cause: e,
+        })?;
+
+    Ok(bytes)
+}

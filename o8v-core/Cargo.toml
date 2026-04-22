@@ -21,6 +21,7 @@ toml = "0.8"
 quick-xml = { version = "0.37", features = ["serialize"] }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

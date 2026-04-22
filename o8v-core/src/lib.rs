@@ -9,11 +9,11 @@
 //! ## Architecture
 //!
 //! ```text
-//! o8v-fs  →  o8v-project  →  o8v-core  →  o8v-stacks  →  o8v-check
-//! (safe      (what is it)    (types)      (toolchains)    (orchestrate)
-//!  I/O)                         ↑              ↑
-//!                          o8v-process    o8v-process
-//!                       (run tools safely)
+//! o8v-fs  →  o8v-core  →  o8v-stacks  →  o8v-check
+//! (safe      (types)      (toolchains)    (orchestrate)
+//!  I/O)         ↑              ↑
+//!          o8v-process    o8v-process
+//!       (run tools safely)
 //! ```
 //!
 //! - `o8v-core` defines: Check trait, Diagnostic, Renderable, Command, events
@@ -27,6 +27,7 @@ pub mod command;
 pub mod event_bus;
 pub mod events;
 pub mod extensions;
+pub mod mime;
 pub mod process_report;
 pub mod render;
 pub mod stats;
