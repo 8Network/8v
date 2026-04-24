@@ -13,7 +13,8 @@
 #
 # For each repo the test verifies:
 #   1. Clone succeeds
-#   2. 8v check exits with a valid code (0=pass, 1=violations, 2=nothing to check)
+#   2. 8v check exits with a valid code (0=pass, 1=violations or user error).
+#      Exit 2 is reserved for clap parse failures and should never happen here.
 #      Any other exit code means a crash or internal error — that is a bug.
 #   3. --json output is valid JSON
 #   4. At least one result entry exists
@@ -119,10 +120,12 @@ check_repo() {
     exit_code=$?
     set -e
 
-    # Valid exit codes: 0 (all passed), 1 (violations found), 2 (nothing to check)
-    # 124 = timeout, anything else = crash / internal error
+    # Valid exit codes: 0 (all passed), 1 (violations or user error).
+    # Exit 2 is clap-only and should not appear here.
+    # 124 = timeout, anything else = crash / internal error.
     case "$exit_code" in
-        0|1|2) ok "$name: exit $exit_code (valid 8v exit code)" ;;
+        0|1) ok "$name: exit $exit_code (valid 8v exit code)" ;;
+        2)   rm -f "$json_file"; fail "$name: exit 2 (clap parse failure — unexpected)"; return ;;
         124)   rm -f "$json_file"; fail "$name: timed out after ${timeout_secs}s"; return ;;
         *)     rm -f "$json_file"; fail "$name: unexpected exit code $exit_code — likely a crash"; return ;;
     esac

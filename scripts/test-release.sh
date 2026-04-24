@@ -4,7 +4,8 @@
 # Tests the invariants the release pipeline depends on — fast, no credentials,
 # no cross-compilation, no wrangler. What it covers:
 #
-#   1. Version bump  — sed across all 9 Cargo.toml files; wrong regex → silent miss
+#   1. Version bump  — workspace-root [workspace.package] version only;
+#                      member crates must inherit via `version.workspace = true`
 #   2. Checksum format — sha256sum/shasum output parseable by install.sh
 #   3. Binary naming — names match exactly what install.sh requests
 #   4. version.txt format — clean string, no whitespace (the tr bug class)
@@ -60,52 +61,82 @@ assert_not_contains() {
     fi
 }
 
-# ── Test 1: Version bump ──────────────────────────────────────────────────────
+# ── Test 1: Version bump (workspace inheritance) ─────────────────────────────
 #
-# release.sh uses: sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/"
-# on 9 files. Verify the pattern matches real Cargo.toml format and updates all.
+# The workspace uses [workspace.package] version inheritance — the root
+# Cargo.toml is the single source of truth, and member crates declare
+# `version.workspace = true`. bump-version.sh must:
+#   (a) update the [workspace.package] version line in root Cargo.toml
+#   (b) NOT touch member crates' Cargo.toml (inheritance handles them)
+#   (c) NOT match version strings outside [workspace.package] (e.g. in
+#       [workspace.dependencies] or [dependencies] sections)
 
 echo ""
 echo "── 1. Version bump ──"
 
+# Invariant: every workspace member must inherit, not pin its own version.
+# A drift here means bump-version.sh won't reach that crate.
+MEMBER_CRATES=$(awk '
+    /^\[workspace\]/ { in_members = 0; in_ws = 1; next }
+    in_ws && /^members = \[/ { in_members = 1; next }
+    in_members && /^\]/ { in_members = 0; next }
+    in_members { gsub(/[",[:space:]]/, ""); if (length($0)) print $0 }
+' Cargo.toml)
+
+for crate in $MEMBER_CRATES; do
+    cargo_file="$crate/Cargo.toml"
+    if [ ! -f "$cargo_file" ]; then
+        fail "workspace member listed but missing: $cargo_file"
+        continue
+    fi
+    if grep -q '^version\.workspace = true' "$cargo_file"; then
+        ok "member inherits version: $crate"
+    elif grep -q '^version = ' "$cargo_file"; then
+        fail "$crate pins its own version — must use 'version.workspace = true'"
+    else
+        fail "$crate has no version field and no workspace inheritance"
+    fi
+done
+
+# Exercise bump-version.sh against a temp copy of Cargo.toml and verify
+# only [workspace.package] version changes; dependency versions stay intact.
 TMPDIR_BUMP=$(mktemp -d)
 TARGET_VERSION="9.8.7"
 
-# All crate Cargo.toml files — must match release.sh's list exactly.
-# Workspace root (Cargo.toml) has no version field and is intentionally excluded.
-CARGO_FILES="o8v/Cargo.toml o8v-core/Cargo.toml o8v-events/Cargo.toml \
-o8v-fs/Cargo.toml o8v-process/Cargo.toml \
-o8v-testkit/Cargo.toml o8v-workspace/Cargo.toml"
+cat > "$TMPDIR_BUMP/Cargo.toml" << 'EOF'
+[workspace]
+members = ["a"]
+resolver = "2"
 
-# Copy all Cargo.toml files into temp dir, preserving relative paths
-for f in $CARGO_FILES; do
-    if [ -f "$f" ]; then
-        mkdir -p "$TMPDIR_BUMP/$(dirname "$f")"
-        cp "$f" "$TMPDIR_BUMP/$f"
-    else
-        fail "Cargo.toml missing from release file list: $f"
-    fi
-done
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
 
-# Apply the sed from release.sh (use temp file for portability — BSD sed -i requires a space)
-for cargo_file in $CARGO_FILES; do
-    full="$TMPDIR_BUMP/$cargo_file"
-    [ -f "$full" ] || continue
-    tmp=$(mktemp)
-    sed "s/^version = \".*\"/version = \"$TARGET_VERSION\"/" "$full" > "$tmp"
-    mv "$tmp" "$full"
-done
+[workspace.dependencies]
+serde = { version = "1.0.0", features = ["derive"] }
+EOF
 
-# Verify every file now contains the new version
-for f in $CARGO_FILES; do
-    full="$TMPDIR_BUMP/$f"
-    [ -f "$full" ] || continue
-    if grep -q "^version = \"$TARGET_VERSION\"" "$full"; then
-        ok "version bump: $f"
-    else
-        fail "version not updated in $f (contains: $(grep '^version' "$full" | head -1))"
-    fi
-done
+# Apply the same awk section-scoped bump that bump-version.sh uses.
+tmp=$(mktemp)
+awk -v ver="$TARGET_VERSION" '
+    /^\[workspace\.package\]/ { in_section = 1; print; next }
+    /^\[/ && !/^\[workspace\.package\]/ { in_section = 0 }
+    in_section && /^version = / { print "version = \"" ver "\""; next }
+    { print }
+' "$TMPDIR_BUMP/Cargo.toml" > "$tmp"
+mv "$tmp" "$TMPDIR_BUMP/Cargo.toml"
+
+if grep -q "^version = \"$TARGET_VERSION\"$" "$TMPDIR_BUMP/Cargo.toml"; then
+    ok "workspace.package version bumped to $TARGET_VERSION"
+else
+    fail "workspace.package version bump did not apply"
+fi
+
+if grep -q 'serde = { version = "1.0.0"' "$TMPDIR_BUMP/Cargo.toml"; then
+    ok "workspace.dependencies version untouched"
+else
+    fail "workspace.dependencies version was incorrectly modified"
+fi
 
 rm -rf "$TMPDIR_BUMP"
 
@@ -323,37 +354,19 @@ for url in \
     fi
 done
 
-# ── Test 8: Cargo file list sync ─────────────────────────────────────────────
+# ── Test 8: release.sh delegates to bump-version.sh ──────────────────────────
 #
-# Both this test and release.sh maintain independent hardcoded lists of
-# Cargo.toml files to version-bump. If they drift, releases ship with
-# stale versions in unlisted crates. Verify the lists are identical.
+# Single-source-of-truth check: release.sh must use scripts/bump-version.sh
+# (or inline the exact same awk), not maintain its own drift-prone logic.
 
 echo ""
-echo "── 8. Cargo file list sync (test vs release.sh) ──"
+echo "── 8. release.sh uses bump-version.sh ──"
 
-# Extract crate Cargo.toml paths from release.sh's version bump loop.
-# Those lines look like: "    o8v-cli/Cargo.toml \"
-RELEASE_CARGO=$(grep -E '^\s+o8v-[a-z-]+/Cargo\.toml' "$WORKSPACE_ROOT/scripts/release.sh" \
-    | sed 's/[[:space:]\\]//g' | sed 's/;.*//' | sort)
-
-TEST_CARGO=$(echo "$CARGO_FILES" | tr ' ' '\n' | sort)
-
-for f in $TEST_CARGO; do
-    if echo "$RELEASE_CARGO" | grep -qF "$f"; then
-        ok "in both lists: $f"
-    else
-        fail "test lists '$f' but release.sh does not — lists drifted"
-    fi
-done
-
-for f in $RELEASE_CARGO; do
-    if echo "$TEST_CARGO" | grep -qF "$f"; then
-        ok "release.sh file in test list: $f"
-    else
-        fail "release.sh has '$f' but test does not — lists drifted"
-    fi
-done
+if grep -q 'scripts/bump-version.sh' "$WORKSPACE_ROOT/scripts/release.sh"; then
+    ok "release.sh delegates version bump to bump-version.sh"
+else
+    fail "release.sh does not call scripts/bump-version.sh — duplicate logic risks drift"
+fi
 
 # ── Test 9: Version bump sed precision ───────────────────────────────────────
 #

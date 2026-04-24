@@ -337,11 +337,9 @@ fi
 
 step "Bumping version to $VERSION..."
 
-# Update all crate Cargo.toml files (workspace root has no version field — skip it)
-    sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-
-# Regenerate Cargo.lock
-cargo check -p o8v > /dev/null 2>&1
+# Delegate to scripts/bump-version.sh — single source of truth for workspace
+# version bumping (updates [workspace.package] version; members inherit).
+"$(dirname "$0")/bump-version.sh" "$VERSION"
 success "Version bumped to $VERSION"
 
 # ============================================================================

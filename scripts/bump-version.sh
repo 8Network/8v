@@ -1,8 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Bump version script for 8v
-# Updates version in all workspace Cargo.toml files
+# Bump version script for 8v.
+# Workspace uses [workspace.package] version inheritance — member crates
+# declare `version.workspace = true`, so the root Cargo.toml is the single
+# source of truth.
+#
 # Usage: ./scripts/bump-version.sh 0.2.0
 
 VERSION="${1:-}"
@@ -12,26 +15,31 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# Get workspace root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$WORKSPACE_ROOT"
 
-# Update all 8 Cargo.toml files in workspace crates
-for cargo_file in \
-    Cargo.toml \
-    o8v/Cargo.toml \
-    o8v-core/Cargo.toml \
-    o8v-fs/Cargo.toml \
-    o8v-process/Cargo.toml \
-    o8v-testkit/Cargo.toml; do
+# Bump the workspace-wide version. The regex anchors on the [workspace.package]
+# section header to avoid touching dependency version strings that appear in
+# [workspace.dependencies].
+#
+# Portable sed: mktemp + mv, so this works on both BSD (macOS) and GNU sed.
+tmp=$(mktemp)
+awk -v ver="$VERSION" '
+    /^\[workspace\.package\]/ { in_section = 1; print; next }
+    /^\[/ && !/^\[workspace\.package\]/ { in_section = 0 }
+    in_section && /^version = / { print "version = \"" ver "\""; next }
+    { print }
+' Cargo.toml > "$tmp"
+mv "$tmp" Cargo.toml
 
-    if [ -f "$cargo_file" ]; then
-        sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$cargo_file"
-    fi
-done
+# Verify the bump actually happened — catch regex drift loudly.
+if ! grep -q "^version = \"$VERSION\"$" Cargo.toml; then
+    echo "✗ Version bump did not apply to root Cargo.toml" >&2
+    exit 1
+fi
 
-# Regenerate Cargo.lock
-cargo check -p o8v > /dev/null 2>&1
+# Regenerate Cargo.lock so downstream tools see the new version.
+cargo check --workspace > /dev/null 2>&1
 
-echo "✓ Bumped to $VERSION"
+echo "✓ Bumped [workspace.package] version to $VERSION"

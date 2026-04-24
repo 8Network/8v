@@ -23,15 +23,16 @@ fn validate_base_url(url: &str) -> bool {
         || url.starts_with("http://127.0.0.1")
 }
 
-/// Verify release.sh version bump targets the workspace root Cargo.toml.
-fn release_sh_version_bump_sed_command() -> Option<String> {
+/// Verify the version-bump logic lives in bump-version.sh and is referenced
+/// from release.sh. release.sh delegates — bump-version.sh is the single
+/// source of truth so CI-visible drift is impossible.
+fn bump_version_script() -> &'static str {
+    include_str!("../../scripts/bump-version.sh")
+}
+
+fn release_sh_delegates_to_bump_version() -> bool {
     let release_sh = include_str!("../../scripts/release.sh");
-    for line in release_sh.lines() {
-        if line.contains("sed") && line.contains("version = ") && line.contains("Cargo.toml") {
-            return Some(line.trim().to_string());
-        }
-    }
-    None
+    release_sh.contains("bump-version.sh")
 }
 
 /// Extract binary names from release.sh build section.
@@ -74,15 +75,18 @@ fn workspace_cargo_toml_has_version_field() {
 
 #[test]
 fn release_sh_version_bump_targets_workspace_root() {
-    let sed_cmd = release_sh_version_bump_sed_command()
-        .expect("release.sh has no sed command targeting Cargo.toml version — bump step broken");
     assert!(
-        sed_cmd.contains("Cargo.toml"),
-        "sed command does not target Cargo.toml: {sed_cmd}"
+        release_sh_delegates_to_bump_version(),
+        "release.sh must delegate to scripts/bump-version.sh for version bumping"
+    );
+    let bump = bump_version_script();
+    assert!(
+        bump.contains("[workspace.package]"),
+        "bump-version.sh does not target the [workspace.package] section"
     );
     assert!(
-        sed_cmd.contains("^version = "),
-        "sed command does not anchor to ^version = (may match dependency versions): {sed_cmd}"
+        bump.contains("^version = "),
+        "bump-version.sh does not anchor on ^version = (may match dependency versions)"
     );
 }
 

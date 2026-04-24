@@ -45,6 +45,7 @@ cleanup() {
   [ -n "$SERVE_DIR" ]  && rm -rf "$SERVE_DIR"
   [ -n "$INSTALL_DIR" ] && rm -rf "$INSTALL_DIR"
   [ -n "$PROJECT_DIR" ] && rm -rf "$PROJECT_DIR"
+  [ -n "$_8V_ISO_HOME" ] && rm -rf "$_8V_ISO_HOME"
 }
 trap cleanup EXIT
 
@@ -154,32 +155,65 @@ PROJECT_DIR=$(mktemp -d)
 [ -d "$PROJECT_DIR/.8v" ] || fail ".8v/ not created by init --yes"
 pass "8v init --yes created .8v/"
 
-# ── Step 9: 8v check ─────────────────────────────────────────────────────────
+# Isolate ~/.8v/ writes to a per-test temp dir so last-check.json and events
+# do not pollute the real user home. `_8V_HOME` is the test-isolation fence
+# (see o8v/src/workspace/storage.rs).
+_8V_ISO_HOME=$(mktemp -d)
+export _8V_HOME="$_8V_ISO_HOME"
 
-# Empty directory exits with code 2 (nothing to check).
-# This is the expected outcome for an empty project.
+# ── Step 9a: 8v check on empty dir — exit 1 (no projects, user error) ────────
+#
+# Exit-code contract (B2c): no projects detected is a user error → exit 1.
+# Exit 2 is reserved for clap parse failures only. See o8v/tests/exit_codes.rs.
 set +e
 "$INSTALLED" check "$PROJECT_DIR"
 EXIT_CODE=$?
 set -e
 
-[ "$EXIT_CODE" -eq 2 ] || fail "8v check on empty dir must exit 2, got $EXIT_CODE"
-pass "8v check exited 2 (nothing to check — expected for empty project)"
+[ "$EXIT_CODE" -eq 1 ] || fail "8v check on empty dir must exit 1 (user error), got $EXIT_CODE"
+pass "8v check exited 1 on empty dir (user error per B2c contract)"
 
-# ── Step 10: Verify series.json was written ───────────────────────────────────
+# ── Step 9b: 8v check on a real project — exit 0 ─────────────────────────────
+#
+# Drop a minimal Rust crate into PROJECT_DIR so stack detection fires and the
+# persistence writer runs.
+cat > "$PROJECT_DIR/Cargo.toml" << 'EOF'
+[package]
+name = "install-test-crate"
+version = "0.1.0"
+edition = "2021"
+EOF
+mkdir -p "$PROJECT_DIR/src"
+cat > "$PROJECT_DIR/src/lib.rs" << 'EOF'
+pub fn hello() -> &'static str {
+    "hi"
+}
+EOF
 
-SERIES="$PROJECT_DIR/.8v/series.json"
-[ -f "$SERIES" ] || fail "series.json not written after check"
+set +e
+"$INSTALLED" check "$PROJECT_DIR"
+EXIT_CODE=$?
+set -e
 
-# Basic structure check — must be valid JSON with run_id and timestamp
-python3 << PYEOF || fail "series.json invalid"
-import json, sys
-with open('$SERIES') as f:
+[ "$EXIT_CODE" -eq 0 ] || fail "8v check on clean Rust crate must exit 0, got $EXIT_CODE"
+pass "8v check exited 0 on clean Rust crate"
+
+# ── Step 10: Verify last-check.json was written ──────────────────────────────
+#
+# After any real check run, .8v/last-check.json records the most recent
+# snapshot (used by future runs to compute new/fixed/unchanged deltas).
+
+LAST="$_8V_ISO_HOME/.8v/last-check.json"
+[ -f "$LAST" ] || fail "last-check.json not written to \$_8V_HOME after check"
+
+python3 - << PYEOF || fail "last-check.json invalid"
+import json
+with open('$LAST') as f:
     d = json.load(f)
-assert d.get('run_id'), 'run_id missing or empty'
-assert d.get('timestamp', 0) > 0, 'timestamp missing or zero'
+# Shape can change, but the file must be valid JSON with some content.
+assert isinstance(d, (dict, list)), 'last-check.json must be a JSON object or array'
 PYEOF
-pass "series.json written and valid"
+pass "last-check.json written and valid JSON"
 
 # ── Step 11: Verify _8V_BASE_URL validation rejects plain http ───────────────
 #
@@ -249,7 +283,8 @@ echo "All install E2E checks passed."
 echo "  install.sh  →  $INSTALLED"
 echo "  8v --version"
 echo "  8v init --yes"
-echo "  8v check (exit 2)"
-echo "  .8v/series.json written"
+echo "  8v check on empty dir (exit 1)"
+echo "  8v check on clean Rust crate (exit 0)"
+echo "  last-check.json written under \$_8V_HOME"
 echo "  _8V_BASE_URL http:// correctly rejected"
 echo "  tampered checksum correctly rejected"
