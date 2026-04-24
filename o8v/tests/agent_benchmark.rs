@@ -57,6 +57,7 @@ fn fix_test_baseline() {
         binary,
         true,
         ToolProfile::Native,
+        0,
     );
 
     require_pass("cargo test", record.verification.tests_pass);
@@ -66,7 +67,13 @@ fn fix_test_baseline() {
 #[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
 fn fix_test_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TEST_8V, binary, true, ToolProfile::EightV);
+    let record = run_scenario(
+        &scenarios::FIX_TEST_8V,
+        binary,
+        true,
+        ToolProfile::EightV,
+        0,
+    );
 
     require_pass("cargo test", record.verification.tests_pass);
 }
@@ -82,6 +89,7 @@ fn diagnose_baseline() {
         binary,
         true,
         ToolProfile::Native,
+        0,
     );
 
     require_pass("cargo clippy", record.verification.check_pass);
@@ -91,7 +99,13 @@ fn diagnose_baseline() {
 #[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
 fn diagnose_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::DIAGNOSE_8V, binary, true, ToolProfile::EightV);
+    let record = run_scenario(
+        &scenarios::DIAGNOSE_8V,
+        binary,
+        true,
+        ToolProfile::EightV,
+        0,
+    );
 
     require_pass("cargo clippy", record.verification.check_pass);
 }
@@ -107,6 +121,7 @@ fn fix_python_baseline() {
         binary,
         true,
         ToolProfile::Native,
+        0,
     );
 
     require_pass("pytest", record.verification.tests_pass);
@@ -116,7 +131,13 @@ fn fix_python_baseline() {
 #[ignore = "requires: `claude` in PATH, `python3` + `pytest` (~60s, costs tokens)"]
 fn fix_python_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_PYTHON_8V, binary, true, ToolProfile::EightV);
+    let record = run_scenario(
+        &scenarios::FIX_PYTHON_8V,
+        binary,
+        true,
+        ToolProfile::EightV,
+        0,
+    );
 
     require_pass("pytest", record.verification.tests_pass);
 }
@@ -132,6 +153,7 @@ fn fix_go_baseline() {
         binary,
         true,
         ToolProfile::Native,
+        0,
     );
 
     require_pass("go test ./...", record.verification.tests_pass);
@@ -141,7 +163,7 @@ fn fix_go_baseline() {
 #[ignore = "requires: `claude` in PATH, `go` toolchain (~60s, costs tokens)"]
 fn fix_go_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_GO_8V, binary, true, ToolProfile::EightV);
+    let record = run_scenario(&scenarios::FIX_GO_8V, binary, true, ToolProfile::EightV, 0);
 
     require_pass("go test ./...", record.verification.tests_pass);
 }
@@ -157,6 +179,7 @@ fn fix_typescript_baseline() {
         binary,
         true,
         ToolProfile::Native,
+        0,
     );
 
     require_pass("tsc --noEmit", record.verification.tests_pass);
@@ -166,7 +189,7 @@ fn fix_typescript_baseline() {
 #[ignore = "requires: `claude` in PATH, `tsc` toolchain (~60s, costs tokens)"]
 fn fix_typescript_8v() {
     let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(&scenarios::FIX_TS_8V, binary, true, ToolProfile::EightV);
+    let record = run_scenario(&scenarios::FIX_TS_8V, binary, true, ToolProfile::EightV, 0);
 
     require_pass("tsc --noEmit", record.verification.tests_pass);
 }
@@ -182,6 +205,7 @@ fn fix_test_caveman() {
         binary,
         true,
         ToolProfile::Caveman,
+        0,
     );
 
     require_pass("cargo test", record.verification.tests_pass);

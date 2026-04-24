@@ -185,11 +185,33 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
         }
     };
 
+    // In --yes mode, print what will be done upfront (before any creation)
+    if args.yes {
+        eprintln!();
+        eprintln!("8v init --yes will:");
+        eprintln!("  • Register MCP server in .mcp.json");
+        eprintln!("  • Add 8v section to CLAUDE.md and AGENTS.md");
+        eprintln!("  • Grant mcp__8v__8v permission in .claude/settings.json");
+        eprintln!("  • Install git pre-commit hook (runs 8v check on commit)");
+        eprintln!("  • Install git commit-msg hook (strips Co-Authored-By)");
+        eprintln!();
+    }
+
     if let Err(e) = location.create() {
         eprintln!("error: cannot create {}: {e}", location.display());
         return ExitCode::from(EXIT_FAIL);
     }
-    eprintln!("✓ Created {}", location.display());
+    {
+        let loc_path = location.display().to_string();
+        let display = match std::env::current_dir() {
+            Ok(cwd) => match std::path::Path::new(&loc_path).strip_prefix(&cwd) {
+                Ok(rel) => rel.display().to_string(),
+                Err(_) => loc_path,
+            },
+            Err(_) => loc_path,
+        };
+        eprintln!("✓ Created {display}");
+    }
 
     let project_root = &containment_root;
     let init_dir = InitDir::new(project_root);
@@ -227,18 +249,6 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
             return ExitCode::from(EXIT_FAIL);
         }
         eprintln!("✓ Registered workspace in ~/.8v/workspaces.toml");
-    }
-
-    // In --yes mode, print what will be done upfront
-    if args.yes {
-        eprintln!();
-        eprintln!("8v init --yes will:");
-        eprintln!("  • Register MCP server in .mcp.json");
-        eprintln!("  • Add 8v section to CLAUDE.md and AGENTS.md");
-        eprintln!("  • Grant mcp__8v__8v permission in .claude/settings.json");
-        eprintln!("  • Install git pre-commit hook (runs 8v check on commit)");
-        eprintln!("  • Install git commit-msg hook (strips Co-Authored-By)");
-        eprintln!();
     }
 
     // Step 3: MCP
@@ -337,8 +347,18 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
         }
     }
 
-    // Step 5b: Aider integration
-    if confirm("Set up Aider integration?", args.yes) {
+    // Step 5b: Aider integration — only when .aider* files are detected
+    let aider_detected = 'detect: {
+        let entries = match std::fs::read_dir(project_root.as_path()) {
+            Ok(e) => e,
+            Err(_) => break 'detect false,
+        };
+        let found = entries
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with(".aider"));
+        found
+    };
+    if aider_detected && confirm("Set up Aider integration?", args.yes) {
         const AIDER_CONF_CONTENT: &str = "\
 lint-cmd: 8v check .\n\
 test-cmd: 8v test .\n\

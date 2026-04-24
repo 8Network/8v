@@ -699,3 +699,314 @@ fn mcp_oc_post_render_error_is_from_post_render_path() {
         "MCP-OC post-render error must NOT contain 'estimated' (pre-flight marker)\ncontent: {text}"
     );
 }
+
+// ─── Non-code reads (image / opaque / batch) ─────────────────────────────────
+//
+// These tests verify the typed MCP read path: readable binaries surface as
+// `ImageContent` blocks, opaque binaries return `isError=true`, and mixed
+// batches return one Content block per entry. No `--binary` flag — behavior
+// is driven by extension classification.
+
+/// 1×1 transparent PNG. Below the Vision API minimum (8×8); the MCP layer
+/// must downgrade this to a text+base64 block rather than hand it to a
+/// multimodal model that would reject it with an opaque 400.
+const PNG_1X1: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
+];
+
+/// 16×16 red PNG. Above the Vision API minimum; the MCP layer returns this
+/// as an `image` content block.
+const PNG_16X16: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x91, 0x68,
+    0x36, 0x00, 0x00, 0x00, 0x17, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x40,
+    0x12, 0x22, 0x4D, 0xF5, 0xA8, 0x86, 0x51, 0x0D, 0x43, 0x4A, 0x03, 0x00, 0x90, 0xF9, 0xFF, 0x01,
+    0xF9, 0xE1, 0xFA, 0x78, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+/// Spawn an MCP subprocess with `current_dir` pinned to the test workspace so
+/// workspace resolution (CWD-based) matches the root URI we hand the server.
+/// No env overrides.
+fn spawn_in_workspace(root_dir: &TempDir) -> McpClient {
+    let canonical = std::fs::canonicalize(root_dir.path()).expect("canonicalize root_dir");
+    let root_uri = format!("file://{}", canonical.display());
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .arg("mcp")
+        .current_dir(&canonical)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to spawn 8v mcp");
+
+    let stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let reader = BufReader::new(stdout);
+
+    let mut client = McpClient {
+        child,
+        stdin,
+        reader,
+        next_id: 1,
+        root_uri,
+    };
+
+    let init_id = client.alloc_id();
+    client.send(json!({
+        "jsonrpc": "2.0",
+        "id": init_id,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": { "roots": { "listChanged": false } },
+            "clientInfo": { "name": "mcp-e2e-test", "version": "0.0.1" }
+        }
+    }));
+    client.recv_response();
+    client.send(json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    }));
+    client
+}
+
+/// Decode base64 → bytes without pulling the base64 crate into tests. Uses
+/// the RFC 4648 standard alphabet, ignores padding/whitespace.
+fn b64_decode(s: &str) -> Vec<u8> {
+    const T: [i16; 256] = {
+        let mut t = [-1i16; 256];
+        let alpha = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut i = 0;
+        while i < alpha.len() {
+            t[alpha[i] as usize] = i as i16;
+            i += 1;
+        }
+        t
+    };
+    let mut out = Vec::new();
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    for &b in s.as_bytes() {
+        if b == b'=' || b == b'\n' || b == b'\r' || b == b' ' {
+            continue;
+        }
+        let v = T[b as usize];
+        assert!(v >= 0, "invalid base64 byte: {b}");
+        acc = (acc << 6) | (v as u32);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    out
+}
+
+/// MCP round-trip bytes-exact: the base64 returned by the server must decode
+/// back to the same bytes on disk. This guards against silent corruption in
+/// the encode/serialize/deserialize path.
+#[test]
+fn mcp_read_png_base64_round_trips_bytes() {
+    let ws = make_workspace();
+    std::fs::write(
+        ws.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write cargo");
+    std::fs::write(ws.path().join("pixel.png"), PNG_16X16).expect("write png");
+
+    let mut client = spawn_in_workspace(&ws);
+    let resp = client.tools_call("read pixel.png");
+    let content = resp["result"]["content"].as_array().expect("content array");
+    let block = &content[0];
+    let data = block["data"].as_str().expect("data");
+    let decoded = b64_decode(data);
+    assert_eq!(
+        decoded,
+        PNG_16X16,
+        "round-tripped bytes must match source; len source={}, decoded={}",
+        PNG_16X16.len(),
+        decoded.len()
+    );
+}
+
+/// Vision-safety gate: a 1×1 PNG (below `MIN_IMAGE_DIMENSION`) is delivered
+/// as a text+base64 block, not an `ImageContent`. Handing tiny PNGs to a
+/// multimodal model returns an opaque 400 and poisons the agent's turn, so
+/// 8v must downgrade silently instead. Bytes still arrive — the caller can
+/// decode base64 and inspect the file — but the API never sees the payload.
+#[test]
+fn mcp_read_tiny_png_downgrades_to_text_block() {
+    let ws = make_workspace();
+    std::fs::write(
+        ws.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write cargo");
+    std::fs::write(ws.path().join("tiny.png"), PNG_1X1).expect("write png");
+
+    let mut client = spawn_in_workspace(&ws);
+    let resp = client.tools_call("read tiny.png");
+    let result = &resp["result"];
+    assert!(
+        result["isError"].as_bool() != Some(true),
+        "downgrade must not flip isError; got: {resp}"
+    );
+    let content = result["content"].as_array().expect("content array");
+    assert_eq!(content.len(), 1, "expected single block; got: {content:?}");
+    let block = &content[0];
+    assert_eq!(
+        block["type"].as_str(),
+        Some("text"),
+        "tiny PNG must downgrade to text; got: {block}"
+    );
+    let text = block["text"].as_str().expect("text field");
+    assert!(
+        text.contains("image/png"),
+        "downgrade text must name MIME; got: {text:?}"
+    );
+    assert!(
+        text.contains("base64:"),
+        "downgrade text must include base64 marker; got: {text:?}"
+    );
+}
+
+/// MCP round-trip: reading a PNG returns a single `image` content block with
+/// the correct MIME type and the base64 payload of the file. Proves the MCP
+/// layer goes beyond text — multimodal-ready.
+#[test]
+fn mcp_read_png_returns_image_content_block() {
+    let ws = make_workspace();
+    // Add a project marker so WorkspaceRoot resolves.
+    std::fs::write(
+        ws.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write cargo");
+    std::fs::write(ws.path().join("pixel.png"), PNG_16X16).expect("write png");
+
+    let mut client = spawn_in_workspace(&ws);
+    let resp = client.tools_call("read pixel.png");
+
+    let result = &resp["result"];
+    let is_error = result["isError"].as_bool() == Some(true);
+    assert!(!is_error, "read png should succeed, got: {resp}");
+
+    let content = result["content"].as_array().expect("content array");
+    assert_eq!(
+        content.len(),
+        1,
+        "expected single image block, got: {content:?}"
+    );
+
+    let block = &content[0];
+    assert_eq!(
+        block["type"].as_str(),
+        Some("image"),
+        "block type must be 'image', got: {block}"
+    );
+    assert_eq!(
+        block["mimeType"].as_str(),
+        Some("image/png"),
+        "mimeType must be image/png, got: {block}"
+    );
+    let data = block["data"].as_str().expect("data field");
+    assert!(
+        data.starts_with("iVBORw0KGgo"),
+        "data must be PNG base64, got prefix: {:?}",
+        &data.chars().take(20).collect::<String>()
+    );
+}
+
+/// MCP round-trip: reading an opaque binary (ZIP) must return `isError=true`
+/// with a structured error mentioning the MIME type.
+#[test]
+fn mcp_read_zip_is_error() {
+    let ws = make_workspace();
+    std::fs::write(
+        ws.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write cargo");
+    let zip: &[u8] = &[
+        0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    std::fs::write(ws.path().join("archive.zip"), zip).expect("write zip");
+
+    let mut client = spawn_in_workspace(&ws);
+    let resp = client.tools_call("read archive.zip");
+    let (is_error, text) = parse_call_result(&resp);
+    assert!(is_error, "opaque zip must flip isError; got: {resp}");
+    assert!(
+        text.contains("application/zip"),
+        "error must name MIME type; got: {text:?}"
+    );
+    assert!(
+        text.contains("opaque binary"),
+        "error must name kind; got: {text:?}"
+    );
+}
+
+/// MCP round-trip: batch read of a text file + a PNG returns multiple content
+/// blocks — text(s) for the text file, image for the PNG, plus `=== label ===`
+/// separators. Proves the batch contract carries through to MCP.
+#[test]
+fn mcp_read_batch_mixed_text_and_image() {
+    let ws = make_workspace();
+    std::fs::write(
+        ws.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write cargo");
+    std::fs::write(ws.path().join("notes.txt"), "hello\nworld\n").expect("write txt");
+    std::fs::write(ws.path().join("pixel.png"), PNG_16X16).expect("write png");
+
+    let mut client = spawn_in_workspace(&ws);
+    let resp = client.tools_call("read notes.txt pixel.png");
+
+    let result = &resp["result"];
+    assert!(
+        result["isError"].as_bool() != Some(true),
+        "batch read must succeed, got: {resp}"
+    );
+    let content = result["content"].as_array().expect("content array");
+    // Expect at least one image block and at least one text block.
+    let has_image = content.iter().any(|b| {
+        b["type"].as_str() == Some("image") && b["mimeType"].as_str() == Some("image/png")
+    });
+    let has_text = content.iter().any(|b| b["type"].as_str() == Some("text"));
+    assert!(
+        has_image,
+        "batch output must include an image block for the PNG; got: {content:?}"
+    );
+    assert!(
+        has_text,
+        "batch output must include a text block (label/content for notes.txt); got: {content:?}"
+    );
+    // The text blocks should carry the batch delimiters.
+    let joined_text: String = content
+        .iter()
+        .filter_map(|b| b["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined_text.contains("=== notes.txt ==="),
+        "batch output missing notes.txt header; got text: {joined_text:?}"
+    );
+    assert!(
+        joined_text.contains("=== pixel.png ==="),
+        "batch output missing pixel.png header; got text: {joined_text:?}"
+    );
+    assert!(
+        joined_text.contains("hello"),
+        "notes.txt content missing; got text: {joined_text:?}"
+    );
+}

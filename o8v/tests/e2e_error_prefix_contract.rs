@@ -8,14 +8,14 @@
 //! `"8v: ..."`, then `main.rs` prepended `"error: "`, producing double prefixes
 //! like `"error: Error: ..."` or `"error: 8v: ..."`.
 //!
-//! After the fix, `main.rs` strips one leading `"error: "`, `"Error: "`, or
-//! `"8v: "` before emitting the outer `"error: "`, so every fatal error is
-//! exactly `"error: <message>"` with no double prefix.
+//! After the fix, `main.rs` strips one leading `"error: "` or `"8v: "` before
+//! emitting the outer `"error: "`, so every fatal error is exactly
+//! `"error: <message>"` with no double prefix.
 //!
 //! Covered commands:
 //! - `read`  — strips `"8v: "` (e.g. not-found)
-//! - `write` — strips `"Error: "` (e.g. failed-to-read-file)
-//! - `write` — strips `"Error: "` (e.g. line-does-not-exist)
+//! - `write` — strips `"error: "` (e.g. failed-to-read-file)
+//! - `write` — strips `"error: "` (e.g. line-does-not-exist)
 
 use std::io::Write;
 use std::process::{Command, Stdio};

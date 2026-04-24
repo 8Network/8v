@@ -10,7 +10,7 @@ pub(crate) mod path;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{Meta, ServerCapabilities, ServerInfo};
+use rmcp::model::{CallToolResult, Content, Meta, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, Peer, RoleServer, ServerHandler, ServiceExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -46,8 +46,11 @@ impl EightVServer {
         Parameters(params): Parameters<CommandParams>,
         _meta: Meta,
         client: Peer<RoleServer>,
-    ) -> Result<String, String> {
-        handler::handle_command(&params.command, client).await
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        match handler::handle_command(&params.command, client).await {
+            Ok(blocks) => Ok(CallToolResult::success(blocks)),
+            Err(msg) => Ok(CallToolResult::error(vec![Content::text(msg)])),
+        }
     }
 }
 

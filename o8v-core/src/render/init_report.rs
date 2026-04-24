@@ -28,7 +28,7 @@ impl super::Renderable for InitReport {
 
     fn render_human(&self) -> Output {
         if self.success {
-            Output::new("init: complete".to_string())
+            Output::new("init: complete\n".to_string())
         } else {
             Output::new("init: failed".to_string())
         }
@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn render_human_success() {
         let report = InitReport { success: true };
-        assert_eq!(report.render_human().as_str(), "init: complete");
+        assert_eq!(report.render_human().as_str(), "init: complete\n");
     }
 
     #[test]

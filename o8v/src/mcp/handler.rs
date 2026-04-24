@@ -4,7 +4,25 @@
 
 //! MCP interface — parses command string, forwards to dispatch. No logic here.
 
+use base64::Engine;
+use rmcp::model::Content;
 use rmcp::{Peer, RoleServer};
+
+/// Parse image dimensions from the decoded bytes; return `true` only if we
+/// can confirm both sides meet the Vision API's minimum. Unparseable → false
+/// (safer to downgrade to text+base64 than to hand the API something it will
+/// reject with an opaque 400).
+fn is_vision_safe(mime: &str, b64_data: &str) -> bool {
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64_data) else {
+        return false;
+    };
+    match o8v_core::mime::image_dimensions(&bytes, mime) {
+        Some((w, h)) => {
+            w >= o8v_core::mime::MIN_IMAGE_DIMENSION && h >= o8v_core::mime::MIN_IMAGE_DIMENSION
+        }
+        None => false,
+    }
+}
 
 // ─── Output Cap ──────────────────────────────────────────────────────────────
 
@@ -52,7 +70,7 @@ fn get_output_cap() -> Result<usize, String> {
 /// Build the structured error message for oversized output (§6 template).
 fn oversized_error(output_chars: usize, cap: usize, command: &str) -> String {
     format!(
-        "Error: output too large for MCP transport\n  output:  {output_chars} chars\n  cap:     {cap} chars (override: O8V_MCP_OUTPUT_CAP)\n  command: {command}\n\nUse a line range instead of --full:\n  8v read <path>:<start>-<end>\nOr read the symbol map first:\n  8v read <path>"
+        "error: output too large for MCP transport\n  output:  {output_chars} chars\n  cap:     {cap} chars (override: O8V_MCP_OUTPUT_CAP)\n  command: {command}\n\nUse a line range instead of --full:\n  8v read <path>:<start>-<end>\nOr read the symbol map first:\n  8v read <path>"
     )
 }
 
@@ -88,7 +106,7 @@ fn extract_agent_info(client: &Peer<RoleServer>) -> Option<o8v_core::caller::Age
 pub(super) async fn handle_command(
     command: &str,
     client: Peer<RoleServer>,
-) -> Result<String, String> {
+) -> Result<Vec<Content>, String> {
     // Validate cap configuration before doing any work. Invalid O8V_MCP_OUTPUT_CAP
     // returns an observable error immediately (§3, §9 Test 4).
     let cap = get_output_cap()?;
@@ -119,7 +137,7 @@ pub(super) async fn handle_command(
         super::parse::ParseOutcome::Parsed(cmd, argv) => (cmd, argv),
         // Help and version output is success content — return it as Ok so the
         // MCP caller does not wrap it in an error envelope.
-        super::parse::ParseOutcome::HelpOutput(text) => return Ok(text),
+        super::parse::ParseOutcome::HelpOutput(text) => return Ok(vec![Content::text(text)]),
     };
 
     // Pre-flight check: abort before reading if metadata sum × 1.20 > cap.
@@ -144,7 +162,7 @@ pub(super) async fn handle_command(
             let estimated_chars = (total_bytes as f64 * 1.20) as usize;
             if estimated_chars > cap {
                 let mut msg = format!(
-                    "Error: output too large for MCP transport\n  output:  ~{estimated_chars} chars (estimated)\n  cap:     {cap} chars (override: O8V_MCP_OUTPUT_CAP)\n  command: {command}\n"
+                    "error: output too large for MCP transport\n  output:  ~{estimated_chars} chars (estimated)\n  cap:     {cap} chars (override: O8V_MCP_OUTPUT_CAP)\n  command: {command}\n"
                 );
                 msg.push_str("\nFiles and sizes:\n");
                 for (p, sz) in &file_sizes {
@@ -156,6 +174,13 @@ pub(super) async fn handle_command(
                 return Err(msg);
             }
         }
+    }
+
+    // Read takes a typed path so binary content becomes ImageContent /
+    // text+base64 instead of a single text block. Event recording is preserved
+    // — `crate::dispatch::dispatch` emits the lifecycle events.
+    if let crate::commands::Command::Read(args) = parsed_command {
+        return dispatch_read_mcp(args, argv, agent_info, cap, command).await;
     }
 
     match crate::commands::dispatch_command_with_agent(
@@ -177,10 +202,107 @@ pub(super) async fn handle_command(
             if use_stderr {
                 Err(out)
             } else {
-                Ok(out)
+                Ok(vec![Content::text(out)])
             }
         }
         Err(e) => Err(format!("error: {e}")),
+    }
+}
+
+/// Typed MCP dispatch for `read` — produces per-entry content blocks so
+/// readable binaries surface as `Content::image` rather than base64-in-text.
+///
+/// PDFs are delivered as text+base64 pending a round-trip check that Claude
+/// renders `EmbeddedResource` for `application/pdf`. See design
+/// `docs/design/read-non-code-files-l1.md` §4.5.
+async fn dispatch_read_mcp(
+    args: crate::commands::read::Args,
+    argv: Vec<String>,
+    agent_info: Option<o8v_core::caller::AgentInfo>,
+    cap: usize,
+    command: &str,
+) -> Result<Vec<Content>, String> {
+    use o8v_core::render::read_report::{MultiResult, ReadReport};
+
+    super::INTERRUPTED.store(false, std::sync::atomic::Ordering::Release);
+    let mut ctx = crate::dispatch::build_context(&super::INTERRUPTED);
+    if let Some(info) = agent_info {
+        ctx.extensions.insert(info);
+    }
+
+    let cmd = crate::commands::read::ReadCommand { args };
+
+    let (_output, _task_id, report) = match crate::dispatch::dispatch(
+        &cmd,
+        &mut ctx,
+        o8v_core::render::Audience::Agent,
+        o8v_core::caller::Caller::Mcp,
+        "read",
+        &argv,
+    )
+    .await
+    {
+        Ok(triple) => triple,
+        Err(e) => return Err(format!("error: {e}")),
+    };
+
+    let blocks = match report {
+        ReadReport::Multi { entries } => {
+            let mut out = Vec::with_capacity(entries.len());
+            for entry in entries {
+                out.push(Content::text(format!("=== {} ===", entry.label)));
+                match entry.result {
+                    MultiResult::Ok { report } => out.extend(report_to_blocks(*report, cap)?),
+                    MultiResult::Err { message } => {
+                        out.push(Content::text(format!("error: {message}")));
+                    }
+                }
+            }
+            out
+        }
+        other => report_to_blocks(other, cap)?,
+    };
+
+    let _ = command;
+    Ok(blocks)
+}
+
+/// Map a single (non-Multi) `ReadReport` to MCP content blocks. Applies the
+/// text-output cap only to text blocks — image/resource payloads are exempt,
+/// bounded by `FsConfig::max_file_size` instead.
+fn report_to_blocks(
+    report: o8v_core::render::read_report::ReadReport,
+    cap: usize,
+) -> Result<Vec<Content>, String> {
+    use o8v_core::render::read_report::ReadReport;
+    use o8v_core::render::Renderable;
+
+    match report {
+        ReadReport::BinaryContent {
+            path: _,
+            mime_type,
+            size_bytes,
+            base64,
+        } => {
+            if mime_type.starts_with("image/") && is_vision_safe(&mime_type, &base64) {
+                Ok(vec![Content::image(base64, mime_type)])
+            } else {
+                // Images below the Vision API's minimum dimensions, images we
+                // can't parse, and non-image binaries (e.g. PDF) are delivered
+                // as text+base64. Handing an undersized image to Claude as
+                // `ImageContent` poisons the turn with an opaque 400 — safer
+                // to downgrade than to guess. See design §4.5.
+                let text = format!("{mime_type}, {size_bytes} bytes\nbase64: {base64}");
+                Ok(vec![Content::text(text)])
+            }
+        }
+        other => {
+            let text = other.render_plain().into_string();
+            if text.len() > cap {
+                return Err(oversized_error(text.len(), cap, "read"));
+            }
+            Ok(vec![Content::text(text)])
+        }
     }
 }
 

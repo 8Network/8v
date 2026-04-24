@@ -146,7 +146,7 @@ fn parse_path_line(input: &str) -> Result<(String, Option<(usize, usize)>), Stri
             match (start_str.parse::<usize>(), end_str.parse::<usize>()) {
                 (Ok(start), Ok(end)) => {
                     if start == 0 || end == 0 {
-                        return Err("Error: line numbers are 1-indexed, got 0".to_string());
+                        return Err("error: line numbers are 1-indexed, got 0".to_string());
                     }
                     if start <= end {
                         return Ok((input[..colon_pos].to_string(), Some((start, end))));
@@ -167,7 +167,7 @@ fn parse_path_line(input: &str) -> Result<(String, Option<(usize, usize)>), Stri
         // Try parsing as single line (N)
         if let Ok(line) = line_part.parse::<usize>() {
             if line == 0 {
-                return Err("Error: line numbers are 1-indexed, got 0".to_string());
+                return Err("error: line numbers are 1-indexed, got 0".to_string());
             }
             return Ok((input[..colon_pos].to_string(), Some((line, line))));
         }
@@ -190,7 +190,7 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
 
     if mode_count > 1 {
         return Err(
-            "Error: cannot combine --insert, --delete, --append, --find, and --force\n\
+            "error: cannot combine --insert, --delete, --append, --find, and --force\n\
              Usage: 8v write <path>:<line> --delete\n\
              Usage: 8v write <path>:<line> --insert \"content\"\n\
              Usage: 8v write <path> --append \"content\""
@@ -201,18 +201,18 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
     // Find + replace mode
     if args.find.is_some() || args.replace.is_some() {
         if args.find.is_none() || args.replace.is_none() {
-            return Err("Error: --find and --replace must both be provided\n\
+            return Err("error: --find and --replace must both be provided\n\
                  Usage: 8v write <path> --find \"old\" --replace \"new\""
                 .to_string());
         }
         if line_range.is_some() {
-            return Err("Error: line numbers cannot be used with --find mode\n\
+            return Err("error: line numbers cannot be used with --find mode\n\
                  Usage: 8v write <path> --find \"old\" --replace \"new\""
                 .to_string());
         }
         let find = unescape_content(&args.find.clone().unwrap());
         if find.is_empty() {
-            return Err("Error: --find pattern must not be empty\n\
+            return Err("error: --find pattern must not be empty\n\
                  Usage: 8v write <path> --find \"old\" --replace \"new\""
                 .to_string());
         }
@@ -227,12 +227,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
     // Delete mode
     if args.delete {
         let (start, end) = line_range.ok_or(
-            "Error: delete requires a line number or range\n\
+            "error: delete requires a line number or range\n\
              Usage: 8v write <path>:<line> --delete\n\
              Usage: 8v write <path>:<start>-<end> --delete",
         )?;
         if args.content.is_some() {
-            return Err("Error: content argument not allowed with --delete\n\
+            return Err("error: content argument not allowed with --delete\n\
                  Usage: 8v write <path>:<line> --delete"
                 .to_string());
         }
@@ -242,12 +242,12 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
     // Append mode
     if args.append {
         if line_range.is_some() {
-            return Err("Error: line numbers cannot be used with --append\n\
+            return Err("error: line numbers cannot be used with --append\n\
                  Usage: 8v write <path> --append \"content\""
                 .to_string());
         }
         let raw = args.content.clone().ok_or(
-            "Error: content required for --append\n\
+            "error: content required for --append\n\
              Usage: 8v write <path> --append \"content\"\n\
              Escape sequences are interpreted: \\n = newline, \\t = tab, \\\\ = backslash",
         )?;
@@ -264,11 +264,11 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
     // Insert mode
     if args.insert {
         let (line, _) = line_range.ok_or(
-            "Error: insert requires a line number\n\
+            "error: insert requires a line number\n\
              Usage: 8v write <path>:<line> --insert \"content\"",
         )?;
         let raw = args.content.clone().ok_or(
-            "Error: content required for --insert\n\
+            "error: content required for --insert\n\
              Usage: 8v write <path>:<line> --insert \"content\"\n\
              Escape sequences are interpreted: \\n = newline, \\t = tab, \\\\ = backslash",
         )?;
@@ -284,7 +284,7 @@ fn validate_args(args: &Args) -> Result<WriteOperation, String> {
 
     // Replace or create mode
     let raw = args.content.clone().ok_or(
-        "Error: content required\n\
+        "error: content required\n\
          Usage: 8v write <path>:<line> \"content\"   (replace line)\n\
          Usage: 8v write <path>:<start>-<end> \"content\"   (replace range)\n\
          Usage: 8v write <path> \"content\"   (create file)\n\
@@ -470,7 +470,7 @@ pub(crate) fn write_to_report(
     let report_op: ReportOp = match &op {
         WriteOperation::ReplaceLine { line, content } => {
             let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+                .map_err(|e| format!("error: failed to read file: {e}"))?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -479,7 +479,7 @@ pub(crate) fn write_to_report(
 
             if *line > lines.len() {
                 return Err(format!(
-                    "Error: line {line} does not exist (file has {} lines)",
+                    "error: line {line} does not exist (file has {} lines)",
                     lines.len()
                 ));
             }
@@ -496,7 +496,7 @@ pub(crate) fn write_to_report(
             new_lines.extend_from_slice(&lines[*line..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
-                .map_err(|e| format!("Error: failed to write file: {e}"))?;
+                .map_err(|e| format!("error: failed to write file: {e}"))?;
 
             ReportOp::Replace {
                 old_lines,
@@ -509,7 +509,7 @@ pub(crate) fn write_to_report(
             content,
         } => {
             let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+                .map_err(|e| format!("error: failed to read file: {e}"))?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -518,13 +518,13 @@ pub(crate) fn write_to_report(
 
             if *start > lines.len() {
                 return Err(format!(
-                    "Error: line {start} does not exist (file has {} lines)",
+                    "error: line {start} does not exist (file has {} lines)",
                     lines.len()
                 ));
             }
             if *end > lines.len() {
                 return Err(format!(
-                    "Error: line {end} does not exist (file has {} lines)",
+                    "error: line {end} does not exist (file has {} lines)",
                     lines.len()
                 ));
             }
@@ -545,7 +545,7 @@ pub(crate) fn write_to_report(
             new_lines.extend_from_slice(&lines[*end..]);
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
-                .map_err(|e| format!("Error: failed to write file: {e}"))?;
+                .map_err(|e| format!("error: failed to write file: {e}"))?;
 
             ReportOp::Replace {
                 old_lines,
@@ -554,7 +554,7 @@ pub(crate) fn write_to_report(
         }
         WriteOperation::InsertBefore { line, content } => {
             let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+                .map_err(|e| format!("error: failed to read file: {e}"))?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -563,7 +563,7 @@ pub(crate) fn write_to_report(
 
             if *line > lines.len() + 1 {
                 return Err(format!(
-                    "Error: cannot insert at line {line} (file has {} lines)",
+                    "error: cannot insert at line {line} (file has {} lines)",
                     lines.len()
                 ));
             }
@@ -576,7 +576,7 @@ pub(crate) fn write_to_report(
             }
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
-                .map_err(|e| format!("Error: failed to write file: {e}"))?;
+                .map_err(|e| format!("error: failed to write file: {e}"))?;
 
             ReportOp::Insert {
                 content: content.clone(),
@@ -584,7 +584,7 @@ pub(crate) fn write_to_report(
         }
         WriteOperation::DeleteLines { start, end } => {
             let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+                .map_err(|e| format!("error: failed to read file: {e}"))?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -593,7 +593,7 @@ pub(crate) fn write_to_report(
 
             if *start > lines.len() || *end > lines.len() || start > end {
                 return Err(format!(
-                    "Error: invalid line range {start}-{end} (file has {} lines)",
+                    "error: invalid line range {start}-{end} (file has {} lines)",
                     lines.len()
                 ));
             }
@@ -611,7 +611,7 @@ pub(crate) fn write_to_report(
                 .collect();
             let new_content_bytes = join_lines_with_ending(&new_lines, line_ending, trailing);
             o8v_fs::safe_write(&path, root, new_content_bytes.as_bytes())
-                .map_err(|e| format!("Error: failed to write file: {e}"))?;
+                .map_err(|e| format!("error: failed to write file: {e}"))?;
 
             ReportOp::Delete { deleted_lines }
         }
@@ -623,17 +623,17 @@ pub(crate) fn write_to_report(
                 match o8v_fs::safe_exists(&path, root) {
                     Ok(true) => {
                         return Err(format!(
-                            "Error: file already exists: {path_str}\n  to replace entire file: add --force\n  to replace a range: use {path_str}:<start>-<end> \"<content>\"\n  to find/replace: use --find \"<old>\" --replace \"<new>\""
+                            "error: file already exists: {path_str}\n  to replace entire file: add --force\n  to replace a range: use {path_str}:<start>-<end> \"<content>\"\n  to find/replace: use --find \"<old>\" --replace \"<new>\""
                         ));
                     }
                     Ok(false) => {}
                     Err(e) => {
-                        return Err(format!("Error: failed to check if file exists: {e}"));
+                        return Err(format!("error: failed to check if file exists: {e}"));
                     }
                 }
             }
             o8v_fs::safe_write(&path, root, content.as_bytes())
-                .map_err(|e| format!("Error: failed to create file: {e}"))?;
+                .map_err(|e| format!("error: failed to create file: {e}"))?;
             let line_count = content.lines().count();
             ReportOp::Create { line_count }
         }
@@ -644,7 +644,7 @@ pub(crate) fn write_to_report(
                         "error: file does not exist: {path_str}\n  to create a new file with content: 8v write {path_str} \"<content>\""
                     )
                 } else {
-                    format!("Error: failed to read file: {e}")
+                    format!("error: failed to read file: {e}")
                 }
             })?;
             let existing_content = existing.content();
@@ -658,14 +658,14 @@ pub(crate) fn write_to_report(
                 content.clone()
             };
             o8v_fs::safe_append(&path, root, appended.as_bytes())
-                .map_err(|e| format!("Error: failed to append to file: {e}"))?;
+                .map_err(|e| format!("error: failed to append to file: {e}"))?;
             ReportOp::Append
         }
         WriteOperation::FindReplace { find, replace, all } => {
             validate_content_line_endings(find)?;
             validate_content_line_endings(replace)?;
             let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("Error: failed to read file: {e}"))?;
+                .map_err(|e| format!("error: failed to read file: {e}"))?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let match_count = existing_content.matches(find.as_str()).count();
@@ -676,7 +676,7 @@ pub(crate) fn write_to_report(
 
             if !*all && match_count > 1 {
                 return Err(format!(
-                    "Error: --find matched {match_count} occurrences but --all was not specified.\n\
+                    "error: --find matched {match_count} occurrences but --all was not specified.\n\
                      To replace every occurrence add --all:\n\
                      \t8v write {path_str} --find \"...\" --replace \"...\" --all\n\
                      To replace a single occurrence, narrow the pattern so it matches exactly once."
@@ -691,7 +691,7 @@ pub(crate) fn write_to_report(
 
             let count = if *all { match_count } else { 1 };
             o8v_fs::safe_write(&path, root, new_content.as_bytes())
-                .map_err(|e| format!("Error: failed to write file: {e}"))?;
+                .map_err(|e| format!("error: failed to write file: {e}"))?;
 
             ReportOp::FindReplace { count }
         }
@@ -767,7 +767,7 @@ fn render_not_found_hint(find: &str, content: &str, path: &str) -> String {
     // strategies. Still emit a path-qualified fallback.
     if find.contains('\n') {
         return format!(
-            "Error: no matches found for {find:?} in {path}. \
+            "error: no matches found for {find:?} in {path}. \
              Read the file to find the exact text (whitespace and indentation must match), \
              then retry with the correct --find value."
         );
@@ -780,7 +780,7 @@ fn render_not_found_hint(find: &str, content: &str, path: &str) -> String {
 
     match candidate {
         Some(line) => format!(
-            "Error: no matches found for --find in {path}.\n\
+            "error: no matches found for --find in {path}.\n\
              closest match differs in whitespace (· = space, → = tab, ↵ = newline):\n\
              requested:  {}\n\
              found:      {}\n\
@@ -789,7 +789,7 @@ fn render_not_found_hint(find: &str, content: &str, path: &str) -> String {
             visualize_whitespace(line),
         ),
         None => format!(
-            "Error: no matches found for {find:?} in {path}. \
+            "error: no matches found for {find:?} in {path}. \
              Read the file to find the exact text (whitespace and indentation must match), \
              then retry with the correct --find value."
         ),
