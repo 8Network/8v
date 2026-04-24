@@ -172,9 +172,9 @@ if ! "$LOCAL_8V" fmt . --check > /dev/null; then
 fi
 success "8v fmt --check passed"
 
-if ! cargo test --workspace > /dev/null 2>&1; then
+if ! cargo test --workspace -- --test-threads=1 > /dev/null 2>&1; then
     error "cargo test failed"
-    cargo test --workspace
+    cargo test --workspace -- --test-threads=1
     exit 1
 fi
 success "cargo test passed"
