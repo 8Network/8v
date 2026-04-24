@@ -8,6 +8,9 @@
 //! - `8v read path:10-50` — returns specific line range
 //! - `8v read path --full` — returns entire file content
 //! - `8v read path --json` — structured JSON output
+//!
+//! Readable binaries (PDF, images) are auto-detected and returned as base64 +
+//! MIME. Opaque binaries (archives, executables) return a structured error.
 
 use std::path::Path;
 
@@ -23,11 +26,6 @@ pub struct Args {
     /// Show full file content instead of symbols
     #[arg(long, overrides_with = "full")]
     pub full: bool,
-
-    /// For readable binary files (PDF, images), return base64-encoded content
-    /// with MIME type. Without this flag, only metadata is returned.
-    #[arg(long)]
-    pub binary: bool,
 
     #[command(flatten)]
     pub format: super::output_format::OutputFormat,
@@ -92,7 +90,6 @@ fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
 fn read_one(
     label: &str,
     full: bool,
-    binary: bool,
     workspace: &crate::workspace::WorkspaceRoot,
 ) -> Result<o8v_core::render::read_report::ReadReport, String> {
     use base64::Engine;
@@ -136,19 +133,12 @@ fn read_one(
             .unwrap_or("application/octet-stream")
             .to_string();
         let size_bytes = bytes.len() as u64;
-        if binary {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            return Ok(ReadReport::BinaryContent {
-                path: display_path,
-                mime_type,
-                size_bytes,
-                base64: b64,
-            });
-        }
-        return Ok(ReadReport::BinaryMeta {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        return Ok(ReadReport::BinaryContent {
             path: display_path,
             mime_type,
             size_bytes,
+            base64: b64,
         });
     }
 
@@ -297,7 +287,7 @@ pub fn read_to_report(
 
     if args.paths.len() == 1 {
         // Single path — backward-compatible: return the sub-report directly (no Multi wrapper).
-        return read_one(&args.paths[0], args.full, args.binary, workspace);
+        return read_one(&args.paths[0], args.full, workspace);
     }
 
     // Multiple paths — collect into Multi, errors are inline.
@@ -320,7 +310,7 @@ pub fn read_to_report(
                 Ok(rel) => format!("{}{}", rel.to_string_lossy(), range_suffix),
                 Err(_) => label.clone(),
             };
-            let result = match read_one(label, args.full, args.binary, workspace) {
+            let result = match read_one(label, args.full, workspace) {
                 Ok(report) => MultiResult::Ok {
                     report: Box::new(report),
                 },
