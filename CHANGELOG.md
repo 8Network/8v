@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-24
+
 ### Added
 
 - `8v search` — regex content search with 3 agent-optimized output modes (compact/text/context), 86% token savings vs grep
