@@ -151,7 +151,22 @@ fi
 success "wrangler is authenticated"
 
 # ============================================================================
-# 2. RUN CHECKS
+# 2. BUMP VERSION (must happen BEFORE build so CARGO_PKG_VERSION bakes in)
+# ============================================================================
+
+step "Bumping version to $VERSION..."
+
+# Delegate to scripts/bump-version.sh — single source of truth for workspace
+# version bumping (updates [workspace.package] version; members inherit).
+"$(dirname "$0")/bump-version.sh" "$VERSION"
+success "Version bumped to $VERSION"
+
+# On dry-run, the bump is local only; we'll restore at the dry-run exit so the
+# git tree ends clean. On a real release, the bump is committed at step 11.
+BUMP_DONE=1
+
+# ============================================================================
+# 3. RUN CHECKS
 # ============================================================================
 
 step "Running checks..."
@@ -317,6 +332,12 @@ success "Checksums generated"
 # ============================================================================
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
+    # Restore Cargo.toml — the bump happened before build so it's already on disk.
+    if [ "${BUMP_DONE:-0}" = "1" ]; then
+        git checkout -- Cargo.toml Cargo.lock 2>/dev/null || true
+        success "Cargo.toml/Cargo.lock restored (dry-run)"
+    fi
+
     step "DRY-RUN COMPLETE"
     echo ""
     echo "Summary:"
@@ -330,17 +351,6 @@ if [ "$DRY_RUN" = "--dry-run" ]; then
     echo ""
     exit 0
 fi
-
-# ============================================================================
-# 9. BUMP VERSION IN CARGO.TOML FILES
-# ============================================================================
-
-step "Bumping version to $VERSION..."
-
-# Delegate to scripts/bump-version.sh — single source of truth for workspace
-# version bumping (updates [workspace.package] version; members inherit).
-"$(dirname "$0")/bump-version.sh" "$VERSION"
-success "Version bumped to $VERSION"
 
 # ============================================================================
 # 10. UPDATE CHANGELOG
