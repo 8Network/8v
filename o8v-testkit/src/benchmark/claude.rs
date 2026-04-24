@@ -216,6 +216,7 @@ impl ClaudeDriver {
         permission_mode: Option<PermissionMode>,
         settings_path: Option<&Path>,
         artifacts: &ProfileArtifacts,
+        provenance: Option<&super::provenance::Provenance>,
     ) -> Result<AgentResult, String> {
         // ── Apply ProfileArtifacts before spawning ──────────────────────────
         // MCP json merge: if fragment present, merge its mcpServers into the
@@ -297,6 +298,21 @@ impl ClaudeDriver {
         }
 
         let output = child.wait_with_output().map_err(|e| format!("wait: {e}"))?;
+
+        if let Ok(transcript_dir) = std::env::var("BENCH_TRANSCRIPT_DIR") {
+            let ts_result = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+            let ts = match ts_result {
+                Ok(d) => d.as_millis(),
+                Err(_) => 0,
+            };
+            let fname = if let Some(prov) = provenance {
+                let short = &prov.provenance_id()[..8];
+                format!("{}/{}-{}.jsonl", transcript_dir, ts, short)
+            } else {
+                format!("{}/{}.jsonl", transcript_dir, ts)
+            };
+            let _ = std::fs::write(&fname, &output.stdout);
+        }
 
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.is_empty() {

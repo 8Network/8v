@@ -28,6 +28,8 @@ pub struct ReportJson {
     pub deltas_vs_control: Vec<DeltaReport>,
     pub confidence: Confidence,
     pub runs: Vec<RunRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<crate::benchmark::provenance::Provenance>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

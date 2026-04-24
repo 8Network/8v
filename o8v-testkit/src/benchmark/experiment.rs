@@ -136,6 +136,7 @@ pub fn run_experiment_with_matrix(
         control,
         treatments,
         effects,
+        provenance: None,
     };
 
     // ── Render table ────────────────────────────────────────────────────
@@ -203,6 +204,7 @@ pub fn run_experiment(config: &ExperimentConfig, binary: &str) -> ExperimentResu
         control,
         treatments,
         effects,
+        provenance: None,
     };
 
     // ── Render table ────────────────────────────────────────────────────
@@ -239,7 +241,7 @@ fn run_sample(scenario: &Scenario, n: usize, binary: &str) -> Sample {
         } else {
             ToolProfile::Native
         };
-        let observation = run_scenario(scenario, binary, false, profile);
+        let observation = run_scenario(scenario, binary, false, profile, i as u32);
         observations.push(observation);
     }
 
@@ -261,7 +263,7 @@ fn run_sample_with_profile(
 
     for i in 0..n {
         eprintln!("\n--- {} ({}/{}) ---", scenario.description, i + 1, n);
-        let observation = run_scenario(scenario, binary, false, profile);
+        let observation = run_scenario(scenario, binary, false, profile, i as u32);
         observations.push(observation);
     }
 

@@ -266,6 +266,10 @@ pub struct Observation {
     pub profile: super::profiles::ToolProfile,
     #[serde(default = "super::profiles::default_profile_version")]
     pub profile_version: String,
+
+    // ── Provenance ──────────────────────────────────────────────────────
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<super::provenance::Provenance>,
 }
 
 /// A single tool invocation with full detail — name, input, output size, and error status.
@@ -456,6 +460,9 @@ pub struct ExperimentResult {
     pub treatments: Vec<Sample>,
     /// Computed effects.
     pub effects: Vec<Effect>,
+    /// Provenance captured once at experiment start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<super::provenance::Provenance>,
 }
 
 #[cfg(test)]
@@ -565,6 +572,7 @@ mod tests {
             tool_calls_detail: vec![],
             profile: Default::default(),
             profile_version: crate::benchmark::profiles::default_profile_version(),
+            provenance: None,
         };
         let sample = Sample {
             scenario: "s".to_string(),

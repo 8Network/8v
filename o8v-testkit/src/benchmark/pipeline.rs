@@ -7,13 +7,17 @@
 //! `run_scenario()` is the single entry point. It handles everything.
 //! The caller gets a `Observation` back — already persisted.
 
+use std::io::Write as _;
 use std::path::Path;
 use std::process::Command;
 use std::time::SystemTime;
 
+use o8v_core::events::benchmark::{BenchmarkRunFinished, BenchmarkRunStarted};
+
 use super::claude::{AgentResult, ClaudeDriver};
 use super::codex::CodexDriver;
 use super::profiles::ToolProfile;
+use super::provenance::Provenance;
 use super::store::BenchmarkStore;
 use super::types::*;
 use crate::scaffold::{fixture_path, TempProject};
@@ -34,6 +38,7 @@ pub fn run_scenario(
     binary: &str,
     persist: bool,
     profile: ToolProfile,
+    run_idx: u32,
 ) -> Observation {
     // NOTE: Benchmark scenarios must run sequentially (--test-threads=1) because events.ndjson is global.
     let prompt = scenario.task.resolved_prompt();
@@ -61,6 +66,11 @@ pub fn run_scenario(
             );
         }
     }
+
+    // ── 0a. Provenance — collect once before any setup ──────────────────────
+    // Settings / mcp paths are not yet known, so we re-collect after setup when
+    // the paths are available. For now capture everything that is path-independent.
+    let started_at_ms_for_provenance = unix_ms();
 
     // ── 1. Setup ────────────────────────────────────────────────────────────
     let fixture = fixture_path("o8v", scenario.task.fixture);
@@ -103,6 +113,40 @@ pub fn run_scenario(
         }
     }
 
+    // ── 1b. Collect provenance now that paths are known ─────────────────────
+    let provenance = Provenance::collect(
+        settings_path.as_deref(),
+        mcp_config.as_deref(),
+        None, // model threaded in after agent run
+        started_at_ms_for_provenance,
+    );
+
+    // ── 1c. Emit BenchmarkRunStarted ────────────────────────────────────────
+    let run_id = format!("{:x}", unix_ms() as u64);
+    let arm = if scenario.env.setup_8v {
+        "8v"
+    } else {
+        "baseline"
+    };
+    let provenance_json = match serde_json::to_value(&provenance) {
+        Ok(v) => v,
+        Err(_) => serde_json::Value::Null,
+    };
+    let started_event = BenchmarkRunStarted::new(
+        &run_id,
+        scenario.name,
+        scenario.task.name,
+        arm,
+        run_idx,
+        started_at_ms_for_provenance,
+        provenance_json,
+    );
+    if let Ok(line) = serde_json::to_string(&started_event) {
+        emit_benchmark_event(&events_ndjson_path(), &line);
+    } else {
+        eprintln!("  [benchmark] warning: failed to serialize BenchmarkRunStarted");
+    }
+
     // ── 2. Run agent ────────────────────────────────────────────────────────
     let start_ms = unix_ms();
     let events_path = events_ndjson_path();
@@ -115,6 +159,7 @@ pub fn run_scenario(
             scenario.env.permission_mode,
             settings_path.as_deref(),
             &artifacts,
+            Some(&provenance),
         )
         .expect("claude driver failed"),
         Agent::Codex => {
@@ -140,6 +185,11 @@ pub fn run_scenario(
     let verification = run_verification(project.path(), binary);
 
     // ── 5. Build record ─────────────────────────────────────────────────────
+    // Now that we know the model from agent_result, attach it to provenance.
+    let provenance = Provenance {
+        model: agent_result.model.clone(),
+        ..provenance
+    };
     let git_commit = current_git_commit();
     let record = Observation {
         scenario: scenario.name.to_string(),
@@ -190,7 +240,30 @@ pub fn run_scenario(
         tool_calls_detail: agent_result.tool_calls_detail.clone(),
         profile,
         profile_version,
+        provenance: Some(provenance),
     };
+
+    // ── 5b. Emit BenchmarkRunFinished ────────────────────────────────────────
+    {
+        let duration_ms = (unix_ms() - start_ms) as u64;
+        let finished_event = BenchmarkRunFinished::new(
+            &run_id,
+            duration_ms,
+            record.exit_code.into(),
+            record.verification.tests_pass.unwrap_or(false),
+            record.cost_usd.unwrap_or(0.0),
+            record.total_tokens,
+            record.cache_creation_input_tokens,
+            record.cache_read_input_tokens,
+            record.tool_names.len() as u32,
+            record.turn_count,
+        );
+        if let Ok(line) = serde_json::to_string(&finished_event) {
+            emit_benchmark_event(&events_ndjson_path(), &line);
+        } else {
+            eprintln!("  [benchmark] warning: failed to serialize BenchmarkRunFinished");
+        }
+    }
 
     // ── 6. Persist ──────────────────────────────────────────────────────────
     // When persist=false the caller (experiment.rs) owns persistence — skip here.
@@ -315,12 +388,48 @@ fn write_codex_config(project: &Path, binary: &str) {
         .expect("write .codex/config.toml");
 }
 
-pub(super) fn events_ndjson_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME")
-        .expect("[benchmark] HOME environment variable is not set — cannot locate events.ndjson; this is a configuration error");
+pub fn events_ndjson_path() -> std::path::PathBuf {
+    events_ndjson_path_with(|k| {
+        std::env::var_os(k)
+            .as_deref()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(str::to_owned)
+    })
+}
+
+/// Resolve the events.ndjson path using an env-var lookup closure.
+///
+/// Prefers `_8V_HOME`; falls back to `HOME`. Accepts a closure so tests can
+/// supply fake env values without mutating the process environment.
+pub fn events_ndjson_path_with<F>(lookup: F) -> std::path::PathBuf
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let home = lookup("_8V_HOME").or_else(|| lookup("HOME")).expect(
+        "[benchmark] HOME environment variable is not set — cannot locate events.ndjson; this is a configuration error",
+    );
     std::path::PathBuf::from(home)
         .join(".8v")
         .join("events.ndjson")
+}
+
+pub fn emit_benchmark_event(path: &std::path::Path, json_line: &str) {
+    let result = (|| -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)?;
+        writeln!(file, "{}", json_line)
+    })();
+    if let Err(e) = result {
+        eprintln!(
+            "  [benchmark] warning: failed to write benchmark event to {}: {e}",
+            path.display()
+        );
+    }
 }
 
 /// Agent identity extracted from MCP handshake events.

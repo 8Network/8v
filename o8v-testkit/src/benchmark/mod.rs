@@ -18,13 +18,17 @@ pub mod experiment;
 mod pipeline;
 pub mod preflight;
 pub mod profiles;
+pub mod provenance;
 pub mod report;
 mod store;
 mod types;
+pub use provenance::Provenance;
 pub use types::PermissionMode;
 
 pub use experiment::{run_experiment, run_experiment_with_matrix, ExperimentMatrix};
-pub use pipeline::run_scenario;
+pub use pipeline::{
+    emit_benchmark_event, events_ndjson_path, events_ndjson_path_with, run_scenario,
+};
 pub use profiles::ToolProfile;
 pub use store::BenchmarkStore;
 pub use types::{

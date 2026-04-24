@@ -205,6 +205,7 @@ mod tests {
             agent_capabilities: vec![],
             profile: Default::default(),
             profile_version: crate::benchmark::profiles::default_profile_version(),
+            provenance: None,
         }
     }
 
@@ -304,6 +305,7 @@ mod tests {
                 reason: "test".into(),
             },
             runs: vec![],
+            provenance: None,
         };
 
         let dir = store.write_report("test-exp", &report).unwrap();

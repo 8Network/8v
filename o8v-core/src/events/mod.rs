@@ -7,6 +7,7 @@
 //! Each event implements Renderable so the framework can render events
 //! as they arrive, per audience.
 
+pub mod benchmark;
 pub mod build;
 pub mod check;
 pub mod fmt;
@@ -15,6 +16,7 @@ pub mod run;
 pub mod test;
 pub mod upgrade;
 
+pub use benchmark::{BenchmarkRunFinished, BenchmarkRunStarted};
 pub use lifecycle::{CommandCompleted, CommandStarted};
 
 /// A typed event read back from the event store.

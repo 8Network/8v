@@ -47,6 +47,7 @@ fn make_observation(tokens: u64, cost: f64, turns: u32, tools: Vec<&str>) -> Obs
         tool_calls_detail: vec![],
         profile: Default::default(),
         profile_version: crate::benchmark::profiles::default_profile_version(),
+        provenance: None,
     }
 }
 
@@ -85,6 +86,7 @@ fn make_result() -> ExperimentResult {
         control,
         treatments: vec![treatment],
         effects: vec![],
+        provenance: None,
     }
 }
 

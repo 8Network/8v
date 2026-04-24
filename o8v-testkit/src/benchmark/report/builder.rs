@@ -79,6 +79,7 @@ pub fn build_report(result: &ExperimentResult) -> ReportJson {
             reason,
         },
         runs,
+        provenance: result.provenance.clone(),
     }
 }
 
