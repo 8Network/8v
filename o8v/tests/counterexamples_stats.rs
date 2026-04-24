@@ -176,6 +176,7 @@ fn hotspot_sort_ties_argv_shape_is_nondeterministic() {
     for _ in 0..20 {
         let out = bin()
             .args(["stats", "--json"])
+            .current_dir(home.path())
             .env("_8V_HOME", home.path())
             .output()
             .expect("run 8v stats --json");
@@ -242,6 +243,7 @@ fn top_path_ties_are_nondeterministic() {
     for _ in 0..20 {
         let out = bin()
             .args(["stats", "--json"])
+            .current_dir(home.path())
             .env("_8V_HOME", home.path())
             .output()
             .expect("run 8v stats --json");
@@ -486,6 +488,7 @@ fn stats_json_empty_events_exits_zero() {
 
     let out = bin()
         .args(["stats", "--json"])
+        .current_dir(home.path())
         .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
@@ -523,6 +526,7 @@ fn stats_json_top_level_fields_present() {
 
     let out = bin()
         .args(["stats", "--json"])
+        .current_dir(home.path())
         .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
@@ -565,6 +569,7 @@ fn failure_hotspots_empty_when_all_succeed() {
 
     let out = bin()
         .args(["stats", "--json"])
+        .current_dir(home.path())
         .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
@@ -607,6 +612,7 @@ fn failure_hotspots_populated_for_failures() {
 
     let out = bin()
         .args(["stats", "--json"])
+        .current_dir(home.path())
         .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
@@ -660,6 +666,7 @@ fn failure_hotspots_capped_at_ten() {
 
     let out = bin()
         .args(["stats", "--json"])
+        .current_dir(home.path())
         .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
@@ -711,6 +718,7 @@ fn flag_value_after_append_normalizes_to_str_in_hotspot() {
 
     let out = bin()
         .args(["stats", "--json"])
+        .current_dir(home.path())
         .env("_8V_HOME", home.path())
         .output()
         .expect("run 8v stats --json");
