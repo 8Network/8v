@@ -1,18 +1,18 @@
 # 8v
 
-Reduce AI agent token cost. One command checks everything. Everything is an error.
+One command checks everything. Everything is an error.
 
 ## Install
 
 ```sh
-curl -fsSL https://releases.8vast.io/install.sh | sh
+curl -fsSL https://install.8vast.io | sh
 ```
 
 Or build from source:
 
 ```sh
 cargo build -p o8v
-# binary at target/debug/o8v
+# binary at target/debug/8v
 ```
 
 ## Usage
@@ -40,7 +40,7 @@ cargo build -p o8v
 | 8v (1 MCP tool) | 641 |
 | Native (Read + Edit + Write + Bash + Glob + Grep) | 1,377 |
 
-One tool replaces six. 53% smaller schema. 50.8% total token reduction on a fair two-arm benchmark.
+One tool replaces six. 53% smaller schema.
 
 Connect to Claude Code:
 
@@ -61,14 +61,20 @@ Or add manually to `.mcp.json`:
 }
 ```
 
-## Token Savings (Proven)
+## Benchmark Results (Claude Sonnet, fix-go, N=6, 2026-04-24)
 
-| Claim | Result | Verification |
-|-------|--------|-------------|
-| Schema efficiency | 641 vs 1,377 tokens (53% smaller) | Schema measurement |
-| Total token reduction | 50.8% (351K → 173K tokens) | Two-arm benchmark, both with MCP |
-| Search efficiency | 86% savings in compact mode | `8v search` vs `grep -rn` |
-| Tool call reduction | 55% fewer calls (11 → 5) | Same benchmark |
+| Metric | Change |
+|--------|--------|
+| Total tokens | −13.4% |
+| Tool calls | −30% |
+| Turns | −27% |
+| Output tokens | −50% |
+
+All 6/6 tasks pass on both sides.
+
+Schema: 641 tokens (8v, 1 tool) vs 1,377 tokens (native, 6 tools).
+
+**What this means for your agent:** Output tokens are the tightest rate-limit bucket (OTPM). A −50% reduction means your agent does roughly twice the work per minute before throttling. Fewer turns also means longer sessions fit inside the 200K/1M context window, and fewer round-trips means fewer places to hit the RPM cap.
 
 ## Supported Stacks
 
@@ -77,9 +83,9 @@ Rust, TypeScript, JavaScript, Python, Go, .NET, Deno, Ruby, Java, Kotlin, Swift,
 ## Building
 
 ```sh
-cargo test --workspace       # ~1,850 tests
+cargo test --workspace       # 2,455 tests
 cargo clippy --workspace     # zero warnings
-cargo build -p o8v       # CLI binary
+cargo build -p o8v           # CLI binary
 8v check .                   # self-check
 ```
 
