@@ -18,6 +18,7 @@ pub fn install(interrupted: &'static AtomicBool) {
             std::process::exit(130);
         }
         let _ = write_stderr(b"\ninterrupted, cleaning up...\n");
+        std::process::exit(130);
     });
 
     if let Err(e) = result {

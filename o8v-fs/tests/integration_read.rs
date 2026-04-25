@@ -81,6 +81,34 @@ fn oversized_file_rejected() {
     assert!(msg.contains("too large"), "expected TooLarge, got: {msg}");
 }
 
+/// SIZE-1: "file too large" error must include both the actual file size in bytes
+/// and the configured limit in bytes so the user knows why it failed and what the
+/// threshold is. Pre-fix: error only said "too large" with no numbers.
+/// Post-fix: message matches `file too large ({actual} bytes, limit {limit}): {path}`.
+#[test]
+fn size1_too_large_error_includes_actual_size_and_limit() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("big.bin");
+    // 11 MiB — exceeds the default 10 MiB limit.
+    let actual_size: usize = 11 * 1024 * 1024; // 11534336
+    let limit: usize = 10 * 1024 * 1024; // 10485760
+    let data = vec![b'x'; actual_size];
+    std::fs::write(&path, &data).unwrap();
+
+    let fs = fs_default(dir.path());
+    let err = fs.read_file(&path).unwrap_err();
+    let msg = format!("{err}");
+
+    assert!(
+        msg.contains(&actual_size.to_string()),
+        "error must include actual file size ({actual_size} bytes); got: {msg}"
+    );
+    assert!(
+        msg.contains(&limit.to_string()),
+        "error must include the configured limit ({limit} bytes); got: {msg}"
+    );
+}
+
 #[test]
 fn file_at_size_limit() {
     let dir = tempdir().unwrap();

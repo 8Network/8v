@@ -95,6 +95,21 @@ pub(crate) fn guarded_read(
 ) -> Result<GuardedFile, FsError> {
     use std::io::Read;
 
+    // Step 0: Pre-canonicalize type check — prevents FIFO/socket/directory blocking.
+    // symlink_metadata() = lstat(), does NOT follow symlinks, does NOT open the fd.
+    // Safe to call on FIFOs (unlike canonicalize which calls realpath/open).
+    // Allow regular files and symlinks through; symlinks may point to regular files
+    // and will be validated again after canonicalize.
+    {
+        let pre = std::fs::symlink_metadata(path).map_err(|e| classify_io_error(path, e))?;
+        if !pre.is_file() && !pre.file_type().is_symlink() {
+            return Err(FsError::NotRegularFile {
+                path: path.to_path_buf(),
+                kind: meta_to_kind(&pre),
+            });
+        }
+    }
+
     // Step 1: Canonicalize
     let canonical = std::fs::canonicalize(path).map_err(|e| classify_io_error(path, e))?;
 
@@ -187,6 +202,17 @@ pub(crate) fn guarded_read_bytes(
     config: &FsConfig,
 ) -> Result<Vec<u8>, FsError> {
     use std::io::Read;
+
+    // Step 0: Pre-canonicalize type check (mirrors guarded_read Step 0).
+    {
+        let pre = std::fs::symlink_metadata(path).map_err(|e| classify_io_error(path, e))?;
+        if !pre.is_file() && !pre.file_type().is_symlink() {
+            return Err(FsError::NotRegularFile {
+                path: path.to_path_buf(),
+                kind: meta_to_kind(&pre),
+            });
+        }
+    }
 
     let canonical = std::fs::canonicalize(path).map_err(|e| classify_io_error(path, e))?;
 

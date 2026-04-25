@@ -212,7 +212,8 @@ impl super::Renderable for LsReport {
 
         let mut output = serde_json::json!({
             "total_projects": self.projects.len(),
-            "total_files": self.shown,
+            "total_files": self.total_files,
+            "shown": self.shown,
             "files_filtered": self.files_filtered,
             "files_skipped_gitignore": self.files_skipped_gitignore,
             "truncated": self.truncated,
@@ -390,6 +391,36 @@ mod tests {
             out.as_str().ends_with('\n'),
             "tree output must end with newline; got: {:?}",
             &out.as_str()[out.as_str().len().saturating_sub(8)..]
+        );
+    }
+
+    // TRUNC-1: JSON must expose separate "shown" and "total_files" fields when truncated.
+    #[test]
+    fn json_truncated_fields_distinct() {
+        let r = LsReport {
+            projects: vec![LsProjectEntry {
+                name: "o8v-core".to_string(),
+                stack: "rust".to_string(),
+                path: "o8v-core/".to_string(),
+                files: vec![],
+            }],
+            mode: LsMode::Tree,
+            total_files: 100,
+            files_filtered: 0,
+            files_skipped_gitignore: 0,
+            truncated: true,
+            shown: 50,
+        };
+        let out = r.render_json();
+        let v: serde_json::Value = serde_json::from_str(out.as_str()).unwrap();
+        assert_eq!(v["truncated"], true, "truncated must be true");
+        assert_eq!(
+            v["shown"], 50,
+            "shown must equal the number of entries returned"
+        );
+        assert_eq!(
+            v["total_files"], 100,
+            "total_files must reflect the true scanned count, not the truncated shown count"
         );
     }
 

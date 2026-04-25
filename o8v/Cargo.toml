@@ -47,6 +47,7 @@ ulid = "1"
 
 [dev-dependencies]
 tempfile = "3"
+libc = "0.2"
 serde_json = "1"
 serial_test = "3"
 o8v-testkit = { path = "../o8v-testkit", version = "0.1.0" }

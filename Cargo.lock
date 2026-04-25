@@ -1038,6 +1038,7 @@ dependencies = [
  "ctrlc",
  "dialoguer",
  "ignore",
+ "libc",
  "o8v-check",
  "o8v-core",
  "o8v-fs",
