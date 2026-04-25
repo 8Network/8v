@@ -270,8 +270,30 @@ fn count_file_matches(path: &Path, regex: &Regex, result: &mut SearchResult) {
     }
 }
 
+/// Returns `true` when stdin is a named pipe (FIFO), meaning the caller piped
+/// data in. Returns `false` for TTYs, `/dev/null`, regular files, and any
+/// other non-pipe fd — including how test harnesses spawn subprocesses.
+fn stdin_is_pipe() -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        match std::fs::metadata("/dev/stdin") {
+            Ok(m) => m.file_type().is_fifo(),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
 /// Run the full search and return a `SearchResult`.
 pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, String> {
+    if args.path.is_none() && stdin_is_pipe() {
+        eprintln!("note: stdin not consumed by 8v search; scanning cwd");
+    }
+
     let regex = build_regex(args)?;
 
     let workspace = ctx

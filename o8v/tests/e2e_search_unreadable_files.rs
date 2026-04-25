@@ -121,6 +121,7 @@ fn search_stderr_empty_on_clean_no_match() {
     let out = bin()
         .args(["search", "xyzzy_pattern_that_does_not_exist"])
         .current_dir(dir.path())
+        .stdin(std::process::Stdio::null())
         .output()
         .expect("run 8v search");
 
@@ -264,6 +265,7 @@ fn search_binary_files_silent_no_stderr() {
     let out = bin()
         .args(["search", "xyzzy_unique_no_match"])
         .current_dir(dir.path())
+        .stdin(std::process::Stdio::null())
         .output()
         .expect("run 8v search with binary file present");
 

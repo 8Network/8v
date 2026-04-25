@@ -29,6 +29,16 @@ fn main() -> ExitCode {
         _ => o8v_core::render::Audience::Human,
     };
 
+    // Pre-parse: clap's built-in --version fires before any main() logic.
+    // Intercept --version --json here so we can emit structured output.
+    if argv.iter().any(|a| a == "--version") && argv.iter().any(|a| a == "--json") {
+        use std::io::Write;
+        let v = cli::version::short();
+        let json = format!("{{\"version\":\"{v}\"}}\n");
+        let _ = std::io::stdout().write_all(json.as_bytes());
+        return ExitCode::SUCCESS;
+    }
+
     use clap::Parser;
     let cli = cli::Cli::parse();
 

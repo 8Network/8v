@@ -121,6 +121,30 @@ fn version_default_is_single_line() {
 }
 
 #[test]
+fn version_json_emits_structured_json() {
+    // `--version --json` must emit a valid JSON object with a "version" key.
+    let out = bin()
+        .args(["--version", "--json"])
+        .output()
+        .expect("failed to run binary");
+
+    assert_eq!(out.status.code(), Some(0), "exit code must be 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.trim_start().starts_with('{'),
+        "--version --json must emit JSON; got: {stdout}"
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("--version --json output is not valid JSON");
+    assert!(
+        v.get("version").is_some(),
+        "--version --json JSON missing 'version' key; got: {stdout}"
+    );
+    let version_str = v["version"].as_str().expect("version must be a string");
+    assert!(!version_str.is_empty(), "version string must not be empty");
+}
+
+#[test]
 fn version_build_info_contains_provenance() {
     // `--build-info` must exit 0 and contain commit: and rustc:.
     let out = bin()

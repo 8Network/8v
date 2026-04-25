@@ -83,6 +83,39 @@ fn build_rust_json_has_required_fields() {
     );
 }
 
+#[test]
+fn build_rust_broken_json_has_stdout_and_stderr() {
+    // Fix 2 regression: failure JSON must include top-level "stdout" and "stderr" strings.
+    let project = fixture("build-rust-broken");
+
+    let out = bin()
+        .args(["build", project.path().to_str().unwrap(), "--json"])
+        .output()
+        .expect("run 8v build --json on broken project");
+
+    // Build should fail (non-zero exit).
+    assert!(
+        !out.status.success(),
+        "broken project should fail; got exit 0\nstdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(e) => panic!("invalid JSON on failure: {e}\noutput: {stdout}"),
+    };
+
+    assert!(
+        parsed.get("stdout").and_then(|s| s.as_str()).is_some(),
+        "failure JSON missing top-level 'stdout' string; got: {stdout}"
+    );
+    assert!(
+        parsed.get("stderr").and_then(|s| s.as_str()).is_some(),
+        "failure JSON missing top-level 'stderr' string; got: {stdout}"
+    );
+    assert_eq!(parsed["success"], false, "success must be false");
+}
+
 // ─── Go builds ──────────────────────────────────────────────────────────────
 
 #[test]

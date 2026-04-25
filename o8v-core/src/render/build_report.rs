@@ -75,6 +75,8 @@ impl super::Renderable for BuildReport {
             "command": p.command,
             "errors": errors_json,
             "detection_errors": self.detection_errors,
+            "stdout": p.stdout,
+            "stderr": p.stderr,
             "truncated": {
                 "stdout": p.stdout_truncated,
                 "stderr": p.stderr_truncated,
@@ -227,10 +229,14 @@ mod tests {
         assert_eq!(v["stack"], "rust");
         assert_eq!(v["success"], true);
         assert_eq!(v["exit_code"], 0);
-        // Must NOT contain raw stdout/stderr in structured output.
+        // stdout and stderr must be present as strings (even if empty).
         assert!(
-            v.get("stdout").is_none(),
-            "raw stdout must not be in structured JSON"
+            v.get("stdout").and_then(|s| s.as_str()).is_some(),
+            "stdout must be a string in JSON; got: {v}"
+        );
+        assert!(
+            v.get("stderr").and_then(|s| s.as_str()).is_some(),
+            "stderr must be a string in JSON; got: {v}"
         );
     }
 }
