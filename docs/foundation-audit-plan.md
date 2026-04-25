@@ -68,7 +68,8 @@ Only after Phases 1-4. Re-run the cross-agent benchmarks against the post-audit 
 - **Phase 3** ✓ done as audit. All 9 bugs from rounds 12-14 have BINARY_CONTRACT regression tests at the binary boundary. Phase 3 audit incorrectly flagged bug 7 (init non-TTY) as missing — it's covered by `init_without_tty_prints_error` at `bin_e2e.rs:311`. One cosmetic finding: bug 5's canonical regression-test annotation points at `append_to_file` which would not catch the original bug; the real guard is `append_to_lf_file_without_trailing_newline_uses_lf` at line 919. Cross-reference, not a coverage gap.
 - **Phase 4a** ✓ partial. `contract_no_symlink_loops.rs` — 10 active tests + 2 ignored. Every walking command (`ls`, `init` re-init, `search`, `search --files`, `check`, `fmt`, `build`, `test`, `read .`, `read sub/loop`) survives a parent-pointing symlink loop in <5s. **2 new bugs surfaced**: `8v stats` and `8v log` both hang ~94s on a symlink-looped project. Marked `#[ignore]` with `// FIXME phase-4a-fix:`. Cross-layer audit working as intended.
 - **Phase 2c2** ✓ done. `8v fmt` enforces workspace containment via `WorkspaceRoot::resolve` + `canonicalize` + `starts_with` check. Conservative judgment call (founder away): fmt mutates files; outside-project paths could corrupt files anywhere on disk. `search` and `ls` keep the permissive policy locked with POLICY comment in `contract_path_containment.rs` (read-only enumeration; explicit user-passed path is plausible). `contract_path_containment.rs` flipped one ignored test to active and added `fmt_rejects_traversal_escape`. Six existing test files updated to init a workspace and use `.` instead of absolute path.
-- **Phase 4 remaining** not started. "No command writes outside project root" cross-layer audit; --json schema-per-command spec.
+- **Phase 4b** ✓ partial. `contract_path_containment.rs` extended with 8 active tests covering all remaining write modes (`--insert`, `--delete`, `--append`, `--find/--replace`) against absolute-outside and traversal paths. All gated by the same `safe_write`/`safe_append` containment check — no bypass found. **`init` finding**: `8v init <outside_dir>` and `8v init ../sibling` succeed by design — init anchors its ContainmentRoot to the path argument it is given (it bootstraps a new workspace there). 2 tests `#[ignore]`'d with `FIXME phase-4b-decision:` to lock current behavior and surface it as an architectural decision point.
+- **Phase 4 remaining** not started. JSON schema-per-command spec (separate, larger doc lift).
 - **Phase 5** not started. Re-baseline benchmarks.
 
 ## Open decisions for founder
@@ -78,7 +79,11 @@ Only after Phases 1-4. Re-run the cross-agent benchmarks against the post-audit 
    - fmt → enforce containment (BUG fixed; mutation safety).
    - search/ls → permissive (read-only enumeration; explicit path argument plausible). Locked with POLICY comment.
 2. **Stats/log symlink hang.** Phase 4a surfaced: `8v stats` and `8v log` hang ~94s on a symlink-looped project. Pending: fix or accept as known-limitation? (currently `#[ignore] FIXME phase-4a-fix:`).
-3. **Phase 4 remaining scope.** Walking-symlinks audit done (Phase 4a). Writing-outside-root audit straightforward. --json schema-per-command is a much bigger lift — needs a spec doc first.
+3. **`init <outside_path>` policy.** Phase 4b surfaced: `8v init /tmp/elsewhere` succeeds by design — init bootstraps a workspace at the supplied path (anchors ContainmentRoot to the arg, not CWD). Two reads:
+   - **Allow** (current): legitimate use case — user creates a workspace in a chosen new location.
+   - **Reject when not pre-confirmed**: harden against typos / hostile prompts that escape into `/etc` etc.
+   Currently `#[ignore] FIXME phase-4b-decision:`.
+4. **Phase 4 remaining scope.** Walking-symlinks ✓ (Phase 4a). Write-outside-root ✓ (Phase 4b). --json schema-per-command is a much bigger lift — needs a spec doc first.
 4. **Phase 5 timing.** Benchmarks should re-baseline only after Phase 4 fully closes. Need agreement on which fixtures (the historical fix-go N=6, plus what?) and whether to publicly republish numbers or hold them internal until enough rounds have stabilized.
 
 ## Tracking

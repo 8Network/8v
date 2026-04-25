@@ -275,3 +275,147 @@ fn write_rejects_symlink_escaping_root() {
     let (code, stderr) = proj.run(&["write", "escape_write_link.txt:1", "injected"]);
     assert_containment_violation(code, &stderr);
 }
+
+// ─── write --insert: absolute path ───────────────────────────────────────────
+
+#[test]
+fn write_insert_rejects_absolute_outside_path() {
+    let proj = TestProject::new();
+    let outside = proj.outside_file();
+    let target = format!("{}:1", outside.to_str().unwrap());
+    let (code, stderr) = proj.run(&["write", &target, "--insert", "injected"]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --insert: traversal ───────────────────────────────────────────────
+
+#[test]
+fn write_insert_rejects_traversal_path() {
+    let proj = TestProject::new();
+    let sibling = proj.sibling_file();
+    let sibling_name = sibling.file_name().unwrap().to_str().unwrap();
+    let traversal = format!("../{sibling_name}:1");
+    let (code, stderr) = proj.run(&["write", &traversal, "--insert", "injected"]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --delete: absolute path ───────────────────────────────────────────
+
+#[test]
+fn write_delete_rejects_absolute_outside_path() {
+    let proj = TestProject::new();
+    let outside = proj.outside_file();
+    let target = format!("{}:1", outside.to_str().unwrap());
+    let (code, stderr) = proj.run(&["write", &target, "--delete"]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --delete: traversal ───────────────────────────────────────────────
+
+#[test]
+fn write_delete_rejects_traversal_path() {
+    let proj = TestProject::new();
+    let sibling = proj.sibling_file();
+    let sibling_name = sibling.file_name().unwrap().to_str().unwrap();
+    let traversal = format!("../{sibling_name}:1");
+    let (code, stderr) = proj.run(&["write", &traversal, "--delete"]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --append: absolute path ───────────────────────────────────────────
+
+#[test]
+fn write_append_rejects_absolute_outside_path() {
+    let proj = TestProject::new();
+    let outside = proj.outside_file();
+    let (code, stderr) = proj.run(&["write", outside.to_str().unwrap(), "--append", "injected"]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --append: traversal ───────────────────────────────────────────────
+
+#[test]
+fn write_append_rejects_traversal_path() {
+    let proj = TestProject::new();
+    let sibling = proj.sibling_file();
+    let sibling_name = sibling.file_name().unwrap().to_str().unwrap();
+    let traversal = format!("../{sibling_name}");
+    let (code, stderr) = proj.run(&["write", &traversal, "--append", "injected"]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --find/--replace: absolute path ───────────────────────────────────
+
+#[test]
+fn write_find_replace_rejects_absolute_outside_path() {
+    let proj = TestProject::new();
+    let outside = proj.outside_file();
+    let (code, stderr) = proj.run(&[
+        "write",
+        outside.to_str().unwrap(),
+        "--find",
+        "outside",
+        "--replace",
+        "injected",
+    ]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── write --find/--replace: traversal ───────────────────────────────────────
+
+#[test]
+fn write_find_replace_rejects_traversal_path() {
+    let proj = TestProject::new();
+    let sibling = proj.sibling_file();
+    let sibling_name = sibling.file_name().unwrap().to_str().unwrap();
+    let traversal = format!("../{sibling_name}");
+    let (code, stderr) = proj.run(&[
+        "write",
+        &traversal,
+        "--find",
+        "sibling",
+        "--replace",
+        "injected",
+    ]);
+    assert_containment_violation(code, &stderr);
+}
+
+// ─── init: outside path ──────────────────────────────────────────────────────
+//
+// FIXME phase-4b-decision: `8v init <path>` anchors its ContainmentRoot to the
+// supplied path argument, not to the current project. Passing an outside dir
+// succeeds by design — init bootstraps a new workspace at any given location.
+// These tests lock current (permissive) behavior and surface it as a decision
+// point: should init refuse to run when invoked from inside an existing project
+// with an outside-project target?
+#[test]
+#[ignore]
+fn init_rejects_absolute_outside_path() {
+    let proj = TestProject::new();
+    let outside_dir = tempfile::tempdir().expect("outside dir");
+    let outside_path = outside_dir.path().canonicalize().expect("canonicalize");
+    let (code, stderr) = proj.run(&["init", "--yes", outside_path.to_str().unwrap()]);
+    assert_containment_violation(code, &stderr);
+}
+
+// FIXME phase-4b-decision: same as above — traversal to a sibling dir is
+// accepted because init re-anchors containment to its path arg.
+#[test]
+#[ignore]
+fn init_rejects_traversal_path() {
+    let proj = TestProject::new();
+    // Create a sibling directory outside the project root.
+    let parent = proj.root.parent().expect("root has parent");
+    let sibling_dir = parent.join(format!(
+        "sibling_init_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos()
+    ));
+    fs::create_dir(&sibling_dir).expect("create sibling dir");
+    let sibling_name = sibling_dir.file_name().unwrap().to_str().unwrap();
+    let traversal = format!("../{sibling_name}");
+    let (code, stderr) = proj.run(&["init", "--yes", &traversal]);
+    assert_containment_violation(code, &stderr);
+}
