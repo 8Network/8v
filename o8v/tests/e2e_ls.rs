@@ -507,3 +507,25 @@ stderr: {}",
 Got: {stdout}"
     );
 }
+
+/// BUG STACK-1 regression: unknown --stack value must exit non-zero with error.
+#[test]
+fn ls_unknown_stack_rejected() {
+    let out = bin()
+        .args(["ls", ".", "--stack", "xyzzy_invalid"])
+        .output()
+        .expect("run 8v ls --stack xyzzy_invalid");
+    assert!(
+        !out.status.success(),
+        "8v ls with unknown stack must exit non-zero, got exit 0"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+    assert!(
+        combined.contains("xyzzy_invalid")
+            || combined.to_lowercase().contains("unknown")
+            || combined.to_lowercase().contains("invalid"),
+        "error must mention the invalid stack name or 'unknown'/'invalid', got: {combined}"
+    );
+}

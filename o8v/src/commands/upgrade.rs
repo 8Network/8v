@@ -246,7 +246,7 @@ fn run_impl_report(
         return Ok(o8v_core::render::upgrade_report::UpgradeReport {
             current_version,
             latest_version: Some(latest_version),
-            upgraded: true,
+            upgraded: false,
             error: None,
         });
     }
@@ -956,6 +956,26 @@ mod tests {
         assert!(
             v.get("error_kind").is_none(),
             "no error_kind in canonical envelope"
+        );
+    }
+
+    /// BUG UPGRADE-1 regression: already-up-to-date must report upgraded=false, not true.
+    #[test]
+    fn integration_already_up_to_date_upgraded_false() {
+        let filename = current_platform_filename();
+        let server = o8v_testkit::ReleaseTestServer::start("0.1.0", &[(&filename, b"binary")]);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let exe = make_dummy_exe(tmp.path());
+        let args = test_args(false, false);
+
+        let report = run_impl_report(&args, &server.base_url(), Some(&exe), Some("0.1.0"))
+            .expect("should succeed when already up to date");
+
+        assert!(
+            !report.upgraded,
+            "upgraded must be false when already at current version, got: {:?}",
+            report.upgraded
         );
     }
 

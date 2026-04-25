@@ -27,7 +27,7 @@ struct SuiteSummary {
 
 /// Parse the last `{"type":"suite","event":"ok"|"failed",...}` line from cargo's JSON output.
 fn parse_suite_summary(stdout: &str) -> Option<SuiteSummary> {
-    let mut last: Option<SuiteSummary> = None;
+    let mut total: Option<SuiteSummary> = None;
     for line in stdout.lines() {
         let line = line.trim();
         if !line.starts_with('{') {
@@ -39,15 +39,27 @@ fn parse_suite_summary(stdout: &str) -> Option<SuiteSummary> {
         if v.get("type").and_then(|t| t.as_str()) == Some("suite") {
             let event = v.get("event").and_then(|e| e.as_str()).unwrap_or("");
             if event == "ok" || event == "failed" {
-                last = Some(SuiteSummary {
-                    passed: v.get("passed").and_then(|x| x.as_u64()).unwrap_or(0),
-                    failed: v.get("failed").and_then(|x| x.as_u64()).unwrap_or(0),
-                    ignored: v.get("ignored").and_then(|x| x.as_u64()).unwrap_or(0),
-                });
+                let passed = v.get("passed").and_then(|x| x.as_u64()).unwrap_or(0);
+                let failed = v.get("failed").and_then(|x| x.as_u64()).unwrap_or(0);
+                let ignored = v.get("ignored").and_then(|x| x.as_u64()).unwrap_or(0);
+                match &mut total {
+                    None => {
+                        total = Some(SuiteSummary {
+                            passed,
+                            failed,
+                            ignored,
+                        });
+                    }
+                    Some(acc) => {
+                        acc.passed += passed;
+                        acc.failed += failed;
+                        acc.ignored += ignored;
+                    }
+                }
             }
         }
     }
-    last
+    total
 }
 
 impl super::Renderable for TestReport {
@@ -287,5 +299,44 @@ mod tests {
         assert_eq!(v["failed"], 0);
         // Must NOT contain raw stdout/stderr.
         assert!(v.get("stdout").is_none(), "raw stdout must not be in JSON");
+    }
+
+    /// BUG TEST-1 regression: two suite lines (unit + doc-test) must be accumulated, not last-wins.
+    #[test]
+    fn multi_suite_counts_are_accumulated() {
+        // Simulate cargo output with two suite-final lines:
+        // - unit tests: 1 passed, 0 failed
+        // - doc-tests:  0 passed, 0 failed
+        // Total expected: 1 passed, 0 failed, 0 ignored.
+        let stdout = r#"{"type":"suite","event":"started","test_count":1}
+{"type":"test","event":"ok","name":"my_test","exec_time":0.05}
+{"type":"suite","event":"ok","passed":1,"failed":0,"ignored":0,"measured":0,"filtered_out":0,"exec_time":0.1}
+{"type":"suite","event":"started","test_count":0}
+{"type":"suite","event":"ok","passed":0,"failed":0,"ignored":0,"measured":0,"filtered_out":0,"exec_time":0.0}"#.to_string();
+        let report = TestReport {
+            process: ProcessReport {
+                command: "cargo test --format=json --report-time".to_string(),
+                exit_code: 0,
+                success: true,
+                exit_label: "0 (success)".to_string(),
+                duration: std::time::Duration::from_millis(100),
+                duration_display: "100ms".to_string(),
+                stdout,
+                stderr: String::new(),
+                stdout_truncated: false,
+                stderr_truncated: false,
+            },
+            stack: "rust".to_string(),
+            name: "myproject".to_string(),
+            detection_errors: vec![],
+            render_config: RenderConfig::default(),
+            errors: vec![],
+        };
+        let text = report.render_plain();
+        assert!(
+            text.as_str().contains("tests 1 passed 0 failed 0 ignored"),
+            "expected accumulated counts '1 passed', got: {:?}",
+            text.as_str()
+        );
     }
 }

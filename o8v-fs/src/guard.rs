@@ -7,6 +7,69 @@ use crate::error::{classify_io_error, FileKind, FsError};
 use crate::file::GuardedFile;
 use std::path::Path;
 
+/// Normalize a path lexically (without following symlinks) by processing
+/// `.` and `..` components.  The result is an absolute path that may not
+/// exist on disk.
+fn lexical_normalize(path: &Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Returns `true` if a symlink component **within the provided path** caused
+/// the path to resolve outside `root`.
+///
+/// The logic: canonicalize the path up to the point where we would follow the
+/// final component (using the parent directory canonical path + the filename).
+/// If the parent resolves inside `root`, but the full canonical path is
+/// outside, then a symlink inside `root` caused the escape.
+///
+/// This avoids lexical normalization issues with OS-level symlinks such as
+/// macOS `/var` → `/private/var` which would cause false negatives when root
+/// is canonical (`/private/var/...`) but a lexically-normalized path still
+/// refers to `/var/...`.
+fn symlink_caused_escape(path: &Path, root: &Path, canonical: &Path) -> bool {
+    // Resolve the parent directory of `path` through symlinks.  This handles
+    // OS-level symlinks (e.g. macOS /var → /private/var) without treating
+    // user-placed symlinks in the final component as "part of the path".
+    let parent = path.parent().unwrap_or(path);
+    let canonical_parent = match std::fs::canonicalize(parent) {
+        Ok(p) => p,
+        // If parent doesn't exist (e.g. dangling intermediate path), fall
+        // back to lexical check — if lexical is also outside root, it's a
+        // plain violation.
+        Err(_) => {
+            let abs = if path.is_absolute() {
+                lexical_normalize(path)
+            } else if let Ok(cwd) = std::env::current_dir() {
+                lexical_normalize(&cwd.join(path))
+            } else {
+                return false;
+            };
+            return abs.starts_with(root) && !canonical.starts_with(root);
+        }
+    };
+
+    // If the parent directory itself is outside root, no symlink inside root
+    // caused the escape — the path is plainly outside.
+    if !canonical_parent.starts_with(root) {
+        return false;
+    }
+
+    // Parent is inside root but full canonical is outside → a symlink (the
+    // final component, or a symlink chain from the final component) escaped.
+    !canonical.starts_with(root)
+}
+
 /// Read a file with all safety guards.
 ///
 /// ## Pipeline
@@ -44,7 +107,14 @@ pub(crate) fn guarded_read(
             root = %root.display(),
             "path escapes project root"
         );
-        return Err(FsError::SymlinkEscape {
+        // Distinguish: a symlink whose target escapes → SymlinkEscape.
+        // A plain path that simply lives outside root → ContainmentViolation.
+        if symlink_caused_escape(path, root, &canonical) {
+            return Err(FsError::SymlinkEscape {
+                path: path.to_path_buf(),
+            });
+        }
+        return Err(FsError::ContainmentViolation {
             path: path.to_path_buf(),
         });
     }
@@ -126,7 +196,12 @@ pub(crate) fn guarded_read_bytes(
             root = %root.display(),
             "path escapes project root"
         );
-        return Err(FsError::SymlinkEscape {
+        if symlink_caused_escape(path, root, &canonical) {
+            return Err(FsError::SymlinkEscape {
+                path: path.to_path_buf(),
+            });
+        }
+        return Err(FsError::ContainmentViolation {
             path: path.to_path_buf(),
         });
     }

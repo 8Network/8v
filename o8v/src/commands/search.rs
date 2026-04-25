@@ -150,11 +150,20 @@ fn search_file_contents(
     let guarded = match o8v_fs::safe_read(path, containment, config) {
         Ok(f) => f,
         Err(e) => {
-            let reason = if e.to_string().contains("Permission denied")
-                || e.to_string().contains("permission denied")
-                || e.to_string().contains("os error 13")
+            let err_str = e.to_string();
+            let reason = if err_str.contains("Permission denied")
+                || err_str.contains("permission denied")
+                || err_str.contains("os error 13")
             {
                 "permission_denied"
+            } else if err_str.contains("invalid utf")
+                || err_str.contains("not valid UTF")
+                || err_str.contains("stream did not contain valid UTF")
+                || err_str.contains("InvalidUtf8")
+                || err_str.contains("invalid utf-8")
+                || err_str.contains("invalid utf8")
+            {
+                "binary"
             } else {
                 "io_error"
             };
@@ -240,29 +249,6 @@ fn search_file_contents(
     None
 }
 
-/// Search file names for pattern matches.
-fn search_file_names(path: &Path, root: &Path, regex: &Regex, result: &mut SearchResult) {
-    let file_name = match path.file_name().and_then(|n| n.to_str()) {
-        Some(n) => n,
-        None => return,
-    };
-
-    if regex.is_match(file_name) {
-        let rel_path = crate::path_util::relative_to(root, path);
-        result.files.push(FileMatches {
-            path: rel_path,
-            matches: vec![Match {
-                line: 0,
-                text: None,
-                context_before: Vec::new(),
-                context_after: Vec::new(),
-            }],
-        });
-        result.total_matches += 1;
-        result.total_files += 1;
-    }
-}
-
 /// Run the full search and return a `SearchResult`.
 pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, String> {
     let regex = build_regex(args)?;
@@ -339,26 +325,22 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
             break;
         }
 
-        if args.files {
-            search_file_names(path, &root, &regex, &mut result);
-        } else {
-            let skip_reason =
-                search_file_contents(path, &root, containment, &config, &regex, args, &mut result);
-            if let Some(reason) = skip_reason {
-                let rel_path = crate::path_util::relative_to(&root, path);
-                *result
-                    .files_skipped_by_reason
-                    .entry(reason.clone())
-                    .or_insert(0) += 1;
-                // Emit stderr for real errors (not binary), deduped by (reason, path).
-                if reason != "binary" && seen.insert((reason.clone(), rel_path.clone())) {
-                    let reason_display = match reason.as_str() {
-                        "permission_denied" => "permission denied",
-                        "not_utf8" => "not UTF-8",
-                        _ => "I/O error",
-                    };
-                    eprintln!("error: search: {reason_display}: {rel_path}");
-                }
+        let skip_reason =
+            search_file_contents(path, &root, containment, &config, &regex, args, &mut result);
+        if let Some(reason) = skip_reason {
+            let rel_path = crate::path_util::relative_to(&root, path);
+            *result
+                .files_skipped_by_reason
+                .entry(reason.clone())
+                .or_insert(0) += 1;
+            // Emit stderr for real errors (not binary), deduped by (reason, path).
+            if reason != "binary" && seen.insert((reason.clone(), rel_path.clone())) {
+                let reason_display = match reason.as_str() {
+                    "permission_denied" => "permission denied",
+                    "not_utf8" => "not UTF-8",
+                    _ => "I/O error",
+                };
+                eprintln!("error: search: {reason_display}: {rel_path}");
             }
         }
     }

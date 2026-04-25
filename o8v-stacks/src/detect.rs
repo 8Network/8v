@@ -45,6 +45,11 @@ const SKIP_DIRS: &[&str] = &[
     ".tox",
     "obj",
     "bin",
+    // Agent/IDE tool directories — never contain project manifests.
+    ".claude",
+    ".cursor",
+    ".vscode",
+    ".idea",
 ];
 
 /// Detect all projects in a validated directory.
@@ -186,6 +191,56 @@ mod tests {
             !result.errors().is_empty(),
             "subdir failure for restricted-subdir must be recorded in errors, not silently dropped; got errors: {:?}",
             result.errors()
+        );
+    }
+
+    /// Regression: agent/IDE directories (.claude, .cursor, .vscode, .idea) must be
+    /// skipped so worktree copies inside them are never counted as real projects.
+    ///
+    /// Fixture:
+    ///   root/
+    ///     real/Cargo.toml              ← 1 real project
+    ///     .claude/worktrees/foo/Cargo.toml  ← decoy inside agent dir, must be ignored
+    ///
+    /// Pre-fix: detect_all returns 2 projects. Post-fix: exactly 1 project.
+    #[test]
+    fn agent_dirs_are_skipped() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root_path = root_dir.path();
+
+        // Real project.
+        let real = root_path.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(
+            real.join("Cargo.toml"),
+            "[package]\nname = \"real\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // Decoy: .claude/worktrees/foo/Cargo.toml
+        let decoy = root_path.join(".claude").join("worktrees").join("foo");
+        std::fs::create_dir_all(&decoy).unwrap();
+        std::fs::write(
+            decoy.join("Cargo.toml"),
+            "[package]\nname = \"decoy\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let root = ProjectRoot::new(root_path).unwrap();
+        let result = detect_all(&root);
+
+        let names: Vec<&str> = result.projects().iter().map(|p| p.name()).collect();
+        assert_eq!(
+            result.projects().len(),
+            1,
+            "expected 1 project (real), got {} — agent dirs must be skipped: {:?}",
+            result.projects().len(),
+            names
+        );
+        assert_eq!(
+            names[0], "real",
+            "the surviving project must be 'real', got: {:?}",
+            names
         );
     }
 

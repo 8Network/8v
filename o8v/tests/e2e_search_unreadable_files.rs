@@ -242,3 +242,34 @@ fn search_files_skipped_by_reason_populated_for_permission_denied() {
         "files_skipped_by_reason[\"permission_denied\"] must be >= 1; got: {by_reason}"
     );
 }
+
+/// SEARCH-2: Binary / non-UTF-8 files must be silently skipped — no stderr output.
+///
+/// Before fix: `safe_read` returns an error for non-UTF-8 content which is
+/// classified as "io_error", causing stderr to be printed for each such file.
+/// After fix:  non-UTF-8 errors are classified as "binary"/"not_utf8" and
+///             suppressed; stderr stays empty.
+#[test]
+fn search_binary_files_silent_no_stderr() {
+    let dir = init_temp_workspace();
+
+    // A binary file containing NUL bytes — not valid UTF-8.
+    let binary = dir.path().join("image.bin");
+    std::fs::write(&binary, b"\x00\x01\x02\x03\xff\xfe pattern \x00\x00").expect("write binary");
+
+    // A plain text file with no match so exit is non-zero — but stderr must be empty.
+    let plain = dir.path().join("readme.txt");
+    std::fs::write(&plain, b"nothing interesting here").expect("write readme");
+
+    let out = bin()
+        .args(["search", "xyzzy_unique_no_match"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v search with binary file present");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty when only binary files trigger read errors; got: {stderr}"
+    );
+}

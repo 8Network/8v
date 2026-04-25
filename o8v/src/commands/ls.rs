@@ -275,7 +275,36 @@ pub(crate) fn do_ls(
     let detect_result = o8v_stacks::detect_all(&project_root);
     let detected_projects = detect_result.projects();
 
-    // Filter by stack if requested
+    // Filter by stack if requested — validate first.
+    if let Some(ref s) = args.stack {
+        if s.to_lowercase()
+            .parse::<o8v_core::project::Stack>()
+            .is_err()
+        {
+            const VALID: &[&str] = &[
+                "rust",
+                "javascript",
+                "typescript",
+                "python",
+                "go",
+                "deno",
+                "dotnet",
+                "ruby",
+                "java",
+                "kotlin",
+                "swift",
+                "terraform",
+                "dockerfile",
+                "helm",
+                "kustomize",
+                "erlang",
+            ];
+            return Err(format!(
+                "unknown stack: \"{s}\". Valid values: {}",
+                VALID.join(", ")
+            ));
+        }
+    }
     let stack_filter = args.stack.as_deref().map(|s| s.to_lowercase());
 
     // Build project entries (filtered by stack)

@@ -92,6 +92,58 @@ fn containment_violation_error_text() {
     }
 }
 
+/// Finding 4b: `8v read <path-outside-project-root>` must say "path escapes project directory",
+/// NOT "symlink escapes project directory".
+///
+/// Before fix: guarded_read returned FsError::SymlinkEscape for any path outside root,
+/// producing "error: symlink escapes project directory: ..." — wrong, no symlink involved.
+/// After fix:  returns FsError::ContainmentViolation → "error: path escapes project directory: ..."
+///
+/// Failing-first test — written BEFORE fix. Run on pre-fix code: MUST FAIL.
+/// After fix: MUST PASS.
+#[test]
+fn read_outside_root_containment_violation_not_symlink_error() {
+    use std::io::Write;
+    // Write a real, regular file to /tmp so guarded_read reaches the containment check
+    // (it canonicalizes first, then checks starts_with(root)).
+    let tmp_file = std::env::temp_dir().join("8v_test_outside_root.rs");
+    {
+        let mut f = std::fs::File::create(&tmp_file).expect("create tmp file");
+        writeln!(f, "fn main() {{}}").expect("write content");
+    }
+
+    // Run 8v read from inside a real temp project dir so it has a containment root.
+    let project_dir = tempfile::tempdir().expect("create project dir");
+    // Initialize a minimal 8v project (just needs .8v/ or a Cargo.toml so 8v picks a root).
+    std::fs::write(
+        project_dir.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["read", tmp_file.to_str().unwrap()])
+        .current_dir(project_dir.path())
+        .output()
+        .expect("run 8v read");
+
+    let _ = std::fs::remove_file(&tmp_file);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "8v read on outside-root path should fail\nstderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("symlink"),
+        "error must NOT mention 'symlink' — no symlink is involved\nstderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("escapes") || stderr.contains("project") || stderr.contains("containment"),
+        "error must describe the boundary breach\nstderr: {stderr}"
+    );
+}
+
 /// Write double-prefix bug: `8v write <path>:<line> ""` must emit a single `error: ` prefix,
 /// not `error: error: content cannot be empty ...`
 ///

@@ -121,3 +121,47 @@ stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// SEARCH-1: `--files` must list paths of files whose CONTENT matches the pattern,
+/// not files whose NAME matches the pattern.
+#[test]
+fn search_files_flag_lists_content_matching_paths() {
+    let dir = init_temp_workspace();
+
+    let matching1 = dir.path().join("lib.rs");
+    std::fs::write(&matching1, "pub fn main() {}\n").expect("write lib.rs");
+
+    let matching2 = dir.path().join("helper.rs");
+    std::fs::write(&matching2, "// helper\nfn main() {\n    todo!()\n}\n")
+        .expect("write helper.rs");
+
+    let non_matching = dir.path().join("no_match.rs");
+    std::fs::write(&non_matching, "pub fn helper() {}\n").expect("write no_match.rs");
+
+    let out = bin()
+        .args(["search", "fn main", ".", "--files"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v search --files");
+
+    assert!(
+        out.status.success(),
+        "--files search must exit 0 when matches exist\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("lib.rs"),
+        "--files output must contain lib.rs; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("helper.rs"),
+        "--files output must contain helper.rs; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("no_match.rs"),
+        "--files output must NOT contain no_match.rs; got:\n{stdout}"
+    );
+}
