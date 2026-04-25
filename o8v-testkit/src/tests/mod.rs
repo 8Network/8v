@@ -4,10 +4,10 @@
 
 use crate::*;
 
-mod adversarial;
 mod coverage;
 mod expected;
 mod fixtures;
 mod outcome;
 mod parsed_diagnostics;
 mod report_nav;
+mod unit_adversarial;

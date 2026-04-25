@@ -61,20 +61,12 @@ Or add manually to `.mcp.json`:
 }
 ```
 
-## Benchmark Results (Claude Sonnet, fix-go, N=6, 2026-04-24)
+## Status
 
-| Metric | Change |
-|--------|--------|
-| Total tokens | −13.4% |
-| Tool calls | −30% |
-| Turns | −27% |
-| Output tokens | −50% |
-
-All 6/6 tasks pass on both sides.
-
-Schema: 641 tokens (8v, 1 tool) vs 1,377 tokens (native, 6 tools).
-
-**What this means for your agent:** Output tokens are the tightest rate-limit bucket (OTPM). A −50% reduction means your agent does roughly twice the work per minute before throttling. Fewer turns also means longer sessions fit inside the 200K/1M context window, and fewer round-trips means fewer places to hit the RPM cap.
+Pre-release. Benchmark numbers withdrawn pending a foundation audit — the
+binary they were measured against had ship-blocking bugs in commands those
+benchmarks exercised. New numbers will be published only after the audit
+lands and is reproducible end-to-end.
 
 ## Supported Stacks
 

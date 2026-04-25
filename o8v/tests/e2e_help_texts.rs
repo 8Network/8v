@@ -1,5 +1,7 @@
 /// Regression tests: each subcommand's --help output must contain explicit,
 /// unambiguous descriptions of --limit and --append behaviour.
+///
+/// Spawns the 8v binary directly via a custom resolver (equivalent to 8v_path()).
 use std::process::Command;
 
 fn bin() -> std::path::PathBuf {
