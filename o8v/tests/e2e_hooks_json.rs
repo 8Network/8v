@@ -13,11 +13,10 @@ fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_8v"))
 }
 
-/// `8v hooks claude pre-tool-use --json` with no stdin emits valid JSON.
-///
-/// pre-tool-use reads stdin JSON for tool_name; empty stdin → allow (exit 0).
+/// `8v hooks claude pre-tool-use --json` with a known non-blocked tool emits valid JSON exit 0.
 #[test]
 fn hooks_claude_pre_tool_use_json_allow() {
+    use std::io::Write;
     use std::process::Stdio;
 
     let mut child = bin()
@@ -28,13 +27,12 @@ fn hooks_claude_pre_tool_use_json_allow() {
         .spawn()
         .expect("spawn 8v hooks claude pre-tool-use --json");
 
-    // Write empty JSON object so stdin parse succeeds.
-    use std::io::Write;
+    // Send a tool that is not in the blocked list.
     child
         .stdin
         .take()
         .unwrap()
-        .write_all(b"{}")
+        .write_all(br#"{"tool_name":"WebSearch"}"#)
         .expect("write stdin");
 
     let out = child.wait_with_output().expect("wait");
@@ -58,6 +56,133 @@ fn hooks_claude_pre_tool_use_json_allow() {
     );
     assert_eq!(parsed["exit_code"], 0, "allowed → exit_code 0");
     assert_eq!(parsed["success"], true, "allowed → success true");
+}
+
+/// Fail-closed: empty stdin must exit 2 (block), not 0 (allow).
+#[test]
+fn pre_tool_use_empty_stdin_blocks() {
+    use std::process::Stdio;
+
+    let mut child = bin()
+        .args(["hooks", "claude", "pre-tool-use"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    // Close stdin immediately — empty input.
+    drop(child.stdin.take());
+    let out = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "empty stdin must exit 2 (block), got {:?}\nstderr: {stderr}",
+        out.status.code()
+    );
+    assert!(
+        stderr.contains("blocking by default"),
+        "stderr must mention blocking by default, got: {stderr}"
+    );
+}
+
+/// Fail-closed: `tool_name: null` must exit 2 (block), not 0 (allow).
+#[test]
+fn pre_tool_use_null_tool_name_blocks() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = bin()
+        .args(["hooks", "claude", "pre-tool-use"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"tool_name":null}"#)
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "null tool_name must exit 2 (block), got {:?}\nstderr: {stderr}",
+        out.status.code()
+    );
+    assert!(
+        stderr.contains("blocking by default"),
+        "stderr must mention blocking by default, got: {stderr}"
+    );
+}
+
+/// Fail-closed: `tool_name: ""` (empty string) must exit 2 (block), not 0 (allow).
+#[test]
+fn pre_tool_use_empty_string_tool_name_blocks() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = bin()
+        .args(["hooks", "claude", "pre-tool-use"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"tool_name":""}"#)
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "empty string tool_name must exit 2 (block), got {:?}\nstderr: {stderr}",
+        out.status.code()
+    );
+    assert!(
+        stderr.contains("blocking by default"),
+        "stderr must mention blocking by default, got: {stderr}"
+    );
+}
+
+/// Fail-closed: `{}` (missing tool_name key) must exit 2 (block), not 0 (allow).
+#[test]
+fn pre_tool_use_missing_tool_name_blocks() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = bin()
+        .args(["hooks", "claude", "pre-tool-use"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{}")
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "missing tool_name must exit 2 (block), got {:?}\nstderr: {stderr}",
+        out.status.code()
+    );
+    assert!(
+        stderr.contains("blocking by default"),
+        "stderr must mention blocking by default, got: {stderr}"
+    );
 }
 
 /// `8v hooks claude pre-tool-use --json` with a blocked tool emits JSON with exit_code 2.

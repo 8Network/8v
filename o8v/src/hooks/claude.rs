@@ -24,26 +24,21 @@ const BLOCKED_TOOLS: &[&str] = &[
 
 // ─── Stdin JSON ───────────────────────────────────────────────────────────────
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 struct HookInput {
-    #[serde(default)]
-    tool_name: String,
+    tool_name: Option<String>,
 }
 
-fn read_stdin_json() -> HookInput {
+/// Read and parse hook input from stdin.
+///
+/// Returns `Err` on I/O failure or JSON parse failure so the caller can fail
+/// closed (block) instead of failing open.
+fn read_stdin_json() -> Result<HookInput, String> {
     let mut buf = String::new();
     if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
-        eprintln!("8v: failed to read hook input: {e}");
-        return HookInput::default();
+        return Err(format!("failed to read hook input: {e}"));
     }
-    let input: HookInput = match serde_json::from_str(&buf) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!("8v: failed to parse hook input: {e}");
-            return HookInput::default(); // don't block on parse failure
-        }
-    };
-    input
+    serde_json::from_str(&buf).map_err(|e| format!("failed to parse hook input: {e}"))
 }
 
 // ─── Args ───────────────────────────────────────────────────────────────────
@@ -92,15 +87,31 @@ pub fn run(args: &Args) -> ExitCode {
 /// PreToolUse: read tool_name from stdin JSON, block if in blocked list.
 ///
 /// Exit 2 to block. Exit 0 to allow.
+/// Fails closed: parse errors, null tool_name, and empty tool_name all exit 2.
 fn pre_tool_use() -> ExitCode {
-    let input = read_stdin_json();
+    let input = match read_stdin_json() {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("error: hook input invalid ({e}) — blocking by default");
+            return ExitCode::from(2);
+        }
+    };
 
-    if input.tool_name.is_empty() {
-        // No tool name — can't decide, allow through.
-        return ExitCode::SUCCESS;
-    }
+    let tool_name = match input.tool_name {
+        Some(ref name) if !name.is_empty() => name.as_str(),
+        Some(_) => {
+            eprintln!("error: hook input invalid (tool_name is empty) — blocking by default");
+            return ExitCode::from(2);
+        }
+        None => {
+            eprintln!(
+                "error: hook input invalid (tool_name is null or missing) — blocking by default"
+            );
+            return ExitCode::from(2);
+        }
+    };
 
-    if BLOCKED_TOOLS.contains(&input.tool_name.as_str()) {
+    if BLOCKED_TOOLS.contains(&tool_name) {
         eprintln!(
             "Blocked: use 8v read, 8v write, 8v check, 8v fmt, 8v test instead of native tools."
         );
