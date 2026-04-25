@@ -178,9 +178,10 @@ mod tests {
         };
         let out = table.render_plain();
         assert!(
-            out.as_str().contains("warning: duplicate CommandStarted"),
-            "stdout: {}",
-            out.as_str()
+            out.stderr_str()
+                .contains("warning: duplicate CommandStarted"),
+            "stderr: {}",
+            out.stderr_str()
         );
     }
 

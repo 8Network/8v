@@ -171,18 +171,16 @@ impl Renderable for DrillReport {
             }
         }
 
-        if !self.warnings.is_empty() {
-            out.push('\n');
-            for w in &self.warnings {
-                out.push_str(&format!("warning: {}\n", fmt_warning(w)));
-            }
-        }
-
         out.push('\n');
         out.push_str(blind_spots_footer(self.caller == "hook"));
         out.push('\n');
 
-        Output::new(out)
+        let mut stderr = String::new();
+        for w in &self.warnings {
+            stderr.push_str(&format!("warning: {}\n", fmt_warning(w)));
+        }
+
+        Output::new_with_stderr(out, stderr)
     }
 
     fn render_json(&self) -> Output {

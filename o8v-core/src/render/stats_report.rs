@@ -5,9 +5,7 @@
 //! Column-formatting helpers for stats tables.
 //! Presentation concerns (ReportKind, LabelKey, Renderable) live in `render::stats_view`.
 
-use super::log_report::fmt_warning;
 use crate::stats::{FailureHotspot, StatsRow};
-use crate::types::Warning;
 
 // ── column formatting helpers ────────────────────────────────────────────────
 
@@ -95,17 +93,6 @@ pub fn render_table(header_label: &str, rows: &[StatsRow]) -> String {
         ));
     }
 
-    out
-}
-
-pub fn render_warnings(warnings: &[Warning]) -> String {
-    if warnings.is_empty() {
-        return String::new();
-    }
-    let mut out = String::from("\nwarnings:\n");
-    for w in warnings {
-        out.push_str(&format!("  warning: {}\n", fmt_warning(w)));
-    }
     out
 }
 

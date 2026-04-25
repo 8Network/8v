@@ -11,7 +11,7 @@ use crate::stats::{FailureHotspot, StatsReport, StatsRow};
 use crate::types::Warning;
 
 use super::output::Output;
-use super::stats_report::{render_failure_hotspots, render_table, render_warnings};
+use super::stats_report::{render_failure_hotspots, render_table};
 
 // ── Enums (presentation concerns) ────────────────────────────────────────────
 
@@ -102,14 +102,22 @@ impl super::Renderable for StatsView {
         };
 
         let text = format!(
-            "{}{}{}{}\n{}",
+            "{}{}{}\n{}",
             session_header,
             table,
-            render_warnings(&self.report.warnings),
             render_failure_hotspots(&self.report.failure_hotspots),
             super::log_report::blind_spots_footer(self.has_hook_events),
         );
-        Output::new(text)
+
+        let mut stderr = String::new();
+        for w in &self.report.warnings {
+            stderr.push_str(&format!(
+                "warning: {}\n",
+                super::log_report::helpers::fmt_warning(w)
+            ));
+        }
+
+        Output::new_with_stderr(text, stderr)
     }
 
     fn render_json(&self) -> Output {

@@ -1236,10 +1236,10 @@ fn stats_plain_shows_warnings_section() {
         "must exit 0; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stdout.contains("warnings:"),
-        "plain output must contain 'warnings:' section when warnings exist; got:\n{stdout}"
+        stderr.contains("warning"),
+        "stderr must contain a warning when parse errors exist; got:\n{stderr}"
     );
 }
 

@@ -61,10 +61,38 @@ impl ServerHandler for EightVServer {
     }
 }
 
+fn clean_serve_error(msg: String) -> Box<dyn std::error::Error> {
+    let clean = if msg.contains("expect initialized request") {
+        let method = if msg.contains("CallToolRequest") {
+            "tools/call"
+        } else if msg.contains("ListToolsRequest") {
+            "tools/list"
+        } else if msg.contains("InitializeRequest") {
+            "initialize"
+        } else {
+            "unknown"
+        };
+        format!("received {method} before initialize handshake — client must send initialize first")
+    } else if msg.contains("expect initialized notification") {
+        "missing initialized notification after initialize response — client handshake incomplete"
+            .to_string()
+    } else {
+        msg
+    };
+    clean.into()
+}
+
 /// Start the MCP server on stdio transport.
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let server = EightVServer::new();
     let transport = rmcp::transport::io::stdio();
-    server.serve(transport).await?.waiting().await?;
+    let running = server
+        .serve(transport)
+        .await
+        .map_err(|e| clean_serve_error(e.to_string()))?;
+    running
+        .waiting()
+        .await
+        .map_err(|e| clean_serve_error(e.to_string()))?;
     Ok(())
 }

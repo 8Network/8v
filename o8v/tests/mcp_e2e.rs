@@ -1010,3 +1010,34 @@ fn mcp_read_batch_mixed_text_and_image() {
         "notes.txt content missing; got text: {joined_text:?}"
     );
 }
+
+#[test]
+fn mcp_pre_init_protocol_violation_no_debug_format_in_stderr() {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .arg("mcp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn 8v mcp");
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        let bad_frame = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"x"}}"#;
+        writeln!(stdin, "{bad_frame}").expect("write bad frame");
+    }
+    let output = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains('{'),
+        "stderr must not contain Rust debug braces; got: {stderr:?}"
+    );
+    assert!(
+        !stderr.contains("Request("),
+        "stderr must not contain Rust debug type names; got: {stderr:?}"
+    );
+    assert!(
+        stderr.contains("tools/call"),
+        "stderr should name the method that was received; got: {stderr:?}"
+    );
+}

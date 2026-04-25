@@ -162,9 +162,9 @@ fn log_session_ignores_limit_with_notice() {
         "expected exit 0\nstdout: {stdout}\nstderr: {stderr}"
     );
 
-    // Plain output must mention that --limit was ignored
+    // The --limit-ignored notice must go to stderr (not pollute stdout).
     assert!(
-        stdout.contains("ignored"),
-        "stdout must mention that --limit is ignored\ngot: {stdout}"
+        stderr.contains("ignored"),
+        "stderr must mention that --limit is ignored\ngot stderr: {stderr}\nstdout: {stdout}"
     );
 }

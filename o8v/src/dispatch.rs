@@ -225,7 +225,16 @@ where
     };
 
     // Render the final report.
-    let output = o8v_core::render::render(&report, audience).into_string();
+    let rendered = o8v_core::render::render(&report, audience);
+
+    // Flush diagnostic warnings to stderr so they never pollute stdout/JSON.
+    let stderr_diag = rendered.stderr_str().to_owned();
+    if !stderr_diag.is_empty() {
+        use std::io::Write;
+        let _ = std::io::stderr().write_all(stderr_diag.as_bytes());
+    }
+
+    let output = rendered.into_string();
 
     // Emit CommandCompleted with the real output length.
     if let Some(ref mut g) = guard {
