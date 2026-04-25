@@ -260,9 +260,13 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
     };
 
     // Canonicalize so we can compute relative paths later.
-    let root = root
-        .canonicalize()
-        .map_err(|e| format!("cannot access path '{}': {e}", root.display()))?;
+    let root = root.canonicalize().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!("8v: not found: {}", root.display())
+        } else {
+            format!("cannot access path '{}': {e}", root.display())
+        }
+    })?;
 
     // When the search root is outside the workspace containment boundary (e.g. an
     // absolute path passed by the caller), we must anchor containment at the

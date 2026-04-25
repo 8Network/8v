@@ -49,8 +49,8 @@ fn exit_code_check_no_projects() {
 // ─── fmt: no projects detected is user error → exit 1, not exit 2 ────────────
 
 /// `8v fmt` on an empty directory finds no projects.
-/// This is a user error (wrong path / uninitialized directory) → exit 1.
-/// Pre-fix binary returns exit 2 — this test MUST FAIL before the fix.
+/// "Nothing to format" is a success case — exit 0, not 1.
+/// Fixed by BUG F2.
 #[test]
 fn exit_code_fmt_no_projects() {
     let dir = empty_dir();
@@ -62,8 +62,8 @@ fn exit_code_fmt_no_projects() {
 
     assert_eq!(
         out.status.code(),
-        Some(1),
-        "fmt with no projects must exit 1 (user error), not 2 (clap failure)"
+        Some(0),
+        "fmt with no projects must exit 0 (nothing to format = success), not 1"
     );
 }
 

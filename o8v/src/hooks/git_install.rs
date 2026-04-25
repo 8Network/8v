@@ -16,28 +16,19 @@ const HOOK_LINE_MARKER: &str = "hooks git on-commit";
 const COMMIT_MSG_HOOK_LINE_MARKER: &str = "hooks git on-commit-msg";
 
 fn hook_line() -> String {
-    format!("{} hooks git on-commit", super::resolved_8v_command())
+    "8v hooks git on-commit".to_string()
 }
 
 fn hook_template() -> String {
-    format!(
-        "#!/bin/sh\n{} hooks git on-commit\n",
-        super::resolved_8v_command()
-    )
+    "#!/bin/sh\n8v hooks git on-commit\n".to_string()
 }
 
 fn commit_msg_hook_line() -> String {
-    format!(
-        "{} hooks git on-commit-msg \"$1\"",
-        super::resolved_8v_command()
-    )
+    "8v hooks git on-commit-msg \"$1\"".to_string()
 }
 
 fn commit_msg_hook_template() -> String {
-    format!(
-        "#!/bin/sh\n{} hooks git on-commit-msg \"$1\"\n",
-        super::resolved_8v_command()
-    )
+    "#!/bin/sh\n8v hooks git on-commit-msg \"$1\"\n".to_string()
 }
 
 // ─── GitDir — path value object for .git/ ────────────────────────────────────
@@ -401,5 +392,76 @@ mod tests {
         install_git_commit_msg(&containment_root).unwrap();
 
         assert!(root.join(".git/hooks/commit-msg").exists());
+    }
+
+    // ── Portability: hooks must not embed absolute paths ────────────────────
+
+    /// Returns true if any non-shebang line invokes the 8v binary via an
+    /// absolute path (i.e. the first token of the command starts with `/`).
+    /// The shebang (`#!/bin/sh`) is explicitly excluded.
+    fn contains_absolute_path(s: &str) -> bool {
+        s.lines()
+            .filter(|line| !line.starts_with('#'))
+            .filter(|line| !line.trim().is_empty())
+            .any(|line| {
+                // strip leading shell keywords like `exec`
+                let first_cmd = line
+                    .split_whitespace()
+                    .find(|tok| *tok != "exec")
+                    .unwrap_or("");
+                first_cmd.starts_with('/')
+                    || first_cmd.starts_with("'/")
+                    || first_cmd.starts_with("\"/")
+            })
+    }
+
+    #[test]
+    fn pre_commit_hook_template_has_no_absolute_path() {
+        let tmpl = hook_template();
+        assert!(
+            !contains_absolute_path(&tmpl),
+            "pre-commit hook template must not contain an absolute path; got:\n{tmpl}"
+        );
+    }
+
+    #[test]
+    fn commit_msg_hook_template_has_no_absolute_path() {
+        let tmpl = commit_msg_hook_template();
+        assert!(
+            !contains_absolute_path(&tmpl),
+            "commit-msg hook template must not contain an absolute path; got:\n{tmpl}"
+        );
+    }
+
+    #[test]
+    fn pre_commit_hook_written_to_disk_has_no_absolute_path() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        fs::create_dir_all(root.join(".git/hooks")).unwrap();
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        install_git_pre_commit(&containment_root).unwrap();
+
+        let content = fs::read_to_string(root.join(".git/hooks/pre-commit")).unwrap();
+        assert!(
+            !contains_absolute_path(&content),
+            "written pre-commit hook must not contain an absolute path; got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn commit_msg_hook_written_to_disk_has_no_absolute_path() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        fs::create_dir_all(root.join(".git/hooks")).unwrap();
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        install_git_commit_msg(&containment_root).unwrap();
+
+        let content = fs::read_to_string(root.join(".git/hooks/commit-msg")).unwrap();
+        assert!(
+            !contains_absolute_path(&content),
+            "written commit-msg hook must not contain an absolute path; got:\n{content}"
+        );
     }
 }

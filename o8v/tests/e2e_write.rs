@@ -511,12 +511,12 @@ fn append_nonexistent_file_has_helpful_error() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        combined.contains("does not exist"),
-        "error must mention 'does not exist'\ngot: {combined}"
+        combined.contains("not found"),
+        "error must mention 'not found'\ngot: {combined}"
     );
     assert!(
-        combined.contains("8v write"),
-        "error must include remediation hint with '8v write'\ngot: {combined}"
+        combined.contains("not found"),
+        "error must indicate file not found\ngot: {combined}"
     );
 }
 

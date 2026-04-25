@@ -84,7 +84,21 @@ impl Command {
             Command::Write(a) => a.format.audience_with_default(default),
             Command::Search(a) => a.format.audience_with_default(default),
             Command::Ls(a) => a.format.audience_with_default(default),
-            Command::Log(a) => a.format.audience_with_default(default),
+            Command::Log(a) => {
+                // Subcommand-level flags (e.g. `log last --json`) must also be
+                // consulted: clap parks them in the variant's format, not the
+                // parent Args.format. Resolve parent first, then let the
+                // subcommand's explicit flag override if present.
+                let parent_audience = a.format.audience_with_default(default);
+                match &a.subcommand {
+                    Some(log::LogSubcommand::Last { format })
+                    | Some(log::LogSubcommand::Show { format, .. })
+                    | Some(log::LogSubcommand::Search { format, .. }) => {
+                        format.audience_with_default(parent_audience)
+                    }
+                    None => parent_audience,
+                }
+            }
             Command::Stats(a) => a.format.audience_with_default(default),
             Command::Init(a) => a.format.audience_with_default(default),
             Command::Hooks(a) => a.format.audience_with_default(default),
@@ -205,32 +219,61 @@ pub async fn dispatch_command_with_agent(
         Command::Check(args) => {
             let use_stderr = audience == Audience::Human;
             let cmd = check::CheckCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            let exit = if report.results().is_empty() && report.detection_errors().is_empty() {
-                ExitCode::FAILURE
-            } else if report.is_ok() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-            Ok((output, exit, use_stderr))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, report)) => {
+                    let exit =
+                        if report.results().is_empty() && report.detection_errors().is_empty() {
+                            ExitCode::FAILURE
+                        } else if report.is_ok() {
+                            ExitCode::SUCCESS
+                        } else {
+                            ExitCode::FAILURE
+                        };
+                    Ok((output, exit, use_stderr))
+                }
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Fmt(args) => {
             let use_stderr = audience == Audience::Human;
             let cmd = fmt::FmtCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            let exit = if report.entries.is_empty() && report.detection_errors.is_empty() {
-                ExitCode::FAILURE
-            } else if report.is_ok() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-            Ok((output, exit, use_stderr))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, report)) => {
+                    let exit = if report.is_ok()
+                        || (report.entries.is_empty() && report.detection_errors.is_empty())
+                    {
+                        ExitCode::SUCCESS
+                    } else {
+                        ExitCode::FAILURE
+                    };
+                    Ok((output, exit, use_stderr))
+                }
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Hooks(args) => {
             let cmd = hooks::HooksCommand { args };
@@ -346,27 +389,53 @@ pub async fn dispatch_command_with_agent(
         }
         Command::Ls(args) => {
             let cmd = ls::LsCommand { args };
-            let (output, _, _) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            Ok((output, ExitCode::SUCCESS, false))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, _)) => Ok((output, ExitCode::SUCCESS, false)),
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Log(args) => {
             let session_was_specified = args.session.is_some();
             let cmd = log::LogCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            // Exit 1 when the user supplied --session but no matching session was found (user error).
-            // Empty history with default args (no --session) exits 0.
-            let exit = if matches!(report, o8v_core::render::log_report::LogReport::Empty)
-                && session_was_specified
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
             {
-                ExitCode::FAILURE
-            } else {
-                ExitCode::SUCCESS
-            };
-            Ok((output, exit, false))
+                Ok((output, _, report)) => {
+                    // Exit 1 when the user supplied --session but no matching session was found (user error).
+                    // Empty history with default args (no --session) exits 0.
+                    let exit = if matches!(report, o8v_core::render::log_report::LogReport::Empty)
+                        && session_was_specified
+                    {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    };
+                    Ok((output, exit, false))
+                }
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Stats(args) => {
             let cmd = stats::StatsCommand { args };

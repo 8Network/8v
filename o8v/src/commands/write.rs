@@ -469,8 +469,13 @@ pub(crate) fn write_to_report(
 
     let report_op: ReportOp = match &op {
         WriteOperation::ReplaceLine { line, content } => {
-            let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("error: failed to read file: {e}"))?;
+            let file = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
+                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
+                    format!("8v: not found: {path_str}")
+                } else {
+                    format!("error: failed to read file: {e}")
+                }
+            })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -508,8 +513,13 @@ pub(crate) fn write_to_report(
             end,
             content,
         } => {
-            let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("error: failed to read file: {e}"))?;
+            let file = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
+                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
+                    format!("8v: not found: {path_str}")
+                } else {
+                    format!("error: failed to read file: {e}")
+                }
+            })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -553,8 +563,13 @@ pub(crate) fn write_to_report(
             }
         }
         WriteOperation::InsertBefore { line, content } => {
-            let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("error: failed to read file: {e}"))?;
+            let file = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
+                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
+                    format!("8v: not found: {path_str}")
+                } else {
+                    format!("error: failed to read file: {e}")
+                }
+            })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -583,8 +598,13 @@ pub(crate) fn write_to_report(
             }
         }
         WriteOperation::DeleteLines { start, end } => {
-            let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("error: failed to read file: {e}"))?;
+            let file = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
+                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
+                    format!("8v: not found: {path_str}")
+                } else {
+                    format!("error: failed to read file: {e}")
+                }
+            })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let line_ending = detect_line_ending(existing_content);
@@ -640,9 +660,7 @@ pub(crate) fn write_to_report(
         WriteOperation::AppendToFile { content } => {
             let existing = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
                 if matches!(e, o8v_fs::FsError::NotFound { .. }) {
-                    format!(
-                        "error: file does not exist: {path_str}\n  to create a new file with content: 8v write {path_str} \"<content>\""
-                    )
+                    format!("8v: not found: {path_str}")
                 } else {
                     format!("error: failed to read file: {e}")
                 }
@@ -664,8 +682,13 @@ pub(crate) fn write_to_report(
         WriteOperation::FindReplace { find, replace, all } => {
             validate_content_line_endings(find)?;
             validate_content_line_endings(replace)?;
-            let file = o8v_fs::safe_read(&path, root, &config)
-                .map_err(|e| format!("error: failed to read file: {e}"))?;
+            let file = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
+                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
+                    format!("8v: not found: {path_str}")
+                } else {
+                    format!("error: failed to read file: {e}")
+                }
+            })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
             let match_count = existing_content.matches(find.as_str()).count();

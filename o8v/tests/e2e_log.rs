@@ -669,3 +669,93 @@ fn log_search_limit_flag_after_subcommand_filters_results() {
         results.len()
     );
 }
+
+// ── BUG F1: --json flag after subcommand token ────────────────────────────────
+//
+// Repro: `8v log last --json` exits 2 with "unexpected argument '--json' found"
+// because clap does not propagate parent flags past the subcommand token.
+// Fix: flatten OutputFormat into each LogSubcommand variant.
+// These tests must FAIL (exit 2 or non-JSON) before the fix.
+
+/// BUG F1: `8v log last --json` (flag after subcommand) must be accepted.
+/// Before fix: exits 2, "unexpected argument '--json' found".
+/// After fix: exits 0 (or 1 on empty), stdout is valid JSON.
+#[test]
+fn log_last_json_flag_after_subcommand() {
+    let home = home_empty();
+    let out = bin()
+        .args(["log", "last", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v log last --json");
+
+    assert_ne!(
+        out.status.code(),
+        Some(2),
+        "exit 2 = clap parse error; --json after subcommand must be accepted (BUG F1)\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let _v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "stdout must be valid JSON (BUG F1)\ngot: {stdout}\nstderr: {}\nerr: {e}",
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    };
+}
+
+/// BUG F1: `8v log show <id> --json` (flag after subcommand) must be accepted.
+#[test]
+fn log_show_json_flag_after_subcommand() {
+    let home = home_empty();
+    let out = bin()
+        .args(["log", "show", "nonexistent-id-f1", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v log show ... --json");
+
+    assert_ne!(
+        out.status.code(),
+        Some(2),
+        "exit 2 = clap parse error; --json after subcommand must be accepted (BUG F1)\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let _v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "stdout must be valid JSON (BUG F1)\ngot: {stdout}\nstderr: {}\nerr: {e}",
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    };
+}
+
+/// BUG F1: `8v log search <query> --json` (flag after subcommand) must be accepted.
+#[test]
+fn log_search_json_flag_after_subcommand() {
+    let home = home_empty();
+    let out = bin()
+        .args(["log", "search", "anyquery", "--json"])
+        .env("_8V_HOME", home.path())
+        .output()
+        .expect("run 8v log search ... --json");
+
+    assert_ne!(
+        out.status.code(),
+        Some(2),
+        "exit 2 = clap parse error; --json after subcommand must be accepted (BUG F1)\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let _v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!(
+            "stdout must be valid JSON (BUG F1)\ngot: {stdout}\nstderr: {}\nerr: {e}",
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    };
+}

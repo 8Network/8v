@@ -478,14 +478,13 @@ stderr: {}",
     );
 }
 
-// ── I-3 installed hooks use absolute 8v path ───────────────────────────────────
+// ── I-3 installed hooks use portable bare `8v` invocation ─────────────────────
 
-/// Generated pre-commit hook must invoke 8v by absolute path, not the
-/// bare name. PATH at install time may differ from PATH at hook fire time
-/// (git runs hooks with a sanitized environment). Per I-3 +
-/// counterexample 4: prefer absolute path discovered at install.
+/// Generated pre-commit hook must invoke bare `8v` (found via PATH), NOT an
+/// absolute path baked in at install time. Absolute paths break on binary
+/// moves, CI, and shared dotfiles. Fix: emit `8v hooks git on-commit`.
 #[test]
-fn i3_git_pre_commit_hook_uses_absolute_8v_path() {
+fn i3_git_pre_commit_hook_uses_portable_8v_invocation() {
     let dir = TempDir::new().expect("tempdir");
     // Need a .git dir for pre-commit hook installation to proceed.
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).expect("mkdir .git/hooks");
@@ -503,28 +502,29 @@ stderr: {}",
     let hook_path = dir.path().join(".git").join("hooks").join("pre-commit");
     let content = std::fs::read_to_string(&hook_path).expect("read pre-commit");
 
-    // Must NOT start with bare "8v hooks git on-commit" on any line — the
-    // command must be an absolute path ending in 8v (or similar binary name).
+    // Must invoke bare `8v` — no absolute path baked in.
     let has_bare = content
         .lines()
         .any(|line| line.trim_start().starts_with("8v hooks git on-commit"));
     assert!(
-        !has_bare,
-        "hook must not invoke bare ; hook content:
-{content}"
+        has_bare,
+        "hook must invoke bare `8v hooks git on-commit`, not an absolute path; hook content:\n{content}"
     );
 
-    // Must still include the subcommand path (hooks git on-commit).
+    // Must NOT contain an absolute path to the binary.
+    let has_absolute = content.lines().filter(|l| !l.starts_with('#')).any(|line| {
+        let cmd = line.split_whitespace().find(|t| *t != "exec").unwrap_or("");
+        cmd.starts_with('/') || cmd.starts_with("'/") || cmd.starts_with("\"/")
+    });
     assert!(
-        content.contains("hooks git on-commit"),
-        "hook must still include the subcommand; hook content:
-{content}"
+        !has_absolute,
+        "hook must not bake in an absolute binary path; hook content:\n{content}"
     );
 }
 
 /// Same guarantee for the commit-msg hook.
 #[test]
-fn i3_git_commit_msg_hook_uses_absolute_8v_path() {
+fn i3_git_commit_msg_hook_uses_portable_8v_invocation() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".git").join("hooks")).expect("mkdir .git/hooks");
 
@@ -538,13 +538,16 @@ fn i3_git_commit_msg_hook_uses_absolute_8v_path() {
         .lines()
         .any(|line| line.trim_start().starts_with("8v hooks git on-commit-msg"));
     assert!(
-        !has_bare,
-        "commit-msg hook must not invoke bare ; hook content:
-{content}"
+        has_bare,
+        "commit-msg hook must invoke bare `8v hooks git on-commit-msg`, not an absolute path; hook content:\n{content}"
     );
+
+    let has_absolute = content.lines().filter(|l| !l.starts_with('#')).any(|line| {
+        let cmd = line.split_whitespace().find(|t| *t != "exec").unwrap_or("");
+        cmd.starts_with('/') || cmd.starts_with("'/") || cmd.starts_with("\"/")
+    });
     assert!(
-        content.contains("hooks git on-commit-msg"),
-        "commit-msg hook must still include the subcommand; hook content:
-{content}"
+        !has_absolute,
+        "commit-msg hook must not bake in an absolute binary path; hook content:\n{content}"
     );
 }

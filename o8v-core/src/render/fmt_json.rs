@@ -39,7 +39,11 @@ pub fn render_fmt_json(report: &FmtReport) -> Output {
         }));
     }
 
-    let root = serde_json::json!({ "stacks": stacks });
+    let root = if stacks.is_empty() {
+        serde_json::json!({ "stacks": stacks, "reason": "no_stacks" })
+    } else {
+        serde_json::json!({ "stacks": stacks })
+    };
     // Use match instead of unwrap_or_else per project rules
     let json_str = match serde_json::to_string_pretty(&root) {
         Ok(s) => s,
@@ -169,5 +173,6 @@ mod tests {
         let output = render_fmt_json(&report);
         let parsed: serde_json::Value = serde_json::from_str(output.as_str()).unwrap();
         assert!(parsed["stacks"].as_array().unwrap().is_empty());
+        assert_eq!(parsed["reason"].as_str(), Some("no_stacks"));
     }
 }

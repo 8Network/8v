@@ -239,3 +239,185 @@ fn json_mode_stderr_empty_on_error() {
         "stdout envelope must have 'error' and 'code'\ngot: {v}"
     );
 }
+
+/// BUG F4: `8v write` to a nonexistent path with `--json` must emit
+/// `"8v: not found: <path>"` in the error field, matching read's format.
+/// Failing-first: was `"error: failed to read file: ..."` before fix.
+#[test]
+fn write_not_found_error_has_8v_prefix() {
+    let dir = init_temp_workspace();
+    let missing = "/nonexistent_path_f4/file.txt";
+    let out = bin()
+        .args(["write", &format!("{missing}:1"), "hello", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v write");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout must be valid JSON\ngot: {stdout}\nerr: {e}"),
+    };
+
+    let error_msg = v["error"].as_str().unwrap_or("");
+    assert!(
+        error_msg.starts_with("8v: not found:"),
+        "write not-found error must start with '8v: not found:' (BUG F4)
+got: {error_msg}"
+    );
+}
+
+/// BUG F8: `8v search` on a nonexistent path with `--json` must emit
+/// `"8v: not found: <path>"` in the error field.
+/// Failing-first: was `"cannot access path '...': ..."` before fix.
+#[test]
+fn search_not_found_error_has_8v_prefix() {
+    let dir = init_temp_workspace();
+    let missing = dir.path().join("no_such_dir");
+    let out = bin()
+        .args(["search", "pattern", missing.to_str().unwrap(), "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v search");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout must be valid JSON\ngot: {stdout}\nerr: {e}"),
+    };
+
+    let error_msg = v["error"].as_str().unwrap_or("");
+    assert!(
+        error_msg.starts_with("8v: not found:"),
+        "search not-found error must start with '8v: not found:' (BUG F8)
+got: {error_msg}"
+    );
+}
+
+// ── BUG F3: ls/check/fmt ignore --json on error paths ────────────────────────
+//
+// Repro: `8v ls /nonexistent --json` emits plain-text to stderr, exit 1.
+// Root cause: these commands use `dispatch().await?` which propagates
+// CommandError to main.rs (always eprintln!, never JSON envelope).
+// Fix: convert to match + JSON envelope arm for Audience::Machine.
+// These tests must FAIL (stderr non-empty, stdout not JSON) before the fix.
+
+/// BUG F3: `8v ls /nonexistent --json` must emit canonical JSON envelope to
+/// stdout and leave stderr empty. Before fix: plain-text error on stderr.
+#[test]
+fn ls_json_error_envelope_on_missing_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = bin()
+        .args(["ls", "/nonexistent_f3_ls_path_b2b", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v ls --json");
+
+    assert!(
+        !out.status.success(),
+        "ls on nonexistent path must exit non-zero\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty under --json (BUG F3); got: {stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout must be valid JSON (BUG F3)\ngot: {stdout}\nerr: {e}"),
+    };
+
+    assert!(
+        v.get("error").is_some(),
+        "envelope must have 'error' field (BUG F3)\ngot: {v}"
+    );
+    assert!(
+        v.get("code").is_some(),
+        "envelope must have 'code' field (BUG F3)\ngot: {v}"
+    );
+}
+
+/// BUG F3: `8v check /nonexistent --json` must emit canonical JSON envelope to
+/// stdout and leave stderr empty. Before fix: plain-text error on stderr.
+#[test]
+fn check_json_error_envelope_on_missing_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = bin()
+        .args(["check", "/nonexistent_f3_check_path_b2b", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v check --json");
+
+    assert!(
+        !out.status.success(),
+        "check on nonexistent path must exit non-zero\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty under --json (BUG F3); got: {stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout must be valid JSON (BUG F3)\ngot: {stdout}\nerr: {e}"),
+    };
+
+    assert!(
+        v.get("error").is_some(),
+        "envelope must have 'error' field (BUG F3)\ngot: {v}"
+    );
+    assert!(
+        v.get("code").is_some(),
+        "envelope must have 'code' field (BUG F3)\ngot: {v}"
+    );
+}
+
+/// BUG F3: `8v fmt /nonexistent --json` must emit canonical JSON envelope to
+/// stdout and leave stderr empty. Before fix: plain-text error on stderr.
+#[test]
+fn fmt_json_error_envelope_on_missing_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = bin()
+        .args(["fmt", "/nonexistent_f3_fmt_path_b2b", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v fmt --json");
+
+    assert!(
+        !out.status.success(),
+        "fmt on nonexistent path must exit non-zero\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty under --json (BUG F3); got: {stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout must be valid JSON (BUG F3)\ngot: {stdout}\nerr: {e}"),
+    };
+
+    assert!(
+        v.get("error").is_some(),
+        "envelope must have 'error' field (BUG F3)\ngot: {v}"
+    );
+    assert!(
+        v.get("code").is_some(),
+        "envelope must have 'code' field (BUG F3)\ngot: {v}"
+    );
+}

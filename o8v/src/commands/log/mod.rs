@@ -38,11 +38,16 @@ pub struct Args {
 #[derive(clap::Subcommand, Debug)]
 pub enum LogSubcommand {
     /// Show detail for the most recent session.
-    Last,
+    Last {
+        #[command(flatten)]
+        format: super::output_format::OutputFormat,
+    },
     /// Show detail for a specific session (prefix match).
     Show {
         /// Session ID or unambiguous prefix.
         id: String,
+        #[command(flatten)]
+        format: super::output_format::OutputFormat,
     },
     /// Search commands across all sessions.
     Search {
@@ -54,6 +59,8 @@ pub enum LogSubcommand {
         /// Return all results (overrides --limit).
         #[arg(long)]
         all: bool,
+        #[command(flatten)]
+        format: super::output_format::OutputFormat,
     },
 }
 
@@ -146,7 +153,7 @@ impl Command for LogCommand {
                     sessions::build_sessions_table(&sessions, limit, all_warnings),
                 )))
             }
-            Some(LogSubcommand::Last) => {
+            Some(LogSubcommand::Last { .. }) => {
                 let session = resolve_last_session(&sessions)
                     .ok_or_else(|| CommandError::Execution("no sessions found".into()))?;
                 Ok(LogReport::Drill(Box::new(drill::build_drill_report(
@@ -155,7 +162,7 @@ impl Command for LogCommand {
                     self.args.retry_window,
                 ))))
             }
-            Some(LogSubcommand::Show { id }) => {
+            Some(LogSubcommand::Show { id, .. }) => {
                 let session = resolve_session_prefix(&sessions, id)?;
                 Ok(LogReport::Drill(Box::new(drill::build_drill_report(
                     session,
@@ -163,14 +170,14 @@ impl Command for LogCommand {
                     self.args.retry_window,
                 ))))
             }
-            Some(LogSubcommand::Search { query, limit, all }) => {
-                Ok(LogReport::Search(Box::new(search::build_search_results(
-                    &sessions,
-                    query,
-                    if *all { usize::MAX } else { *limit },
-                    all_warnings,
-                ))))
-            }
+            Some(LogSubcommand::Search {
+                query, limit, all, ..
+            }) => Ok(LogReport::Search(Box::new(search::build_search_results(
+                &sessions,
+                query,
+                if *all { usize::MAX } else { *limit },
+                all_warnings,
+            )))),
         }
     }
 }

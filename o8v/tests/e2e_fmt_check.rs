@@ -68,3 +68,63 @@ fn fmt_check_exits_zero_on_clean_rust() {
         "8v fmt --check must exit 0 when all files are formatted\nstdout: {stdout}\nstderr: {stderr}"
     );
 }
+
+/// BUG F2: `8v fmt` on a directory with no recognized stacks must exit 0.
+/// "Nothing to format" is a success case, not an error.
+/// Failing-first: was exit 1 before fix.
+#[test]
+fn fmt_no_stacks_exits_zero() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Initialize a workspace so 8v doesn't complain about missing init.
+    let init_out = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v init");
+    assert!(init_out.status.success(), "init must succeed");
+
+    let out = bin()
+        .args(["fmt", dir.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v fmt on dir with no stacks");
+
+    assert!(
+        out.status.success(),
+        "fmt with no stacks must exit 0 (BUG F2)
+stdout: {}
+stderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// BUG F2 (JSON): `8v fmt --json` on a directory with no stacks must include
+/// `"reason":"no_stacks"` in the output.
+#[test]
+fn fmt_no_stacks_json_has_reason() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let init_out = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v init");
+    assert!(init_out.status.success(), "init must succeed");
+
+    let out = bin()
+        .args(["fmt", dir.path().to_str().unwrap(), "--json"])
+        .output()
+        .expect("run 8v fmt --json on dir with no stacks");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout must be valid JSON\ngot: {stdout}\nerr: {e}"),
+    };
+
+    assert_eq!(
+        v["reason"].as_str(),
+        Some("no_stacks"),
+        "fmt --json with no stacks must have reason=no_stacks (BUG F2)
+got: {v}"
+    );
+}
