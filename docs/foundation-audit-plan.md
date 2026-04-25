@@ -56,6 +56,28 @@ Only after Phases 1-4. Re-run the cross-agent benchmarks against the post-audit 
 - Re-architecting crates. Renames and additions only.
 - Rewriting unit tests that are honest (a real unit test in `src/` is fine).
 
+## Status (2026-04-25 evening)
+
+- **Phase 1** ✓ done. 14 misnamed test files renamed. `e2e_*.rs` is now load-bearing — convention enforced by acceptance grep. Commit `cdf...` (`test: rename misnamed test files`).
+- **Phase 2** ✓ done. 5 new contract files at the binary boundary, 51 active tests + 9 ignored with FIXME tags pointing at gaps to fix in Phase 3+:
+  - `contract_upgrade.rs` — 7 tests (bad URL, bogus DNS, 404, corrupt checksums, already-current, --json variants). Added one-line test affordance `8V_RELEASE_BASE_URL` env override in `upgrade.rs`.
+  - `contract_path_containment.rs` — 8 active + 3 ignored. Locks read/write containment; surfaces that `search`, `ls`, `fmt` do NOT enforce containment (FIXME phase-2c — needs founder policy decision: is `8v search foo /etc` a valid use case?).
+  - `contract_fmt.rs` — 11 active. Locks fmt behavior on file path, nonexistent path, empty/no-stack dir, readonly file, idempotency, fmt-then-check round-trip, invalid flag, --json shape, syntax-error file.
+  - `contract_build_test_missing_tool.rs` — 5 active + 6 ignored. JSON envelope on missing tool; --timeout plumbing; missing-tool stderr does not name the tool by name (6 FIXMEs surface real gaps).
+  - `contract_hooks.rs` — 20 active, 0 ignored. Full input matrix incl. malformed JSON, empty stdin, null tool_name, deeply nested, 10MB payload, non-UTF8. No hangs found.
+- **Phase 3** ✓ done as audit. All 9 bugs from rounds 12-14 have BINARY_CONTRACT regression tests at the binary boundary. Phase 3 audit incorrectly flagged bug 7 (init non-TTY) as missing — it's covered by `init_without_tty_prints_error` at `bin_e2e.rs:311`. One cosmetic finding: bug 5's canonical regression-test annotation points at `append_to_file` which would not catch the original bug; the real guard is `append_to_lf_file_without_trailing_newline_uses_lf` at line 919. Cross-reference, not a coverage gap.
+- **Phase 4** not started. Cross-layer invariants (no walker follows symlinks anywhere; no command writes outside project root anywhere; --json schema for every command) need writing.
+- **Phase 5** not started. Re-baseline benchmarks.
+
+## Open decisions for founder
+
+1. **Containment policy for `search`/`ls`/`fmt`** (FIXMEs in `contract_path_containment.rs`). Current behavior: these accept any explicit path argument, even outside the project. Plausible intent: `8v search foo /etc` is a valid use case. But `8v fmt /etc` would mutate files outside the project — that's likely a bug. Need policy:
+   - read/write/init/check/build/test → enforce containment (current behavior).
+   - search/ls → allow any explicit path (lock current behavior with explicit policy comment).
+   - fmt → enforce containment (BUG — fix in Phase 2c2).
+2. **Phase 4 scope.** Walking-symlinks audit is straightforward. Writing-outside-root audit is straightforward. --json schema-per-command is a much bigger lift — needs a spec doc first.
+3. **Phase 5 timing.** Benchmarks should re-baseline only after Phase 4. Need agreement on which fixtures (the historical fix-go N=6, plus what?) and whether to publicly republish numbers or hold them internal until enough rounds have stabilized.
+
 ## Tracking
 
 This doc is the source of truth. Updated as phases complete. No release until Phase 5 lands.
