@@ -50,12 +50,12 @@ pub struct MultiEntry {
 
 /// Result for a single file in a multi-file read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "status")]
+#[serde(untagged)]
 pub enum MultiResult {
     /// Successfully read — contains the full sub-report.
     Ok { report: Box<ReadReport> },
-    /// Failed — contains the error message.
-    Err { message: String },
+    /// Failed — matches the canonical JSON error envelope `{"code":"…","error":"…"}`.
+    Err { code: String, error: String },
 }
 
 /// A single symbol extracted from a file.
@@ -141,8 +141,8 @@ impl super::Renderable for ReadReport {
                             let sub = report.render_plain();
                             output.push_str(sub.as_str());
                         }
-                        MultiResult::Err { message } => {
-                            output.push_str(&format!("error: {message}\n"));
+                        MultiResult::Err { error, .. } => {
+                            output.push_str(&format!("error: {error}\n"));
                         }
                     }
                 }

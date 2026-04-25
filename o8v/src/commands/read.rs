@@ -314,7 +314,14 @@ pub fn read_to_report(
                 Ok(report) => MultiResult::Ok {
                     report: Box::new(report),
                 },
-                Err(message) => MultiResult::Err { message },
+                Err(message) => {
+                    let code =
+                        o8v_core::render::error_envelope::classify_error_code(&message).to_owned();
+                    MultiResult::Err {
+                        code,
+                        error: message,
+                    }
+                }
             };
             MultiEntry {
                 label: display_label,

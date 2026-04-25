@@ -253,8 +253,8 @@ async fn dispatch_read_mcp(
                 out.push(Content::text(format!("=== {} ===", entry.label)));
                 match entry.result {
                     MultiResult::Ok { report } => out.extend(report_to_blocks(*report, cap)?),
-                    MultiResult::Err { message } => {
-                        out.push(Content::text(format!("error: {message}")));
+                    MultiResult::Err { error, .. } => {
+                        out.push(Content::text(format!("error: {error}")));
                     }
                 }
             }
