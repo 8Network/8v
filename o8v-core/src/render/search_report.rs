@@ -63,7 +63,7 @@ pub struct SearchReport {
 impl super::Renderable for SearchReport {
     fn render_plain(&self) -> Output {
         if self.files.is_empty() {
-            return Output::new("no matches found".to_string());
+            return Output::new_with_stderr(String::new(), "no matches found".to_string());
         }
 
         let mut out = String::new();
@@ -344,7 +344,12 @@ mod tests {
             render_config: RenderConfig::default(),
         };
         let out = r.render_plain();
-        assert_eq!(out.as_str(), "no matches found");
+        assert_eq!(out.as_str(), "", "stdout must be empty when no matches");
+        assert_eq!(
+            out.stderr_str(),
+            "no matches found",
+            "no-match message must go to stderr"
+        );
     }
 
     #[test]

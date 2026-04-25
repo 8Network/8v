@@ -134,9 +134,15 @@ fn search_stderr_empty_on_clean_no_match() {
     );
 
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // BUG-2 fix: "no matches found" goes to stderr, not stdout.
     assert!(
-        stderr.is_empty(),
-        "clean no-match must produce empty stderr; got: {stderr}"
+        stderr.contains("no matches"),
+        "clean no-match must print 'no matches found' on stderr; got: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.trim().is_empty(),
+        "clean no-match must have empty stdout; got: {stdout}"
     );
 }
 
@@ -270,8 +276,14 @@ fn search_binary_files_silent_no_stderr() {
         .expect("run 8v search with binary file present");
 
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // BUG-2 fix: "no matches found" goes to stderr. What must NOT appear are I/O error
+    // messages from binary file skips — those must be silent.
+    let unexpected: Vec<&str> = stderr
+        .lines()
+        .filter(|l| !l.contains("no matches"))
+        .collect();
     assert!(
-        stderr.is_empty(),
-        "stderr must be empty when only binary files trigger read errors; got: {stderr}"
+        unexpected.is_empty(),
+        "stderr must not contain I/O error messages from binary file skips; got unexpected lines: {unexpected:?}"
     );
 }

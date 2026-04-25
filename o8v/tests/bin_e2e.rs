@@ -134,10 +134,9 @@ fn search_json_is_valid() {
 }
 
 #[test]
-fn search_no_match_exits_1_with_empty_stderr() {
-    // Per error-contract §7: no matches + no I/O errors = exit 1
-    // with stderr empty. Agents distinguish clean no-match (stderr empty) from
-    // partial I/O failure (stderr non-empty).
+fn search_no_match_exits_1_with_empty_stdout() {
+    // BUG-2 fix: "no matches found" goes to stderr so piped consumers get clean stdout.
+    // exit 1 on no match, stdout empty, stderr contains the message.
     let path = o8v_testkit::fixture_path("o8v", "build-rust");
     let (stdout, stderr, ok) = run_8v(&["search", "ZZZNOMATCHZZZ", path.to_str().unwrap()]);
     assert!(
@@ -145,12 +144,12 @@ fn search_no_match_exits_1_with_empty_stderr() {
         "search must exit non-zero on no-match\nstdout:{stdout}\nstderr:{stderr}"
     );
     assert!(
-        stderr.is_empty(),
-        "clean no-match must have empty stderr; got:{stderr}"
+        stdout.trim().is_empty(),
+        "clean no-match must have empty stdout; got:{stdout}"
     );
     assert!(
-        stdout.contains("no matches") || stdout.is_empty() || stdout.contains("0"),
-        "stdout should indicate no match found\nstdout:{stdout}"
+        stderr.contains("no matches"),
+        "no-match message must appear on stderr; got stderr:{stderr}"
     );
 }
 

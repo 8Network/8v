@@ -669,12 +669,15 @@ pub(crate) fn write_to_report(
             validate_line_endings(existing_content)?;
             validate_content_line_endings(content)?;
             let needs_separator = !existing_content.is_empty() && !existing_content.ends_with('\n');
-            let appended = if needs_separator {
-                let sep = detect_line_ending(existing_content);
-                format!("{sep}{content}")
+            let line_ending = detect_line_ending(existing_content);
+            let mut appended = if needs_separator {
+                format!("{line_ending}{content}")
             } else {
                 content.clone()
             };
+            if !appended.ends_with('\n') {
+                appended.push_str(line_ending);
+            }
             o8v_fs::safe_append(&path, root, appended.as_bytes())
                 .map_err(|e| format!("error: failed to append to file: {e}"))?;
             ReportOp::Append

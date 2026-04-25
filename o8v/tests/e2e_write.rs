@@ -248,7 +248,8 @@ fn append_to_file() {
         String::from_utf8_lossy(&out.stderr)
     );
     let result = std::fs::read_to_string(&file).unwrap();
-    assert_eq!(result, "line1\nline2\nline3");
+    // BUG-1 fix: append always ensures trailing newline.
+    assert_eq!(result, "line1\nline2\nline3\n");
 }
 
 // ─── CreateFile ──────────────────────────────────────────────────────────────
@@ -908,8 +909,8 @@ fn append_to_crlf_file_without_trailing_newline_preserves_crlf() {
     );
     let result = std::fs::read(&file).unwrap();
     assert_eq!(
-        result, b"line1\r\nline2\r\nline3",
-        "separator must match existing CRLF, not inject lone \\n"
+        result, b"line1\r\nline2\r\nline3\r\n",
+        "separator must match existing CRLF and content must end with CRLF"
     );
 }
 
@@ -928,7 +929,7 @@ fn append_to_lf_file_without_trailing_newline_uses_lf() {
 
     assert!(out.status.success(), "append should succeed");
     let result = std::fs::read(&file).unwrap();
-    assert_eq!(result, b"a\nb\nc");
+    assert_eq!(result, b"a\nb\nc\n");
 }
 
 // ─── --find --replace validates strings for \r ──────────────────────────────
@@ -1241,4 +1242,37 @@ fn write_replace_range_diff_prefixes_all_new_lines() {
             panic!("new content line appeared without '  + ' prefix; got line: {line:?}\nfull stdout:\n{stdout}");
         }
     }
+}
+
+// BUG-1 regression: --append must ensure the resulting file ends with a newline.
+// If the appended content itself does not end with \n, one must be added.
+#[test]
+fn append_ensures_trailing_newline() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("target.txt");
+    // Existing file ends with newline.
+    std::fs::write(&file, "line1\n").unwrap();
+
+    // Append content that does NOT end with \n.
+    let out = bin_in(tmp.path())
+        .args(["write", "target.txt", "--append", "no-newline"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        out.status.success(),
+        "--append must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        result.ends_with('\n'),
+        "--append must ensure trailing newline; file content: {result:?}"
+    );
+    assert_eq!(
+        result, "line1\nno-newline\n",
+        "--append must produce expected content with trailing newline"
+    );
 }
