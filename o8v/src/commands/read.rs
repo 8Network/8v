@@ -187,6 +187,12 @@ fn read_one(
     let total_lines = content.lines().count();
 
     if let Some((start, end)) = range {
+        if start == 0 {
+            return Err(format!(
+                "8v: invalid range '{}:{}-{}': start must be 1 or greater",
+                file_path, start, end
+            ));
+        }
         if start > end {
             return Err(format!(
                 "8v: invalid range {}:{}-{} — start must be less than or equal to end",

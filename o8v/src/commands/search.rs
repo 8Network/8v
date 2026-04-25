@@ -404,7 +404,8 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
                 result.total_matches -= trim;
                 if last.matches.is_empty() {
                     result.files.pop();
-                    result.total_files = result.total_files.saturating_sub(1);
+                    // Do NOT decrement total_files: the file did match; it just
+                    // has no displayable matches after trimming to the limit.
                 }
             }
         }
