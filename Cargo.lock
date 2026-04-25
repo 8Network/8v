@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "o8v"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-check"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "o8v-core",
  "o8v-fs",
@@ -1079,7 +1079,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-core"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "base64 0.22.1",
  "o8v-fs",
@@ -1099,7 +1099,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-fs"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "tempfile",
  "tracing",
@@ -1107,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-process"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "libc",
  "tempfile",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-stacks"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "o8v-core",
  "o8v-fs",
@@ -1132,7 +1132,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-testkit"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "comfy-table",
