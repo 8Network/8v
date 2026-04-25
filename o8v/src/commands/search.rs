@@ -92,8 +92,8 @@ pub struct FileMatches {
 pub struct SearchResult {
     pub files: Vec<FileMatches>,
     pub total_matches: usize,
-    pub total_matches_before_limit: usize, // how many matches existed before limits applied
-    pub total_files: usize,
+    pub total_matches_before_limit: usize, // how many matches existed before per-file cap
+    pub total_files: usize,                // files with matches shown in results (<= limit)
     pub files_searched: usize,
     pub files_skipped: usize,
     pub files_skipped_by_reason: BTreeMap<String, usize>,
@@ -245,6 +245,31 @@ fn search_file_contents(
     None
 }
 
+/// Count matches in a file for the true-total denominator only.
+///
+/// Called for files that arrive after the limit has already been reached.
+/// Does not add to `result.files` — only updates `total_matches_before_limit`
+/// and `total_files` so the renderer can show the correct "of N" total.
+fn count_file_matches(path: &Path, regex: &Regex, result: &mut SearchResult) {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    if content.contains('\0') {
+        return;
+    }
+    let mut file_had_match = false;
+    for line in content.lines() {
+        if regex.is_match(line) {
+            file_had_match = true;
+            result.total_matches_before_limit += 1;
+        }
+    }
+    if file_had_match {
+        result.total_files += 1;
+    }
+}
+
 /// Run the full search and return a `SearchResult`.
 pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, String> {
     let regex = build_regex(args)?;
@@ -319,10 +344,11 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
 
         result.files_searched += 1;
 
-        // Check file limit before processing
-        if result.total_files >= args.limit {
-            result.truncated = true;
-            break;
+        // Once the limit is reached, only count matches for the true-total
+        // denominator — do not add more files to result.files.
+        if result.truncated {
+            count_file_matches(path, &regex, &mut result);
+            continue;
         }
 
         let skip_reason =
@@ -342,6 +368,16 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
                 };
                 eprintln!("error: search: {reason_display}: {rel_path}");
             }
+        }
+
+        // If this file pushed us over the limit, pop it from results so only
+        // `args.limit` files are shown. Keep total_files as the true file count.
+        if result.total_files > args.limit {
+            result.truncated = true;
+            if let Some(last) = result.files.pop() {
+                result.total_matches -= last.matches.len();
+            }
+            result.total_files -= 1;
         }
     }
 

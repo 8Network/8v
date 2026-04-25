@@ -234,3 +234,84 @@ fn search_json_match_always_has_text_field() {
         );
     }
 }
+
+/// SEARCH-TRUNC-1: when no --limit is passed and all matches are returned,
+/// the summary must NOT contain "results truncated".
+#[test]
+fn search_no_truncation_when_all_matches_returned() {
+    let dir = init_temp_workspace();
+
+    // Write 3 files each containing the pattern — all will be returned with no limit.
+    for i in 1..=3 {
+        std::fs::write(
+            dir.path().join(format!("file{i}.rs")),
+            "pub fn marker_unique_abc() {}\n",
+        )
+        .expect("write fixture");
+    }
+
+    let out = bin()
+        .args(["search", "marker_unique_abc", "."])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v search");
+
+    assert!(
+        out.status.success(),
+        "search must exit 0
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("results truncated"),
+        "no --limit: summary must NOT say 'results truncated' when all matches are returned;
+got:
+{stdout}"
+    );
+}
+
+/// SEARCH-TRUNC-2: with --limit N where N < total matching files, the summary
+/// must show "Found <limited> of <true_total>" and flag "results truncated".
+#[test]
+fn search_limit_shows_true_total() {
+    let dir = init_temp_workspace();
+
+    // 5 files each containing the pattern.
+    for i in 1..=5 {
+        std::fs::write(
+            dir.path().join(format!("item{i}.rs")),
+            "pub fn needle_unique_xyz() {}\n",
+        )
+        .expect("write fixture");
+    }
+
+    let out = bin()
+        .args(["search", "needle_unique_xyz", ".", "--limit", "2"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v search --limit 2");
+
+    assert!(
+        out.status.success(),
+        "search must exit 0
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Must report the true total (5) in the denominator.
+    assert!(
+        stdout.contains("of 5"),
+        "--limit 2 with 5 matching files: summary must contain 'of 5' (true total);
+got:
+{stdout}"
+    );
+    assert!(
+        stdout.contains("results truncated"),
+        "--limit 2 with 5 matching files: summary must say 'results truncated';
+got:
+{stdout}"
+    );
+}
