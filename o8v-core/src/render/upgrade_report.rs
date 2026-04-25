@@ -26,10 +26,12 @@ impl super::Renderable for UpgradeReport {
 
         let status = if let Some(ref err) = self.error {
             format!("error: {}", err)
-        } else if self.upgraded {
+        } else if self.latest_version.as_deref() == Some(self.current_version.as_str()) {
             "status: up-to-date".to_string()
-        } else {
+        } else if self.latest_version.is_some() {
             "status: upgrade-available".to_string()
+        } else {
+            "status: up-to-date".to_string()
         };
         lines.push(status);
 
@@ -64,10 +66,12 @@ impl super::Renderable for UpgradeReport {
 
         if let Some(ref err) = self.error {
             output.push_str(&format!("Status: ERROR - {}\n", err));
-        } else if self.upgraded {
+        } else if self.latest_version.as_deref() == Some(self.current_version.as_str()) {
             output.push_str("Status: UP-TO-DATE ✓\n");
-        } else {
+        } else if self.latest_version.is_some() {
             output.push_str("Status: UPGRADE AVAILABLE\n");
+        } else {
+            output.push_str("Status: UP-TO-DATE ✓\n");
         }
 
         Output::new(output)
@@ -219,5 +223,52 @@ mod tests {
 
         // JSON should be single line when compacted
         assert_eq!(lines.len(), 1);
+    }
+    /// Real "already at latest" path: upgraded=false but versions match.
+    /// This is what upgrade.rs returns when remote == current.
+    fn sample_already_at_latest_report() -> UpgradeReport {
+        UpgradeReport {
+            current_version: "1.0.0".to_string(),
+            latest_version: Some("1.0.0".to_string()),
+            upgraded: false,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn test_render_human_already_at_latest_no_upgrade_available() {
+        // upgraded=false + versions match => must NOT say "UPGRADE AVAILABLE"
+        let report = sample_already_at_latest_report();
+        let output = report.render_human();
+        let content = output.as_str();
+        assert!(
+            !content.contains("UPGRADE AVAILABLE"),
+            "render_human must not say UPGRADE AVAILABLE when already on latest version
+content: {content}"
+        );
+        assert!(
+            content.to_lowercase().contains("up to date")
+                || content.to_lowercase().contains("up-to-date"),
+            "render_human must say 'up to date' when already on latest version
+content: {content}"
+        );
+    }
+
+    #[test]
+    fn test_render_plain_already_at_latest_no_upgrade_available() {
+        // upgraded=false + versions match => must NOT say "upgrade-available"
+        let report = sample_already_at_latest_report();
+        let output = report.render_plain();
+        let content = output.as_str();
+        assert!(
+            !content.contains("upgrade-available"),
+            "render_plain must not say upgrade-available when already on latest version
+content: {content}"
+        );
+        assert!(
+            content.contains("up-to-date"),
+            "render_plain must say up-to-date when already on latest version
+content: {content}"
+        );
     }
 }

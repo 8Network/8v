@@ -197,6 +197,7 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
         eprintln!();
     }
 
+    let dir_already_existed = std::path::Path::new(&location.display().to_string()).exists();
     if let Err(e) = location.create() {
         eprintln!("error: cannot create {}: {e}", location.display());
         return ExitCode::from(EXIT_FAIL);
@@ -210,7 +211,11 @@ Run `8v init` inside a specific subproject if this is a monorepo root.",
             },
             Err(_) => loc_path,
         };
-        eprintln!("✓ Created {display}");
+        if dir_already_existed {
+            eprintln!("  {display} already exists");
+        } else {
+            eprintln!("✓ Created {display}");
+        }
     }
 
     let project_root = &containment_root;
@@ -390,6 +395,9 @@ no-auto-commits: true\n";
             Ok(GitHookInstallOutcome::SkippedNoGit) => {
                 eprintln!("  Pre-commit hook skipped — no .git directory found");
             }
+            Ok(GitHookInstallOutcome::AlreadyPresent) => {
+                eprintln!("  Pre-commit hook already present");
+            }
             Ok(GitHookInstallOutcome::SkippedByUser) => {
                 // User declined the "merge with existing" prompt; message
                 // already printed inside install_git_pre_commit.
@@ -413,6 +421,9 @@ no-auto-commits: true\n";
             }
             Ok(GitHookInstallOutcome::SkippedNoGit) => {
                 eprintln!("  Commit-msg hook skipped — no .git directory found");
+            }
+            Ok(GitHookInstallOutcome::AlreadyPresent) => {
+                eprintln!("  Commit-msg hook already present");
             }
             Ok(GitHookInstallOutcome::SkippedByUser) => {}
         }

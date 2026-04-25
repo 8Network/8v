@@ -83,8 +83,10 @@ impl GitDir {
 /// — the init driver printed a success line for both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitHookInstallOutcome {
-    /// Hook script was written (or left in place, already containing 8v).
+    /// Hook script was freshly written (did not exist or did not contain 8v).
     Installed,
+    /// Hook already contained the 8v marker; no changes were made.
+    AlreadyPresent,
     /// No .git directory found under the root; nothing was written.
     SkippedNoGit,
     /// Hook file already existed and the user chose "Skip" in the prompt.
@@ -107,8 +109,7 @@ pub fn install_git_pre_commit(
                 .map_err(to_io)?;
             let existing = guarded.content();
             if existing.contains(HOOK_LINE_MARKER) {
-                eprintln!("  (hook already contains 8v)");
-                return Ok(GitHookInstallOutcome::Installed);
+                return Ok(GitHookInstallOutcome::AlreadyPresent);
             }
 
             let items = &["Before existing hook", "After existing hook", "Skip"];
@@ -166,8 +167,7 @@ pub fn install_git_commit_msg(
                 .map_err(to_io)?;
             let existing = guarded.content();
             if existing.contains(COMMIT_MSG_HOOK_LINE_MARKER) {
-                eprintln!("  (hook already contains 8v)");
-                return Ok(GitHookInstallOutcome::Installed);
+                return Ok(GitHookInstallOutcome::AlreadyPresent);
             }
 
             let items = &["Before existing hook", "After existing hook", "Skip"];
@@ -312,6 +312,24 @@ mod tests {
     }
 
     #[test]
+    fn pre_commit_hook_returns_already_present_when_8v_in_hook() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        let hooks_dir = root.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        let original = "#!/bin/sh\n8v hooks git on-commit\necho other\n";
+        fs::write(hooks_dir.join("pre-commit"), original).unwrap();
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        let outcome = install_git_pre_commit(&containment_root).unwrap();
+        assert_eq!(
+            outcome,
+            GitHookInstallOutcome::AlreadyPresent,
+            "must return AlreadyPresent when hook already contains 8v marker"
+        );
+    }
+
+    #[test]
     fn pre_commit_hook_creates_hooks_dir_if_missing() {
         let dir = TempDir::new().unwrap();
         let root = canonical(&dir);
@@ -380,6 +398,24 @@ mod tests {
 
         let content = fs::read_to_string(hooks_dir.join("commit-msg")).unwrap();
         assert_eq!(content, original);
+    }
+
+    #[test]
+    fn commit_msg_hook_returns_already_present_when_8v_in_hook() {
+        let dir = TempDir::new().unwrap();
+        let root = canonical(&dir);
+        let hooks_dir = root.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        let original = "#!/bin/sh\n8v hooks git on-commit-msg \"$1\"\necho other\n";
+        fs::write(hooks_dir.join("commit-msg"), original).unwrap();
+        let containment_root = o8v_fs::ContainmentRoot::new(&root).unwrap();
+
+        let outcome = install_git_commit_msg(&containment_root).unwrap();
+        assert_eq!(
+            outcome,
+            GitHookInstallOutcome::AlreadyPresent,
+            "must return AlreadyPresent when hook already contains 8v marker"
+        );
     }
 
     #[test]

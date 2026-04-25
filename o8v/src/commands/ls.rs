@@ -435,8 +435,6 @@ pub(crate) fn do_ls(
             break 'walk;
         }
 
-        total_files += 1;
-
         // Apply extension filter
         if !crate::path_util::matches_extension(path, args.extension.as_deref()) {
             files_filtered += 1;
@@ -454,6 +452,8 @@ pub(crate) fn do_ls(
             truncated = true;
             break 'walk;
         }
+
+        total_files += 1;
 
         let rel_path = crate::path_util::relative_to(&root, path);
 
@@ -577,7 +577,64 @@ impl Command for LsCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use o8v_core::extensions::Extensions;
     use std::fs;
+    use std::sync::atomic::AtomicBool;
+
+    fn make_ctx(root: &std::path::Path) -> o8v_core::command::CommandContext {
+        static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+        let mut ext = Extensions::new();
+        ext.insert(crate::workspace::WorkspaceRoot::new(root).expect("WorkspaceRoot::new"));
+        o8v_core::command::CommandContext {
+            interrupted: &INTERRUPTED,
+            extensions: ext,
+        }
+    }
+
+    fn make_args(limit: usize) -> Args {
+        Args {
+            path: None,
+            tree: false,
+            files: false,
+            extension: None,
+            match_pattern: None,
+            stack: None,
+            depth: None,
+            loc: false,
+            meta: false,
+            limit,
+            format: crate::commands::output_format::OutputFormat::default(),
+        }
+    }
+
+    /// When the walk hits the limit, the file that triggered the break must NOT
+    /// be counted in `total_files`. Before the fix, `total_files` was incremented
+    /// before the limit check, so "Showing N of N+1" appeared in the output.
+    #[test]
+    fn ls_truncated_total_files_equals_shown() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().canonicalize().expect("canonicalize");
+
+        // Create limit+1 files so truncation is triggered at exactly `limit`.
+        let limit: usize = 3;
+        for i in 0..=(limit) {
+            fs::write(root.join(format!("file{i}.txt")), "").expect("write");
+        }
+
+        let mut args = make_args(limit);
+        args.path = Some(root.to_str().unwrap().to_string());
+        let ctx = make_ctx(&root);
+
+        let result = do_ls(&args, &ctx).expect("do_ls");
+
+        assert!(result.truncated, "must be truncated");
+        assert_eq!(
+            result.total_files, result.shown,
+            "total_files ({}) must equal shown ({}) when truncated — \
+             the file that triggered the break must not be counted",
+            result.total_files, result.shown
+        );
+    }
 
     /// `--match` with a nested pattern (e.g. `src/*.rs`) must match files
     /// inside subdirectories. Previously `matches_glob` used `file_name()` (basename
