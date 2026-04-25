@@ -32,7 +32,25 @@ fn main() -> ExitCode {
     use clap::Parser;
     let cli = cli::Cli::parse();
 
-    match cli.command {
+    if cli.build_info {
+        use std::io::Write;
+        let _ = std::io::stdout().write_all(cli::version::long().as_bytes());
+        let _ = std::io::stdout().write_all(b"\n");
+        return ExitCode::SUCCESS;
+    }
+
+    let command = match cli.command {
+        Some(c) => c,
+        None => {
+            use clap::CommandFactory;
+            let mut cmd = cli::Cli::command();
+            let _ = cmd.write_help(&mut std::io::stderr());
+            eprintln!();
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match command {
         commands::Command::Mcp => {
             let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()

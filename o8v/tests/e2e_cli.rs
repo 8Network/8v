@@ -54,11 +54,11 @@ fn version_exits_0() {
 
 #[test]
 fn long_version_includes_provenance_fields() {
-    // `--version` must print commit, commit_date, branch, describe, built,
+    // `--build-info` must print commit, commit_date, branch, describe, built,
     // profile, target, rustc, binary_path — the fields that answer
     // "what binary is this and how was it built?".
     let out = bin()
-        .arg("--version")
+        .arg("--build-info")
         .output()
         .expect("failed to run binary");
 
@@ -77,13 +77,66 @@ fn long_version_includes_provenance_fields() {
     ] {
         assert!(
             stdout.contains(label),
-            "--version output missing {label:?}; got:\n{stdout}"
+            "--build-info output missing {label:?}; got:\n{stdout}"
         );
     }
     // Sanity: the private/host identity field we removed must not come back.
     assert!(
         !stdout.contains("built_by"),
-        "--version must not include built_by (user@host), got:\n{stdout}"
+        "--build-info must not include built_by (user@host), got:\n{stdout}"
+    );
+}
+
+#[test]
+fn version_default_is_single_line() {
+    // `--version` must emit exactly one line matching `8v <semver>`.
+    let out = bin()
+        .arg("--version")
+        .output()
+        .expect("failed to run binary");
+
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Exactly one newline-terminated line.
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "--version must be exactly one line; got {} lines:\n{stdout}",
+        lines.len()
+    );
+    // Must match `8v <semver>`.
+    assert!(
+        lines[0].starts_with("8v "),
+        "--version line does not start with '8v '; got: {}",
+        lines[0]
+    );
+    // Must not leak provenance fields.
+    for label in ["commit:", "built:", "binary_path:"] {
+        assert!(
+            !stdout.contains(label),
+            "--version leaked long field {label:?}; got:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn version_build_info_contains_provenance() {
+    // `--build-info` must exit 0 and contain commit: and rustc:.
+    let out = bin()
+        .arg("--build-info")
+        .output()
+        .expect("failed to run binary");
+
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("commit:"),
+        "--build-info missing 'commit:'; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("rustc:"),
+        "--build-info missing 'rustc:'; got:\n{stdout}"
     );
 }
 

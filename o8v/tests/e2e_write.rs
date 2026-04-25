@@ -1130,3 +1130,47 @@ fn find_replace_single_match_without_all_succeeds() {
     let content = std::fs::read_to_string(&file).unwrap();
     assert_eq!(content, "goodbye\nworld\n", "single match must be replaced");
 }
+
+// ─── Diff output correctness ──────────────────────────────────────────────────
+
+/// BUG A regression: every line of the new content must appear with `  + ` prefix.
+/// Previously only the first line was prefixed; subsequent lines appeared as plain text.
+#[test]
+fn write_replace_range_diff_prefixes_all_new_lines() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("f.txt");
+    std::fs::write(&file, "alpha\nbeta\ngamma\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "f.txt:1-2", "X\nY\nZ"])
+        .output()
+        .expect("run 8v write");
+
+    assert!(
+        out.status.success(),
+        "should exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("  + X"),
+        "stdout must contain '  + X'; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("  + Y"),
+        "stdout must contain '  + Y'; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("  + Z"),
+        "stdout must contain '  + Z'; got:\n{stdout}"
+    );
+    // Bare Y or Z without the prefix must not appear as a standalone line.
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed == "Y" || trimmed == "Z" {
+            panic!("new content line appeared without '  + ' prefix; got line: {line:?}\nfull stdout:\n{stdout}");
+        }
+    }
+}

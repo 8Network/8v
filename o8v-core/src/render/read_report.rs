@@ -156,7 +156,7 @@ impl super::Renderable for ReadReport {
             Ok(s) => s,
             Err(e) => format!("{{\"error\": \"serialization failed: {e}\"}}"),
         };
-        Output::new(json)
+        Output::new(format!("{json}\n"))
     }
 }
 
@@ -463,6 +463,21 @@ mod tests {
                 "no symbols found \u{2014} use `8v read src/gamma.rs --full` to read as text"
             ),
             "hint must contain canonical wording, em-dash, path, and --full flag; got: {text:?}"
+        );
+    }
+
+    #[test]
+    fn render_json_has_trailing_newline() {
+        let report = ReadReport::Symbols {
+            path: "src/main.rs".to_string(),
+            total_lines: 10,
+            symbols: vec![],
+        };
+        let json = report.render_json().to_string();
+        assert!(
+            json.ends_with('\n'),
+            "render_json must end with newline; got: {:?}",
+            &json[json.len().saturating_sub(8)..]
         );
     }
 }

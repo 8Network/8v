@@ -90,6 +90,33 @@ fn exit_code_log_empty() {
     );
 }
 
+// ─── init: non-TTY context → init fails → exit 1, not exit 0 ────────────────
+
+/// `8v init <path> --json` in a non-TTY context (as run by tests) should exit 1
+/// when init fails (requires interactive terminal).
+/// Pre-fix binary returns exit 0 even when the JSON body contains `"success":false`.
+#[test]
+fn exit_code_init_non_tty_json() {
+    let dir = empty_dir();
+
+    let out = bin()
+        .args(["init", dir.path().to_str().expect("valid path"), "--json"])
+        .output()
+        .expect("run 8v init --json");
+
+    // The JSON body must contain "success":false and the process must exit 1
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"success\"") && stdout.contains("false"),
+        "init --json output must report success:false; got: {stdout}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "init failure must exit 1, not 0; stdout: {stdout}"
+    );
+}
+
 // ─── stats: filtered-empty / zero-width window is user error → exit 1, not 2 ─
 
 /// `8v stats --since 1d --until 1d` creates a zero-width window (no events can

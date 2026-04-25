@@ -6,18 +6,21 @@
 
 pub(crate) mod common;
 pub(crate) mod time_utc;
-pub(crate) mod version;
+pub mod version;
 
 use clap::Parser;
 
 #[derive(Parser)]
 #[command(
     name = "8v",
-    version,
-    long_version = version::long(),
+    version = version::short(),
     about = "Code reliability tool — one command checks everything"
 )]
 pub struct Cli {
+    /// Print full build provenance (commit, branch, rustc, binary path, …).
+    #[arg(long = "build-info", action = clap::ArgAction::SetTrue)]
+    pub build_info: bool,
+
     #[command(subcommand)]
-    pub command: crate::commands::Command,
+    pub command: Option<crate::commands::Command>,
 }

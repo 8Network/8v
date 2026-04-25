@@ -222,11 +222,7 @@ fn search_file_contents(
                     Vec::new()
                 };
 
-                let text = if args.context.is_some() {
-                    Some(truncate_line(line))
-                } else {
-                    None
-                };
+                let text = Some(truncate_line(line));
 
                 file_matches.push(Match {
                     line: line_idx + 1,

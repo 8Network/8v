@@ -80,8 +80,8 @@ pub(super) fn parse_mcp_command(
         .chain(parts.iter().map(String::as_str))
         .collect();
 
-    let mut command = match crate::cli::Cli::try_parse_from(&argv) {
-        Ok(cli) => cli.command,
+    let cli = match crate::cli::Cli::try_parse_from(&argv) {
+        Ok(cli) => cli,
         Err(e) => {
             // Help and version requests are informational success output, not errors.
             // Clap returns Err with DisplayHelp / DisplayVersion even though the caller
@@ -94,6 +94,11 @@ pub(super) fn parse_mcp_command(
             }
             return Err(parse_error(e));
         }
+    };
+
+    let mut command = match cli.command {
+        Some(c) => c,
+        None => return Err("error: no subcommand provided".to_string()),
     };
 
     command.resolve_mcp_paths(containment_root)?;

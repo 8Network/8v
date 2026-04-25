@@ -165,3 +165,72 @@ fn search_files_flag_lists_content_matching_paths() {
         "--files output must NOT contain no_match.rs; got:\n{stdout}"
     );
 }
+
+/// BUG E regression: `--json` match objects must always include a `"text"` field,
+/// even when `-C` is not supplied (compact mode).
+#[test]
+fn search_json_match_always_has_text_field() {
+    let dir = init_temp_workspace();
+    let target = dir.path().join("greet.txt");
+    std::fs::write(&target, "hello world\n").expect("write greet.txt");
+
+    let out = bin()
+        .args(["search", "hello", ".", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run 8v search --json");
+
+    assert!(
+        out.status.success(),
+        "search --json must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+
+    // The JSON structure is {"matches": [...]} or {"files": [{"matches": [...]}]}
+    // Walk all match objects and verify each has a "text" field.
+    fn collect_matches<'a>(v: &'a serde_json::Value, out: &mut Vec<&'a serde_json::Value>) {
+        match v {
+            serde_json::Value::Array(arr) => {
+                for item in arr {
+                    collect_matches(item, out);
+                }
+            }
+            serde_json::Value::Object(map) => {
+                // If this object has a "line" key, treat it as a match object.
+                if map.contains_key("line") {
+                    out.push(v);
+                } else {
+                    for val in map.values() {
+                        collect_matches(val, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut matches = Vec::new();
+    collect_matches(&parsed, &mut matches);
+
+    assert!(
+        !matches.is_empty(),
+        "expected at least one match object in JSON; got:\n{stdout}"
+    );
+
+    for m in &matches {
+        assert!(
+            m.get("text").is_some(),
+            "match object must have 'text' field even without -C; got object:\n{}\nfull stdout:\n{stdout}",
+            m
+        );
+        let text = m["text"].as_str().expect("'text' must be a string");
+        assert!(
+            text.contains("hello"),
+            "'text' must contain the matched content; got: {text:?}"
+        );
+    }
+}

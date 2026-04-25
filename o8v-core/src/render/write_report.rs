@@ -47,7 +47,9 @@ impl super::Renderable for WriteReport {
                 for old in old_lines {
                     out.push_str(&format!("  - {old}\n"));
                 }
-                out.push_str(&format!("  + {new_content}\n"));
+                for new_line in new_content.lines() {
+                    out.push_str(&format!("  + {new_line}\n"));
+                }
                 out
             }
             WriteOperation::Insert { content } => {
@@ -80,7 +82,7 @@ impl super::Renderable for WriteReport {
             Ok(s) => s,
             Err(e) => format!("{{\"error\": \"serialization failed: {e}\"}}"),
         };
-        Output::new(json)
+        Output::new(format!("{json}\n"))
     }
 }
 
@@ -239,6 +241,23 @@ mod tests {
         assert_eq!(
             report.render_plain().to_string(),
             report.render_human().to_string()
+        );
+    }
+
+    #[test]
+    fn render_json_has_trailing_newline() {
+        let report = WriteReport {
+            path: "src/main.rs".to_string(),
+            operation: WriteOperation::Replace {
+                old_lines: vec!["x".to_string()],
+                new_content: "x".to_string(),
+            },
+        };
+        let json = report.render_json().to_string();
+        assert!(
+            json.ends_with('\n'),
+            "render_json must end with newline; got: {:?}",
+            &json[json.len().saturating_sub(8)..]
         );
     }
 }

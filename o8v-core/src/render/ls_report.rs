@@ -87,6 +87,7 @@ impl super::Renderable for LsReport {
                         self.files_skipped_gitignore
                     ));
                 }
+                out.push('\n');
             }
             LsMode::Files => {
                 for entry in &self.projects {
@@ -366,6 +367,30 @@ mod tests {
         assert_eq!(v["total_projects"], 2);
         assert_eq!(v["projects"].as_array().unwrap().len(), 2);
         assert_eq!(v["projects"][0]["stack"], "rust");
+    }
+
+    #[test]
+    fn tree_truncated_output_ends_with_newline() {
+        let r = LsReport {
+            projects: vec![LsProjectEntry {
+                name: "o8v-core".to_string(),
+                stack: "rust".to_string(),
+                path: "o8v-core/".to_string(),
+                files: vec![],
+            }],
+            mode: LsMode::Tree,
+            total_files: 100,
+            files_filtered: 0,
+            files_skipped_gitignore: 0,
+            truncated: true,
+            shown: 50,
+        };
+        let out = r.render_plain();
+        assert!(
+            out.as_str().ends_with('\n'),
+            "tree output must end with newline; got: {:?}",
+            &out.as_str()[out.as_str().len().saturating_sub(8)..]
+        );
     }
 
     #[test]

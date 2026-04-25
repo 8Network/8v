@@ -11,7 +11,15 @@ use std::sync::OnceLock;
 
 use super::time_utc::format_unix_utc;
 
-pub(crate) fn long() -> &'static str {
+/// One-line version: `8v <semver>`. Used as clap's `--version` output.
+pub fn short() -> &'static str {
+    static CELL: OnceLock<String> = OnceLock::new();
+    CELL.get_or_init(|| format!("8v {}", env!("CARGO_PKG_VERSION")))
+        .as_str()
+}
+
+/// Multi-line build provenance block. Used by `--build-info`.
+pub fn long() -> &'static str {
     static CELL: OnceLock<String> = OnceLock::new();
     CELL.get_or_init(build).as_str()
 }
