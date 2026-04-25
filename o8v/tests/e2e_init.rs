@@ -612,3 +612,61 @@ fn i1_init_yes_still_claims_hook_installed_when_git_present() {
         "pre-commit script must exist after successful install"
     );
 }
+
+/// In a non-git dir, `8v init --yes` must report the pre-commit hook as
+/// skipped (not "already present" or "installed").  The message must contain
+/// both "skipped" and ".git" so the user knows why.
+#[test]
+fn i3_init_yes_reports_pre_commit_skipped_in_non_git_dir() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+    assert!(
+        !path.join(".git").exists(),
+        "preflight: tmpdir must not have .git"
+    );
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert!(
+        combined.to_lowercase().contains("skipped"),
+        "init in non-git dir must say the hook was skipped
+combined: {combined}"
+    );
+    assert!(
+        !combined.contains("already present"),
+        "init in non-git dir must NOT say 'already present'
+combined: {combined}"
+    );
+}
+
+/// Same skipped-message contract for the commit-msg hook.
+#[test]
+fn i3_init_yes_reports_commit_msg_skipped_in_non_git_dir() {
+    let tmpdir = tempfile::tempdir().expect("tmpdir");
+    let path = tmpdir.path();
+
+    let out = bin()
+        .args(["init", path.to_str().unwrap(), "--yes"])
+        .output()
+        .expect("run 8v init --yes");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stderr}{stdout}");
+
+    assert!(
+        combined.to_lowercase().contains("skipped"),
+        "init in non-git dir must say the commit-msg hook was skipped
+combined: {combined}"
+    );
+    assert!(
+        !combined.contains("already present"),
+        "init in non-git dir must NOT say 'already present' for commit-msg hook
+combined: {combined}"
+    );
+}

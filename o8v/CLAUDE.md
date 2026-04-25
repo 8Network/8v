@@ -30,6 +30,15 @@ Use `8v` instead of Read, Edit, Write, Grep, Glob, and Bash for file operations.
 - `8v write <path> --append "<content>"`
   Content args: `\n` = newline, `\t` = tab, `\\` = backslash. Pass as literal two-char sequences — do not rely on shell interpolation.
 
+## JSON Contracts
+
+### `8v read <path>:<start>-<end> --json`
+Output shape: `{"Range":{"path":"...","start":<usize>,"end":<usize>,"total_lines":<usize>,"lines":[...]}}`
+
+- Variant key: `"Range"` (not `"range"` or `"RangeRead"`)
+- Line fields: `"start"` and `"end"` (NOT `"start_line"` / `"end_line"`)
+- Locked by: `o8v/tests/e2e_read_json_range_fields.rs`
+
 ## Verify
 - `8v check .` — lint + type-check + format-check.
 - `8v fmt .` — auto-format in place.
