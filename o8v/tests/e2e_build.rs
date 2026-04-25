@@ -148,6 +148,47 @@ fn build_python_project_errors_no_build_tool() {
     );
 }
 
+// ─── JSON error envelope for stacks with no build step ──────────────────────
+
+#[test]
+fn build_json_no_step_emits_json_envelope() {
+    let project = fixture("build-no-tool");
+
+    let out = bin()
+        .args(["build", project.path().to_str().unwrap(), "--json"])
+        .output()
+        .expect("run 8v build --json on python project");
+
+    assert!(!out.status.success(), "should exit non-zero");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stdout.is_empty(),
+        "stdout should contain JSON envelope, got empty\nstderr: {stderr}"
+    );
+    let parsed: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => panic!("stdout is not valid JSON: {e}\nstdout: {stdout}\nstderr: {stderr}"),
+    };
+    assert!(
+        parsed.get("error").is_some(),
+        "JSON envelope missing 'error' field: {stdout}"
+    );
+    assert!(
+        parsed.get("code").is_some(),
+        "JSON envelope missing 'code' field: {stdout}"
+    );
+    assert_eq!(
+        parsed["code"].as_str(),
+        Some("unsupported"),
+        "code should be 'unsupported': {stdout}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "stderr should be empty when --json is set\nstderr: {stderr}"
+    );
+}
+
 // ─── No project ─────────────────────────────────────────────────────────────
 
 #[test]

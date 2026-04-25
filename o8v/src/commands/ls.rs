@@ -27,6 +27,33 @@ use std::path::{Path, PathBuf};
 /// Hard cap on total directory entries scanned. Guards against pathological trees.
 const MAX_ENTRIES_SCANNED: usize = 50_000;
 
+/// Artifact directories that are always excluded from file listing, even without a
+/// `.gitignore`. These directories contain build outputs, vendored dependencies, or
+/// generated files that are never useful to agents. They are excluded at the walker
+/// level so both `--tree` and `--json` (and every other output mode) share the same
+/// filtered file list.
+const ARTIFACT_DIRS: &[&str] = &[
+    "target",        // Rust / Cargo build output
+    "node_modules",  // Node.js / npm / yarn / pnpm
+    "dist",          // generic build output (many JS bundlers)
+    "build",         // generic build output (Maven, Gradle, CMake, …)
+    ".next",         // Next.js server build
+    ".nuxt",         // Nuxt.js build
+    ".svelte-kit",   // SvelteKit build
+    "__pycache__",   // Python bytecode cache
+    ".gradle",       // Gradle cache
+    ".cache",        // generic tool caches
+    ".parcel-cache", // Parcel bundler cache
+    "coverage",      // test coverage output
+    ".tox",          // Python tox environments
+    ".venv",         // Python virtual environments
+    "venv",          // Python virtual environments (alternate name)
+    "env",           // Python virtual environments (alternate name)
+    ".eggs",         // Python egg build artefacts
+    "out",           // generic output dir (many build tools)
+    ".output",       // Nitro / Nuxt server output
+];
+
 /// Files larger than this are not read for LOC — shown as `[large]` instead.
 const MAX_LOC_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
 
@@ -354,10 +381,24 @@ pub(crate) fn do_ls(
         });
     }
 
-    // Walk directory and collect files
+    // Walk directory and collect files.
+    // `filter_entry` prunes entire subtrees — artifact directories are never
+    // descended into, so they never appear in any output mode (tree, files, JSON).
     let walker = WalkBuilder::new(&root)
         .standard_filters(true) // respects .gitignore, hidden files, etc.
         .require_git(false) // apply .gitignore rules even without a .git directory
+        .filter_entry(|entry| {
+            // Allow files unconditionally; only prune artifact *directories*.
+            if !entry.path().is_dir() {
+                return true;
+            }
+            let name = entry
+                .path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            !ARTIFACT_DIRS.contains(&name)
+        })
         .build();
 
     let mut total_files = 0usize;

@@ -529,3 +529,73 @@ fn ls_unknown_stack_rejected() {
         "error must mention the invalid stack name or 'unknown'/'invalid', got: {combined}"
     );
 }
+
+/// `8v ls --json` must never include files inside artifact directories (e.g. `target/`)
+/// even when no `.gitignore` is present. Regression test for the bug where
+/// `8v ls --json <path>` returned ~59 files (53 inside `target/`) on a Rust project
+/// with no `.gitignore`.
+#[test]
+fn ls_json_excludes_artifact_dirs_without_gitignore() {
+    use std::fs;
+
+    // Create a real Rust project via `cargo init` so the `target/` directory actually
+    // gets populated by a build step.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // cargo init
+    let init = std::process::Command::new("cargo")
+        .args(["init", "--name", "testproject", root.to_str().unwrap()])
+        .output()
+        .expect("cargo init");
+    assert!(
+        init.status.success(),
+        "cargo init failed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Build so that `target/` is populated.
+    let build = std::process::Command::new("cargo")
+        .args(["build"])
+        .current_dir(root)
+        .output()
+        .expect("cargo build");
+    assert!(
+        build.status.success(),
+        "cargo build failed: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    // Confirm `target/` exists (otherwise the test proves nothing).
+    assert!(
+        root.join("target").exists(),
+        "target/ must exist after cargo build"
+    );
+
+    // Remove `.gitignore` so there is no gitignore-based exclusion — the artifact filter
+    // in the walker is the only protection.
+    let gitignore = root.join(".gitignore");
+    if gitignore.exists() {
+        fs::remove_file(&gitignore).expect("remove .gitignore");
+    }
+
+    // Run `8v ls --json <root>`.
+    let out = bin()
+        .args(["ls", "--json", root.to_str().unwrap()])
+        .output()
+        .expect("run 8v ls --json");
+
+    assert!(
+        out.status.success(),
+        "8v ls --json exited non-zero: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // No file path in the JSON output should contain the `target` artifact directory.
+    assert!(
+        !stdout.contains("/target/"),
+        "8v ls --json must not include any file inside target/, but got:\n{stdout}"
+    );
+}

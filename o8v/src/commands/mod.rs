@@ -194,27 +194,55 @@ pub async fn dispatch_command_with_agent(
     match command {
         Command::Build(args) => {
             let cmd = build::BuildCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            let exit = if report.process.success {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-            Ok((output, exit, false))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, report)) => {
+                    let exit = if report.process.success {
+                        ExitCode::SUCCESS
+                    } else {
+                        ExitCode::FAILURE
+                    };
+                    Ok((output, exit, false))
+                }
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Test(args) => {
             let cmd = test::TestCommand { args };
-            let (output, _, report) =
-                crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
-                    .await?;
-            let exit = if report.process.success {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-            Ok((output, exit, false))
+            match crate::dispatch::dispatch(&cmd, &mut ctx, audience, caller, command_name, &argv)
+                .await
+            {
+                Ok((output, _, report)) => {
+                    let exit = if report.process.success {
+                        ExitCode::SUCCESS
+                    } else {
+                        ExitCode::FAILURE
+                    };
+                    Ok((output, exit, false))
+                }
+                Err(o8v_core::command::CommandError::Execution(msg))
+                    if audience == Audience::Machine =>
+                {
+                    let code = o8v_core::render::error_envelope::classify_error_code(&msg);
+                    Ok((
+                        o8v_core::render::error_envelope::json_error_envelope(&msg, code),
+                        ExitCode::FAILURE,
+                        false,
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         }
         Command::Check(args) => {
             let use_stderr = audience == Audience::Human;

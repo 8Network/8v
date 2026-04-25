@@ -86,6 +86,11 @@ pub fn classify_error_code(msg: &str) -> &'static str {
         || lower.contains("unreachable")
     {
         "network"
+    } else if lower.contains("no build step")
+        || lower.contains("unsupported")
+        || lower.contains("not supported")
+    {
+        "unsupported"
     } else {
         "runtime"
     }
