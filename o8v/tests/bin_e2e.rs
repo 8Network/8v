@@ -301,8 +301,24 @@ fn check_rust_project_json() {
 #[test]
 fn fmt_rust_project_exits_0() {
     let project = fixture("build-rust");
-    let (stdout, stderr, ok) = run_8v(&["fmt", project.path().to_str().unwrap()]);
-    assert!(ok, "fmt should exit 0\nstdout:{stdout}\nstderr:{stderr}");
+    // Initialize a workspace so containment is rooted here, then run fmt from within it.
+    let status = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(project.path())
+        .status()
+        .expect("8v init --yes");
+    assert!(status.success(), "8v init --yes failed");
+    let out = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["fmt", "."])
+        .current_dir(project.path())
+        .output()
+        .expect("spawn 8v fmt");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "fmt should exit 0\nstdout:{stdout}\nstderr:{stderr}"
+    );
 }
 
 // ── init ──────────────────────────────────────────────────────────────────────

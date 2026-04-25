@@ -193,6 +193,8 @@ fn write_rejects_traversal_path() {
 // FIXME phase-2c: search does not enforce containment at binary layer.
 // `do_search` intentionally creates a new ContainmentRoot anchored at the
 // supplied path so files inside it can be read. An outside path is NOT rejected.
+//
+// POLICY: search/ls accept any explicit path arg (read-only). Containment is not enforced; this is intentional.
 #[test]
 #[ignore]
 fn search_rejects_absolute_outside_path() {
@@ -207,6 +209,8 @@ fn search_rejects_absolute_outside_path() {
 //
 // FIXME phase-2c: ls does not enforce containment at binary layer.
 // `do_ls` creates ContainmentRoot anchored at the supplied path, not the workspace root.
+//
+// POLICY: search/ls accept any explicit path arg (read-only). Containment is not enforced; this is intentional.
 #[test]
 #[ignore]
 fn ls_rejects_absolute_outside_path() {
@@ -218,16 +222,23 @@ fn ls_rejects_absolute_outside_path() {
 }
 
 // ─── fmt: outside path ───────────────────────────────────────────────────────
-//
-// FIXME phase-2c: fmt does not enforce containment at binary layer.
-// `fmt::run` uses `ProjectRoot::new(path_str)` directly without workspace containment.
+
 #[test]
-#[ignore]
 fn fmt_rejects_absolute_outside_path() {
     let proj = TestProject::new();
     let outside_dir = tempfile::tempdir().expect("outside dir");
     let outside_path = outside_dir.path().canonicalize().expect("canonicalize");
     let (code, stderr) = proj.run(&["fmt", outside_path.to_str().unwrap()]);
+    assert_containment_violation(code, &stderr);
+}
+
+#[test]
+fn fmt_rejects_traversal_escape() {
+    let proj = TestProject::new();
+    let sibling = proj.sibling_file();
+    let sibling_name = sibling.file_name().unwrap().to_str().unwrap();
+    let traversal = format!("../{sibling_name}");
+    let (code, stderr) = proj.run(&["fmt", &traversal]);
     assert_containment_violation(code, &stderr);
 }
 

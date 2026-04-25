@@ -18,6 +18,19 @@ fn fixture(name: &str) -> TempProject {
     TempProject::from_fixture(&path)
 }
 
+fn init_workspace(dir: &std::path::Path) {
+    let status = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir)
+        .status()
+        .expect("8v init --yes");
+    assert!(
+        status.success(),
+        "8v init --yes failed in {}",
+        dir.display()
+    );
+}
+
 // ─── 8v test ────────────────────────────────────────────────────────────────
 
 #[test]
@@ -241,9 +254,11 @@ fn python_check_clean_json_stack_is_python() {
 #[test]
 fn python_fmt_check_exits_1_on_violations() {
     let project = fixture("check-python-violations");
+    init_workspace(project.path());
 
     let out = bin()
-        .args(["fmt", "--check", project.path().to_str().unwrap()])
+        .args(["fmt", "--check", "."])
+        .current_dir(project.path())
         .output()
         .expect("run 8v fmt --check on check-python-violations");
 
@@ -258,9 +273,11 @@ fn python_fmt_check_exits_1_on_violations() {
 #[test]
 fn python_fmt_check_exits_0_on_clean() {
     let project = fixture("check-python-clean");
+    init_workspace(project.path());
 
     let out = bin()
-        .args(["fmt", "--check", project.path().to_str().unwrap()])
+        .args(["fmt", "--check", "."])
+        .current_dir(project.path())
         .output()
         .expect("run 8v fmt --check on check-python-clean");
 

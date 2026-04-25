@@ -32,7 +32,21 @@ fn bin() -> Command {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Create a minimal Rust project in a tempdir (no `8v init`).
+/// Initialize a `.8v` workspace in `dir` so containment is rooted there.
+fn init_workspace(dir: &std::path::Path) {
+    let status = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir)
+        .status()
+        .expect("8v init --yes");
+    assert!(
+        status.success(),
+        "8v init --yes failed in {}",
+        dir.display()
+    );
+}
+
+/// Create a minimal Rust project in a tempdir and initialize a workspace.
 fn rust_project() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(
@@ -42,6 +56,7 @@ fn rust_project() -> TempDir {
     .expect("write Cargo.toml");
     fs::create_dir(dir.path().join("src")).expect("mkdir src");
     fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").expect("write main.rs");
+    init_workspace(dir.path());
     dir
 }
 
@@ -53,11 +68,13 @@ fn rust_project() -> TempDir {
 #[test]
 fn fmt_on_file_path_clear_error() {
     let dir = tempfile::tempdir().expect("tempdir");
+    init_workspace(dir.path());
     let file = dir.path().join("test.rs");
     fs::write(&file, "fn main() {}\n").expect("write file");
 
     let out = bin()
         .args(["fmt", file.to_str().unwrap()])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt <file>");
 
@@ -90,8 +107,10 @@ fn fmt_on_nonexistent_path() {
         "fmt on nonexistent path must exit non-zero\nstderr: {stderr}"
     );
     assert!(
-        stderr.contains("path not found") || stderr.contains(missing),
-        "stderr must identify the missing path\ngot: {stderr}"
+        stderr.contains("path not found")
+            || stderr.contains(missing)
+            || stderr.contains("escapes project directory"),
+        "stderr must identify the missing path or containment violation\ngot: {stderr}"
     );
 }
 
@@ -103,9 +122,11 @@ fn fmt_on_nonexistent_path() {
 #[test]
 fn fmt_on_empty_dir() {
     let dir = tempfile::tempdir().expect("tempdir");
+    init_workspace(dir.path());
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt empty-dir");
 
@@ -129,9 +150,11 @@ fn fmt_on_empty_dir() {
 fn fmt_on_dir_with_no_supported_stack() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("notes.txt"), "hello\n").expect("write notes.txt");
+    init_workspace(dir.path());
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt txt-only dir");
 
@@ -164,7 +187,8 @@ fn fmt_on_readonly_file_in_project() {
     fs::set_permissions(&src, perms).expect("chmod 444");
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt on readonly file");
 
@@ -198,7 +222,8 @@ fn fmt_idempotent() {
 
     // First fmt — normalizes the file.
     let out1 = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("first fmt");
     assert!(out1.status.success(), "first fmt must succeed");
@@ -210,7 +235,8 @@ fn fmt_idempotent() {
 
     // Second fmt — must be a no-op.
     let out2 = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("second fmt");
     assert!(out2.status.success(), "second fmt must succeed");
@@ -242,9 +268,11 @@ fn fmt_then_check_passes() {
     fs::create_dir(dir.path().join("src")).expect("mkdir src");
     // Intentionally unformatted.
     fs::write(dir.path().join("src/main.rs"), "fn main(  ) {}\n").expect("write main.rs");
+    init_workspace(dir.path());
 
     let fmt_out = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("8v fmt");
     assert!(
@@ -254,7 +282,8 @@ fn fmt_then_check_passes() {
     );
 
     let check_out = bin()
-        .args(["fmt", "--check", dir.path().to_str().unwrap()])
+        .args(["fmt", "--check", "."])
+        .current_dir(dir.path())
         .output()
         .expect("8v fmt --check");
     let stderr = String::from_utf8_lossy(&check_out.stderr);
@@ -295,7 +324,8 @@ fn fmt_json_output_shape_rust() {
     let dir = rust_project();
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap(), "--json"])
+        .args(["fmt", ".", "--json"])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt --json");
 
@@ -323,9 +353,11 @@ fn fmt_json_output_shape_rust() {
 #[test]
 fn fmt_json_output_shape_no_stacks() {
     let dir = tempfile::tempdir().expect("tempdir");
+    init_workspace(dir.path());
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap(), "--json"])
+        .args(["fmt", ".", "--json"])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt --json no-stack");
 
@@ -363,9 +395,11 @@ fn fmt_on_dir_with_syntax_error_rust_file() {
     fs::create_dir(dir.path().join("src")).expect("mkdir src");
     // Deliberately broken syntax.
     fs::write(dir.path().join("src/main.rs"), "fn broken( {\n").expect("write broken main.rs");
+    init_workspace(dir.path());
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt on syntax-error project");
 

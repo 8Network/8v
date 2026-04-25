@@ -68,6 +68,32 @@ impl Command for FmtCommand {
     type Report = FmtReport;
 
     async fn execute(&self, ctx: &CommandContext) -> Result<Self::Report, CommandError> {
+        // Enforce workspace containment before touching the filesystem.
+        let workspace = ctx
+            .extensions
+            .get::<crate::workspace::WorkspaceRoot>()
+            .ok_or_else(|| {
+                CommandError::Execution("8v: no workspace — run 8v init first".to_string())
+            })?;
+
+        let path_str = self.args.path.as_deref().unwrap_or(".");
+        let abs = workspace.resolve(path_str);
+        let canonical = match abs.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(CommandError::Execution(format!(
+                    "cannot resolve path {}: {e}",
+                    abs.display()
+                )));
+            }
+        };
+        if !canonical.starts_with(workspace.as_path()) {
+            return Err(CommandError::Execution(format!(
+                "path escapes project directory: {}",
+                canonical.display()
+            )));
+        }
+
         run(&self.args, ctx.interrupted).map_err(CommandError::Execution)
     }
 }

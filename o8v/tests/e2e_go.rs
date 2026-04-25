@@ -170,8 +170,17 @@ fn go_fmt_check_clean_exits_0() {
     let fixture_src = fixture_path("o8v", "build-go");
     let project = TempProject::from_fixture(&fixture_src);
 
+    // Initialize a workspace so the containment check passes.
+    let init_status = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(project.path())
+        .status()
+        .expect("8v init --yes");
+    assert!(init_status.success(), "8v init --yes failed");
+
     let out = bin()
-        .args(["fmt", "--check", project.path().to_str().unwrap()])
+        .args(["fmt", "--check", "."])
+        .current_dir(project.path())
         .output()
         .expect("run 8v fmt --check on build-go");
 

@@ -55,8 +55,17 @@ fn exit_code_check_no_projects() {
 fn exit_code_fmt_no_projects() {
     let dir = empty_dir();
 
+    // Initialize a workspace so the containment check passes.
+    let init_status = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir.path())
+        .status()
+        .expect("8v init --yes");
+    assert!(init_status.success(), "8v init --yes must succeed");
+
     let out = bin()
-        .args(["fmt", dir.path().to_str().expect("valid path")])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt on empty dir");
 

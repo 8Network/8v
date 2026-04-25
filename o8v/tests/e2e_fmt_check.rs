@@ -9,6 +9,19 @@
 use o8v_testkit::TempProject;
 use std::process::Command;
 
+fn init_workspace(dir: &std::path::Path) {
+    let status = Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir)
+        .status()
+        .expect("8v init --yes");
+    assert!(
+        status.success(),
+        "8v init --yes failed in {}",
+        dir.display()
+    );
+}
+
 fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_8v"))
 }
@@ -24,9 +37,11 @@ fn fixture(name: &str) -> TempProject {
 #[test]
 fn fmt_check_exits_nonzero_on_dirty_rust() {
     let project = fixture("fmt-check-rust");
+    init_workspace(project.path());
 
     let out = bin()
-        .args(["fmt", "--check", project.path().to_str().unwrap()])
+        .args(["fmt", "--check", "."])
+        .current_dir(project.path())
         .output()
         .expect("run 8v fmt --check");
 
@@ -42,6 +57,7 @@ fn fmt_check_exits_nonzero_on_dirty_rust() {
 #[test]
 fn fmt_check_exits_zero_on_clean_rust() {
     let project = fixture("fmt-check-rust");
+    init_workspace(project.path());
 
     // First format the project in-place.
     let fmt_out = Command::new("cargo")
@@ -57,7 +73,8 @@ fn fmt_check_exits_zero_on_clean_rust() {
 
     // Now --check should pass.
     let out = bin()
-        .args(["fmt", "--check", project.path().to_str().unwrap()])
+        .args(["fmt", "--check", "."])
+        .current_dir(project.path())
         .output()
         .expect("run 8v fmt --check on clean project");
 
@@ -84,7 +101,8 @@ fn fmt_no_stacks_exits_zero() {
     assert!(init_out.status.success(), "init must succeed");
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap()])
+        .args(["fmt", "."])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt on dir with no stacks");
 
@@ -111,7 +129,8 @@ fn fmt_no_stacks_json_has_reason() {
     assert!(init_out.status.success(), "init must succeed");
 
     let out = bin()
-        .args(["fmt", dir.path().to_str().unwrap(), "--json"])
+        .args(["fmt", ".", "--json"])
+        .current_dir(dir.path())
         .output()
         .expect("run 8v fmt --json on dir with no stacks");
 
