@@ -28,12 +28,14 @@ pub fn extract_symbols(content: &str, extension: &str) -> Vec<Symbol> {
     let patterns: &[(&str, &str)] = match extension {
         "rs" => &[
             ("fn ", "function"),
+            ("const fn ", "function"),
             ("struct ", "struct"),
             ("enum ", "enum"),
             ("trait ", "trait"),
             ("impl ", "impl"),
             ("mod ", "mod"),
             ("type ", "type"),
+            ("macro_rules! ", "macro"),
         ],
         "py" => &[("def ", "function"), ("class ", "class")],
         "go" => &[("func ", "function"), ("type ", "type")],
@@ -215,6 +217,31 @@ pub(crate) async fn bar() {}
             "block comment must be skipped"
         );
         assert!(names.contains(&"real"), "expected real, got {names:?}");
+    }
+
+    #[test]
+    fn rust_macro_rules_and_const_fn() {
+        let src = r#"
+macro_rules! my_macro {
+    () => {};
+}
+const fn my_const_fn() -> u32 { 42 }
+pub const fn pub_const_fn() -> u32 { 0 }
+"#;
+        let syms = extract_symbols(src, "rs");
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"my_macro"),
+            "expected my_macro in symbol map, got {names:?}"
+        );
+        assert!(
+            names.contains(&"my_const_fn"),
+            "expected my_const_fn in symbol map, got {names:?}"
+        );
+        assert!(
+            names.contains(&"pub_const_fn"),
+            "expected pub_const_fn in symbol map, got {names:?}"
+        );
     }
 
     #[test]

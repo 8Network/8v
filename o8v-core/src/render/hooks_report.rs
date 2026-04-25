@@ -14,9 +14,9 @@ pub struct HooksReport {
 impl super::Renderable for HooksReport {
     fn render_plain(&self) -> Output {
         if self.success {
-            Output::new("ok".to_string())
+            Output::new("ok\n".to_string())
         } else {
-            Output::new(format!("failed (exit {})", self.exit_code))
+            Output::new(format!("failed (exit {})\n", self.exit_code))
         }
     }
 
@@ -30,9 +30,9 @@ impl super::Renderable for HooksReport {
 
     fn render_human(&self) -> Output {
         if self.success {
-            Output::new("hooks: passed".to_string())
+            Output::new("hooks: passed\n".to_string())
         } else {
-            Output::new(format!("hooks: failed (exit {})", self.exit_code))
+            Output::new(format!("hooks: failed (exit {})\n", self.exit_code))
         }
     }
 }
@@ -48,7 +48,7 @@ mod tests {
             exit_code: 0,
             success: true,
         };
-        assert_eq!(report.render_plain().as_str(), "ok");
+        assert_eq!(report.render_plain().as_str(), "ok\n");
     }
 
     #[test]
@@ -57,7 +57,7 @@ mod tests {
             exit_code: 1,
             success: false,
         };
-        assert_eq!(report.render_plain().as_str(), "failed (exit 1)");
+        assert_eq!(report.render_plain().as_str(), "failed (exit 1)\n");
     }
 
     #[test]
@@ -77,7 +77,7 @@ mod tests {
             exit_code: 0,
             success: true,
         };
-        assert_eq!(report.render_human().as_str(), "hooks: passed");
+        assert_eq!(report.render_human().as_str(), "hooks: passed\n");
     }
 
     #[test]
@@ -86,6 +86,6 @@ mod tests {
             exit_code: 2,
             success: false,
         };
-        assert_eq!(report.render_human().as_str(), "hooks: failed (exit 2)");
+        assert_eq!(report.render_human().as_str(), "hooks: failed (exit 2)\n");
     }
 }

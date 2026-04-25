@@ -1131,6 +1131,74 @@ fn find_replace_single_match_without_all_succeeds() {
     assert_eq!(content, "goodbye\nworld\n", "single match must be replaced");
 }
 
+// ─── Concurrent append atomicity ─────────────────────────────────────────────
+
+/// CE-APPEND-CONCURRENT: 50 concurrent `8v write --append` invocations on the
+/// same file must all succeed and produce exactly 50 lines.
+///
+/// The race: write.rs reads the file to check for a trailing newline, then
+/// appends. Two processes can both read before either writes, causing both
+/// to prepend a separator — resulting in a merged line (double separator) or
+/// a missing line. This test catches that regression.
+#[test]
+fn append_concurrent_50_all_lines_written() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("concurrent.txt");
+    // Seed file with NO trailing newline — forces every concurrent append to go
+    // through the separator path (needs_separator=true). This is where the TOCTOU
+    // race lives: read → decide separator → append are three separate operations.
+    // Two processes can both read before either writes, causing duplicate separators
+    // and a merged/lost line.
+    std::fs::write(&file, "seed").unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_8v");
+    let dir = tmp.path().to_path_buf();
+    let file_name = "concurrent.txt";
+    let n = 50usize;
+
+    // Barrier ensures all threads call `Command::output` simultaneously.
+    let barrier = Arc::new(Barrier::new(n));
+    let handles: Vec<_> = (0..n)
+        .map(|i| {
+            let barrier = Arc::clone(&barrier);
+            let bin = bin.to_string();
+            let dir = dir.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                std::process::Command::new(&bin)
+                    .current_dir(&dir)
+                    .args(["write", file_name, "--append", &format!("line{i}")])
+                    .output()
+                    .expect("spawn 8v write")
+                    .status
+                    .success()
+            })
+        })
+        .collect();
+
+    let results: Vec<bool> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let failures = results.iter().filter(|&&ok| !ok).count();
+    assert_eq!(
+        failures, 0,
+        "{failures} / {n} concurrent appends exited non-zero"
+    );
+
+    let content = std::fs::read_to_string(&file).unwrap();
+    // 1 seed + 50 appended = 51 lines. If the race fires, two processes prepend
+    // the same separator and one line is merged into another, leaving < 51 lines.
+    let line_count = content.lines().count();
+    assert_eq!(
+        line_count,
+        n + 1,
+        "expected {} lines (1 seed + {n} appends), got {line_count};\nfile:\n{content}",
+        n + 1
+    );
+}
+
 // ─── Diff output correctness ──────────────────────────────────────────────────
 
 /// BUG A regression: every line of the new content must appear with `  + ` prefix.
