@@ -55,7 +55,7 @@ pub struct Args {
     #[arg(short = 'C', long = "context")]
     pub context: Option<usize>,
 
-    /// Maximum number of files with matches to return (default: 20)
+    /// Maximum number of files with matches (default: 20)
     #[arg(long, default_value = "20", value_parser = parse_nonzero_limit)]
     pub limit: usize,
 
@@ -392,14 +392,21 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
             }
         }
 
-        // If this file pushed us over the limit, pop it from results so only
-        // `args.limit` files are shown. Keep total_files as the true file count.
-        if result.total_files > args.limit {
+        // If total matches exceeded the limit, trim the excess from the last
+        // file's match list. Keep total_files accurate; do not pop entire file.
+        if result.total_matches > args.limit {
             result.truncated = true;
-            if let Some(last) = result.files.pop() {
-                result.total_matches -= last.matches.len();
+            if let Some(last) = result.files.last_mut() {
+                let excess = result.total_matches - args.limit;
+                let trim = excess.min(last.matches.len());
+                let new_len = last.matches.len() - trim;
+                last.matches.truncate(new_len);
+                result.total_matches -= trim;
+                if last.matches.is_empty() {
+                    result.files.pop();
+                    result.total_files = result.total_files.saturating_sub(1);
+                }
             }
-            result.total_files -= 1;
         }
     }
 

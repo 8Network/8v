@@ -102,7 +102,11 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
         let mut queue: std::collections::VecDeque<std::path::PathBuf> = scan
             .entries()
             .iter()
-            .filter(|e| e.kind == FileKind::Directory && !SKIP_DIRS.contains(&e.name.as_str()))
+            .filter(|e| {
+                e.kind == FileKind::Directory
+                    && !e.is_symlink
+                    && !SKIP_DIRS.contains(&e.name.as_str())
+            })
             .map(|e| e.path.clone())
             .collect();
 
@@ -145,7 +149,11 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
             let children: Vec<std::path::PathBuf> = sub_scan
                 .entries()
                 .iter()
-                .filter(|e| e.kind == FileKind::Directory && !SKIP_DIRS.contains(&e.name.as_str()))
+                .filter(|e| {
+                    e.kind == FileKind::Directory
+                        && !e.is_symlink
+                        && !SKIP_DIRS.contains(&e.name.as_str())
+                })
                 .map(|e| e.path.clone())
                 .collect();
             queue.extend(children);
@@ -291,6 +299,51 @@ edition = \"2021\"
             result.projects().len(),
             2,
             "expected 2 projects (app + sub), got {}: {:?}",
+            result.projects().len(),
+            names
+        );
+    }
+
+    /// Symlink-loop regression: detect_all must terminate quickly when the tree
+    /// contains a symlink that points back to an ancestor directory.
+    ///
+    /// Pre-fix: infinite BFS loop (100% CPU, never returns).
+    /// Post-fix: finishes in well under 5 seconds.
+    #[test]
+    fn symlink_loop_does_not_hang() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root_path = root_dir.path();
+
+        // Create a real project so detect_all has something to scan.
+        let real = root_path.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(
+            real.join("Cargo.toml"),
+            "[package]\nname = \"real\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // Create a subdirectory whose symlink points back to root — a loop.
+        let sub = root_path.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root_path, sub.join("loop")).unwrap();
+
+        let root = ProjectRoot::new(root_path).unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let result = detect_all(&root);
+        assert!(
+            std::time::Instant::now() < deadline,
+            "detect_all took more than 5 seconds — symlink loop not handled"
+        );
+
+        // Should find exactly the 1 real project (symlinked subtree is not scanned).
+        let names: Vec<&str> = result.projects().iter().map(|p| p.name()).collect();
+        assert_eq!(
+            result.projects().len(),
+            1,
+            "expected 1 project (real), got {}: {:?}",
             result.projects().len(),
             names
         );

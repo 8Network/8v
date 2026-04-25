@@ -67,19 +67,30 @@ fn is_data_or_markup_ext(ext: &str) -> bool {
 ///
 /// Only splits on the last colon followed by `digits-digits` — avoids
 /// splitting Windows-style paths (C:\...) on the drive colon.
-fn parse_path_range(input: &str) -> (String, Option<(usize, usize)>) {
+///
+/// Returns `Err` when the suffix after the last colon *looks* like a range
+/// (contains a `-`) but the numbers cannot be parsed — so callers can emit a
+/// clear "invalid range" error instead of treating the whole string as a path.
+fn parse_path_range(input: &str) -> Result<(String, Option<(usize, usize)>), String> {
     if let Some(colon_pos) = input.rfind(':') {
         let range_part = &input[colon_pos + 1..];
         if let Some(dash_pos) = range_part.find('-') {
-            if let (Ok(start), Ok(end)) = (
-                range_part[..dash_pos].parse::<usize>(),
-                range_part[dash_pos + 1..].parse::<usize>(),
-            ) {
-                return (input[..colon_pos].to_string(), Some((start, end)));
+            let start_str = &range_part[..dash_pos];
+            let end_str = &range_part[dash_pos + 1..];
+            match (start_str.parse::<usize>(), end_str.parse::<usize>()) {
+                (Ok(start), Ok(end)) => {
+                    return Ok((input[..colon_pos].to_string(), Some((start, end))));
+                }
+                _ => {
+                    // Looks like a range but numbers are invalid (e.g. negative).
+                    return Err(format!(
+                        "invalid range '{range_part}': start and end must be positive integers"
+                    ));
+                }
             }
         }
     }
-    (input.to_string(), None)
+    Ok((input.to_string(), None))
 }
 
 // ─── Typed Report ────────────────────────────────────────────────────────────
@@ -96,7 +107,7 @@ fn read_one(
     use o8v_core::mime::{detect_kind, mime_for_ext, FileKind};
     use o8v_core::render::read_report::{LineEntry, ReadReport, SymbolEntry};
 
-    let (file_path, range) = parse_path_range(label);
+    let (file_path, range) = parse_path_range(label)?;
 
     let abs_path = workspace.resolve(&file_path);
     let root = workspace.containment();
@@ -297,8 +308,14 @@ pub fn read_to_report(
         .map(|label| {
             // Relativize the label's path portion for display, preserving any :N-M suffix.
             let (path_part, range_suffix) = {
-                let (p, r) = parse_path_range(label);
-                let suffix = r.map(|(s, e)| format!(":{s}-{e}")).unwrap_or_default();
+                let (p, r) = match parse_path_range(label) {
+                    Ok(val) => val,
+                    Err(_) => (label.to_string(), None),
+                };
+                let suffix = match r {
+                    Some((s, e)) => format!(":{s}-{e}"),
+                    None => String::new(),
+                };
                 (p, suffix)
             };
             let abs = workspace.resolve(&path_part);

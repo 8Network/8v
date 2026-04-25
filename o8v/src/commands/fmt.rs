@@ -38,6 +38,11 @@ pub(crate) fn run(
     interrupted: &'static AtomicBool,
 ) -> Result<o8v_core::FmtReport, String> {
     let path_str = args.path.as_deref().unwrap_or(".");
+    if std::path::Path::new(path_str).is_file() {
+        return Err(format!(
+            "fmt requires a directory path; got file: {path_str}"
+        ));
+    }
     let root = ProjectRoot::new(path_str)
         .map_err(|e| o8v_core::render::sanitize_for_display(&e.to_string()))?;
 

@@ -315,3 +315,44 @@ got:
 {stdout}"
     );
 }
+
+// BUG-1 regression: --limit must cap total matches, not total files.
+// A single file with 5 occurrences and --limit 2 must return exactly 2 matches.
+#[test]
+fn search_limit_single_file_multiple_matches() {
+    let dir = init_temp_workspace();
+
+    // Write one file with 5 lines, each containing the search term.
+    let file = dir.path().join("five.txt");
+    std::fs::write(
+        &file,
+        "hello one\nhello two\nhello three\nhello four\nhello five\n",
+    )
+    .unwrap();
+
+    let out = bin()
+        .arg("search")
+        .arg("hello")
+        .arg(file.to_str().unwrap())
+        .arg("--limit")
+        .arg("2")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success(), "search exited non-zero");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // Count match lines: compact output is "<filename>:<linenum>", no inline content.
+    let match_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with("five.txt:"))
+        .collect();
+
+    assert_eq!(
+        match_lines.len(),
+        2,
+        "--limit 2 on single file with 5 matches must return exactly 2 matches;\ngot {} match lines:\n{stdout}",
+        match_lines.len()
+    );
+}

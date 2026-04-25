@@ -267,3 +267,115 @@ fn order1_batch_read_preserves_input_order() {
         }
     }
 }
+
+// BUG-2 regression: `8v ls --tree` must not hang on symlink loops.
+// Creates dir → subdir → symlink pointing back to parent, asserts completion in <5s.
+#[cfg(unix)]
+#[test]
+fn ls_tree_does_not_hang_on_symlink_loop() {
+    use std::os::unix::fs::symlink;
+    use std::time::Instant;
+
+    let dir = tempfile::tempdir().unwrap();
+    let subdir = dir.path().join("sub");
+    std::fs::create_dir(&subdir).unwrap();
+    // Create a symlink loop: sub/loop -> dir (parent)
+    symlink(dir.path(), subdir.join("loop")).unwrap();
+
+    // Initialize workspace so 8v ls works
+    std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let start = Instant::now();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["ls", "--tree"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed.as_secs() < 5,
+        "8v ls --tree hung on symlink loop: took {}ms",
+        elapsed.as_millis()
+    );
+    let _ = out; // output content is not the assertion — completion time is
+}
+
+// BUG-3 regression: `8v fmt <file>` must emit clear error, not "not a directory".
+#[test]
+fn fmt_file_path_gives_clear_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("main.rs");
+    std::fs::write(&file, "fn main() {}\n").unwrap();
+
+    // Initialize workspace
+    std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .arg("fmt")
+        .arg(file.to_str().unwrap())
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stdout}{stderr}");
+
+    assert!(
+        combined.contains("fmt requires a directory path"),
+        "8v fmt <file> must say 'fmt requires a directory path'; got:\n{combined}"
+    );
+    assert!(
+        !combined.contains("not a directory"),
+        "8v fmt <file> must not say 'not a directory'; got:\n{combined}"
+    );
+}
+
+// BUG-4 regression: `8v read file.txt:-1-2` must emit a clear range error.
+#[test]
+fn read_invalid_range_emits_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("foo.txt");
+    std::fs::write(&file, "line one\nline two\nline three\n").unwrap();
+
+    // Initialize workspace
+    std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .args(["init", "--yes"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let path_with_range = format!("{}:-1-2", file.to_str().unwrap());
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_8v"))
+        .arg("read")
+        .arg(&path_with_range)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stdout}{stderr}");
+
+    assert!(
+        !out.status.success(),
+        "8v read with invalid range must exit non-zero; got:\n{combined}"
+    );
+    assert!(
+        combined.contains("invalid range"),
+        "8v read with invalid range must say 'invalid range'; got:\n{combined}"
+    );
+    assert!(
+        !combined.contains("not found"),
+        "8v read with invalid range must not say 'not found'; got:\n{combined}"
+    );
+}

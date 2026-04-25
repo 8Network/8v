@@ -389,7 +389,13 @@ pub(crate) fn do_ls(
         .require_git(false) // apply .gitignore rules even without a .git directory
         .filter_entry(|entry| {
             // Allow files unconditionally; only prune artifact *directories*.
-            if !entry.path().is_dir() {
+            // Use symlink_metadata so we do NOT follow symlinks — following them
+            // causes infinite loops when a directory contains a symlink back to itself.
+            let is_real_dir = match entry.path().symlink_metadata() {
+                Ok(m) => m.file_type().is_dir(),
+                Err(_) => false,
+            };
+            if !is_real_dir {
                 return true;
             }
             let name = entry
