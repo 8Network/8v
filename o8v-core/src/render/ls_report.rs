@@ -57,8 +57,16 @@ impl super::Renderable for LsReport {
         match self.mode {
             LsMode::Tree => {
                 for entry in &self.projects {
-                    let stack_label = format!("  [{}]", entry.stack);
-                    out.push_str(&format!("{}/{}\n", entry.path, stack_label));
+                    let stack_label = if entry.stack.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  [{}]", entry.stack)
+                    };
+                    out.push_str(&format!(
+                        "{}/{}
+",
+                        entry.path, stack_label
+                    ));
                     render_tree_files(&entry.files, &mut out, 1);
                 }
                 out.push('\n');

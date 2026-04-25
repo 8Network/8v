@@ -43,7 +43,7 @@ fn rust_workspace_checks_members() {
     let report = run_check(&fixture);
 
     assert_no_detection_errors(&report);
-    assert_project_count(&report, 1);
+    assert_project_count(&report, 3);
 
     assert!(has_check(&report, "cargo check"), "missing cargo check");
     assert!(has_check(&report, "clippy"), "missing clippy");
@@ -106,9 +106,9 @@ fn python_runs_ruff() {
     let report = run_check(&fixture);
 
     assert_no_detection_errors(&report);
-    assert_project_count(&report, 1);
+    assert_project_count(&report, 3);
 
-    let result = &report.results()[0];
+    let result = find_result(&report, Stack::Python);
     let entry = find_entry(result, "ruff");
 
     match entry.outcome() {
@@ -134,7 +134,7 @@ fn typescript_runs_checks() {
     let report = run_check(&fixture);
 
     assert_no_detection_errors(&report);
-    assert_project_count(&report, 1);
+    assert_project_count(&report, 2);
 
     assert!(has_check(&report, "tsc"), "missing tsc");
     assert!(has_check(&report, "eslint"), "missing eslint");
@@ -145,7 +145,7 @@ fn typescript_tools_report_not_installed_cleanly() {
     let fixture = Fixture::corpus("typescript-workspace");
     let report = run_check(&fixture);
 
-    let result = &report.results()[0];
+    let result = find_result(&report, Stack::TypeScript);
     for entry in result.entries() {
         match entry.outcome() {
             CheckOutcome::Error { cause, .. } => {
@@ -172,7 +172,7 @@ fn javascript_runs_eslint() {
     let report = run_check(&fixture);
 
     assert_no_detection_errors(&report);
-    assert_project_count(&report, 1);
+    assert_project_count(&report, 3);
     assert!(has_check(&report, "eslint"), "missing eslint");
 }
 

@@ -303,14 +303,19 @@ fn selfcheck_read_json_is_valid() {
 #[test]
 fn selfcheck_check_exits_0() {
     let ws = workspace();
+    // Scope to o8v-stacks (clean source crate with no intentional violations).
+    // Running on workspace root would include test fixture projects like
+    // check-python-violations and check-typescript-violations, which are
+    // designed to fail and would cause a spurious non-zero exit.
+    let stacks_path = ws.join("o8v-stacks");
     let out = bin()
-        .args(["check", "--json", ws.to_str().expect("valid path")])
+        .args(["check", "--json", stacks_path.to_str().expect("valid path")])
         .output()
-        .expect("run 8v check --json on 8v workspace");
+        .expect("run 8v check --json on o8v-stacks");
 
     assert!(
         out.status.success(),
-        "8v check on its own workspace should exit 0 (passes its own checks)\nstdout: {}\nstderr: {}",
+        "8v check on its own source crate should exit 0 (passes its own checks)\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -379,4 +384,65 @@ fn selfcheck_build_crate_succeeds() {
 
     assert_eq!(json["stack"], "rust", "build stack should be 'rust'");
     assert_eq!(json["exit_code"], 0, "exit_code should be 0");
+}
+
+// ─── check: no-project guidance tests ───────────────────────────────────────
+
+#[test]
+fn selfcheck_check_empty_dir_gives_human_guidance() {
+    // Bug B regression: 8v check on a directory with no project manifests must
+    // emit actionable guidance, not a useless 'result: nothing 0 passed...' line.
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let out = bin()
+        .args(["check", tmp.path().to_str().expect("valid path")])
+        .output()
+        .expect("run 8v check on empty dir");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}{stderr}");
+
+    assert!(
+        combined.contains("no projects detected"),
+        "8v check on empty dir must say 'no projects detected'
+got stdout: {stdout}
+stderr: {stderr}"
+    );
+
+    // Must NOT emit the confusing 'result: nothing' text.
+    assert!(
+        !combined.contains("result: nothing"),
+        "8v check must not emit 'result: nothing' — it is confusing and useless
+got stdout: {stdout}
+stderr: {stderr}"
+    );
+}
+
+#[test]
+fn selfcheck_check_plain_empty_dir_gives_human_guidance() {
+    // Bug B regression: plain output must also say 'no projects detected', not
+    // the confusing 'result: nothing 0 passed 0 failed 0 errors' line.
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let out = bin()
+        .args(["check", "--plain", tmp.path().to_str().expect("valid path")])
+        .output()
+        .expect("run 8v check --plain on empty dir");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}{stderr}");
+
+    assert!(
+        combined.contains("no projects detected"),
+        "8v check --plain on empty dir must say 'no projects detected'
+got stdout: {stdout}
+stderr: {stderr}"
+    );
+
+    assert!(
+        !combined.contains("result: nothing"),
+        "8v check --plain must not emit 'result: nothing'
+got stdout: {stdout}
+stderr: {stderr}"
+    );
 }

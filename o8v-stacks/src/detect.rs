@@ -6,8 +6,8 @@
 //!
 //! [`detect_all`] is the single function callers use to detect projects in a
 //! validated directory. It creates a `SafeFs`, scans the directory once, runs
-//! all detectors, and performs a one-level shallow subdirectory scan if no
-//! projects were found at the root.
+//! all detectors, and always performs a one-level shallow subdirectory scan to
+//! surface workspace members even when the root itself has a manifest.
 
 use o8v_core::project::{DetectError, ProjectRoot};
 use o8v_fs::{FileKind, FileSystem, FsConfig, SafeFs};
@@ -50,11 +50,11 @@ const SKIP_DIRS: &[&str] = &[
 /// Creates a `SafeFs` for guarded reads, scans the directory once, then
 /// runs all detectors. Errors are returned alongside successes.
 ///
-/// If the root scan finds zero projects and zero errors, performs one additional
-/// level of scanning: iterates the root's immediate subdirectories and runs
-/// detection on each. Known non-project directories (node_modules, .git, target,
-/// etc.) are skipped. This supports monorepos where manifests live one level
-/// below the root.
+/// Always performs one additional level of scanning: iterates the root's
+/// immediate subdirectories and runs detection on each. Known non-project
+/// directories (node_modules, .git, target, etc.) are skipped. This surfaces
+/// both plain monorepos (no root manifest) and Cargo/npm workspaces (root
+/// manifest plus member subdirectories with their own manifests).
 #[must_use]
 pub fn detect_all(root: &ProjectRoot) -> DetectResult {
     let (fs, mut scan) = match scan_root(root.as_path()) {
@@ -84,20 +84,22 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
         }
     }
 
-    // Shallow subdirectory scan: if root found no projects, try one level deeper.
-    // This handles monorepos where each member has its own manifest but the root
-    // has none. Errors at root are harvested and returned; they don't block the scan.
-    if projects.is_empty() {
-        // Collect subdirectory paths first to avoid borrowing scan while
-        // mutating projects/errors.
-        let subdirs: Vec<std::path::PathBuf> = scan
+    // Recursive subdirectory scan via BFS queue.
+    // Scans all levels below root, not just one level.
+    // This handles:
+    // 1. Root has no manifest — scan subdirs to find member projects.
+    // 2. Root has a workspace manifest — scan subdirs to surface member crates.
+    // 3. Monorepos with projects nested multiple levels deep.
+    {
+        // Queue of directories to visit. Seeded with root's immediate subdirs.
+        let mut queue: std::collections::VecDeque<std::path::PathBuf> = scan
             .entries()
             .iter()
             .filter(|e| e.kind == FileKind::Directory && !SKIP_DIRS.contains(&e.name.as_str()))
             .map(|e| e.path.clone())
             .collect();
 
-        for subdir_path in subdirs {
+        while let Some(subdir_path) = queue.pop_front() {
             // ProjectRoot::new canonicalizes and validates — skip non-UTF-8
             // or otherwise invalid paths silently (no manifest possible).
             let subdir_root = match ProjectRoot::new(&subdir_path) {
@@ -131,6 +133,15 @@ pub fn detect_all(root: &ProjectRoot) -> DetectResult {
                     Err(e) => errors.push(e),
                 }
             }
+
+            // Enqueue this subdir's children for further traversal.
+            let children: Vec<std::path::PathBuf> = sub_scan
+                .entries()
+                .iter()
+                .filter(|e| e.kind == FileKind::Directory && !SKIP_DIRS.contains(&e.name.as_str()))
+                .map(|e| e.path.clone())
+                .collect();
+            queue.extend(children);
         }
     }
 
@@ -173,6 +184,58 @@ mod tests {
             !result.errors().is_empty(),
             "subdir failure for restricted-subdir must be recorded in errors, not silently dropped; got errors: {:?}",
             result.errors()
+        );
+    }
+
+    /// Bug A regression: detect_all must find projects nested beyond one level deep.
+    ///
+    /// Structure:
+    ///   root/
+    ///     app/Cargo.toml        (depth 1 — already worked)
+    ///     lib/sub/Cargo.toml    (depth 2 — was silently missed)
+    ///
+    /// Pre-fix: detect_all returns 1 project. Post-fix: 2 projects.
+    #[test]
+    fn detects_projects_at_depth_two() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root_path = root_dir.path();
+
+        // depth 1: app/Cargo.toml
+        let app = root_path.join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(
+            app.join("Cargo.toml"),
+            "[package]
+name = \"app\"
+version = \"0.1.0\"
+edition = \"2021\"
+",
+        )
+        .unwrap();
+
+        // depth 2: lib/sub/Cargo.toml
+        let lib_sub = root_path.join("lib").join("sub");
+        std::fs::create_dir_all(&lib_sub).unwrap();
+        std::fs::write(
+            lib_sub.join("Cargo.toml"),
+            "[package]
+name = \"sub\"
+version = \"0.1.0\"
+edition = \"2021\"
+",
+        )
+        .unwrap();
+
+        let root = ProjectRoot::new(root_path).unwrap();
+        let result = detect_all(&root);
+
+        let names: Vec<&str> = result.projects().iter().map(|p| p.name()).collect();
+        assert_eq!(
+            result.projects().len(),
+            2,
+            "expected 2 projects (app + sub), got {}: {:?}",
+            result.projects().len(),
+            names
         );
     }
 }

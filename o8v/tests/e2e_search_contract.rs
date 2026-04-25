@@ -82,3 +82,42 @@ fn search_single_file_emits_path_prefix() {
         );
     }
 }
+
+#[test]
+fn search_absolute_path_outside_workspace_finds_matches() {
+    let workspace = init_temp_workspace();
+    // Create a SEPARATE directory outside the workspace root.
+    let outside = tempfile::tempdir().expect("outside tempdir");
+    let needle = outside.path().join("target.rs");
+    std::fs::write(
+        &needle,
+        "pub fn fetch_unique_xyzzy() {}
+",
+    )
+    .expect("write needle");
+
+    let out = bin()
+        .args([
+            "search",
+            "fetch_unique_xyzzy",
+            outside.path().to_str().unwrap(),
+        ])
+        .current_dir(workspace.path())
+        .output()
+        .expect("run 8v search");
+    assert!(
+        out.status.success(),
+        "search with absolute path outside workspace must succeed
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Compact mode shows <file>:<line>; -C shows match text. Verify a match was found.
+    assert!(
+        stdout.contains("target.rs") && stdout.contains("Found"),
+        "must find match in absolute path outside workspace
+stdout: {stdout}
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

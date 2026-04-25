@@ -282,7 +282,18 @@ pub fn do_search(args: &Args, ctx: &CommandContext) -> Result<SearchResult, Stri
         .canonicalize()
         .map_err(|e| format!("cannot access path '{}': {e}", root.display()))?;
 
-    let containment = workspace.containment();
+    // When the search root is outside the workspace containment boundary (e.g. an
+    // absolute path passed by the caller), we must anchor containment at the
+    // search root itself. Otherwise `safe_read` rejects every file inside it
+    // with a ContainmentViolation and the search silently returns no matches.
+    let search_containment: ContainmentRoot;
+    let containment = if root.starts_with(workspace.containment().as_path()) {
+        workspace.containment()
+    } else {
+        search_containment = ContainmentRoot::new(&root)
+            .map_err(|e| format!("invalid search path '{}': {e}", root.display()))?;
+        &search_containment
+    };
     let config = FsConfig::default();
 
     let mut result = SearchResult {

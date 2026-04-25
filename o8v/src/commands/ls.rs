@@ -296,15 +296,18 @@ pub(crate) fn do_ls(
         })
         .collect();
 
-    // If no projects found, create a synthetic "root" entry so we can still list files
+    // If no projects found (and no stack filter is active), create a synthetic
+    // "root" entry so we can still list files. When a stack filter is active
+    // and nothing matched, return an empty result instead — callers expect an
+    // empty list, not a misleading "unknown" entry.
     let has_projects = !project_entries.is_empty();
-    if !has_projects {
+    if !has_projects && stack_filter.is_none() {
         project_entries.push(ProjectEntry {
             name: root
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| ".".to_string()),
-            stack: "unknown".to_string(),
+            stack: String::new(),
             path: ".".to_string(),
             files: Vec::new(),
         });

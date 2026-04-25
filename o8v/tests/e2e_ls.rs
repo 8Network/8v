@@ -369,3 +369,141 @@ fn ls_match_glob_shows_nested_files_without_files_flag() {
         "Expected foo.rs in output when --match *.rs is given without --files/--tree\nGot: {stdout}"
     );
 }
+
+#[test]
+fn ls_stack_filter_no_match_returns_empty_not_unknown() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(tmp.path().join("main.py"), "print('hello')").expect("write");
+    let out = bin()
+        .args(["ls", tmp.path().to_str().unwrap(), "--stack", "rust"])
+        .output()
+        .expect("run 8v ls --stack rust");
+    assert!(
+        out.status.success(),
+        "exit 0
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("unknown"),
+        "stack filter with no matches must not output 'unknown'
+Got: {stdout}"
+    );
+}
+
+#[test]
+fn ls_recurses_into_workspace_members() {
+    // Bug A: 8v ls returns only 1 project for a workspace with multiple crate members.
+    // The root Cargo.toml (workspace) is detected, but detect_all stops because
+    // projects.is_empty() is false — the shallow subdir scan never triggers.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+
+    // Workspace-level Cargo.toml
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]
+members = [\"crate-a\", \"crate-b\"]
+resolver = \"2\"
+",
+    )
+    .expect("write workspace Cargo.toml");
+
+    // crate-a
+    std::fs::create_dir(root.join("crate-a")).expect("mkdir crate-a");
+    std::fs::write(
+        root.join("crate-a/Cargo.toml"),
+        "[package]
+name = \"crate-a\"
+version = \"0.1.0\"
+edition = \"2021\"
+",
+    )
+    .expect("write crate-a Cargo.toml");
+    std::fs::create_dir(root.join("crate-a/src")).expect("mkdir src");
+    std::fs::write(root.join("crate-a/src/lib.rs"), "pub fn a() {}").expect("write lib.rs");
+
+    // crate-b
+    std::fs::create_dir(root.join("crate-b")).expect("mkdir crate-b");
+    std::fs::write(
+        root.join("crate-b/Cargo.toml"),
+        "[package]
+name = \"crate-b\"
+version = \"0.1.0\"
+edition = \"2021\"
+",
+    )
+    .expect("write crate-b Cargo.toml");
+    std::fs::create_dir(root.join("crate-b/src")).expect("mkdir src");
+    std::fs::write(root.join("crate-b/src/lib.rs"), "pub fn b() {}").expect("write lib.rs");
+
+    let out = bin()
+        .args(["ls", root.to_str().unwrap()])
+        .output()
+        .expect("run 8v ls");
+
+    assert!(
+        out.status.success(),
+        "exit 0
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("crate-a") && stdout.contains("crate-b"),
+        "8v ls must surface all workspace member crates, not just the root workspace entry
+Got:
+{stdout}"
+    );
+}
+
+#[test]
+fn ls_tree_unknown_dir_does_not_show_unknown_label() {
+    // Bug C: 8v ls --tree on a dir with no detectable project shows `./  [unknown]`.
+    // The synthetic "unknown" label is useless noise — the user already supplied the path.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // Write a plain file — no project manifest of any kind.
+    std::fs::write(tmp.path().join("hello.txt"), "world").expect("write");
+    let out = bin()
+        .args(["ls", tmp.path().to_str().unwrap(), "--tree"])
+        .output()
+        .expect("run 8v ls --tree");
+    assert!(
+        out.status.success(),
+        "exit 0
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("unknown"),
+        "8v ls --tree on a non-project dir must not output 'unknown'
+Got: {stdout}"
+    );
+}
+
+#[test]
+fn ls_projects_unknown_dir_does_not_show_unknown_label() {
+    // Bug C: 8v ls (default Projects mode) on a dir with no detectable project shows
+    // `<dirname>  unknown  .` — confusing synthetic entry with misleading stack label.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(tmp.path().join("hello.txt"), "world").expect("write");
+    let out = bin()
+        .args(["ls", tmp.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v ls");
+    assert!(
+        out.status.success(),
+        "exit 0
+stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("unknown"),
+        "8v ls on a non-project dir must not output 'unknown'
+Got: {stdout}"
+    );
+}

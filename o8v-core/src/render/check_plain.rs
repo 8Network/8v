@@ -127,25 +127,27 @@ fn write_entry(buf: &mut String, entry: &CheckEntry, config: &super::RenderConfi
 fn write_summary(buf: &mut String, report: &CheckReport) {
     let s = super::Summary::from_report(report);
     writeln!(buf, "---").unwrap();
-    let result_label = if s.passed == 0 && s.failed == 0 && s.errors == 0 && s.detection_errors == 0
-    {
-        "nothing"
-    } else if s.success {
-        "pass"
+    if s.passed == 0 && s.failed == 0 && s.errors == 0 && s.detection_errors == 0 {
+        writeln!(
+            buf,
+            "no projects detected  {}ms",
+            s.total_duration.as_millis()
+        )
+        .unwrap();
     } else {
-        "fail"
-    };
-    write!(buf, "result: {result_label}").unwrap();
-    write!(
-        buf,
-        " {} passed {} failed {} errors",
-        s.passed, s.failed, s.errors
-    )
-    .unwrap();
-    if s.detection_errors > 0 {
-        write!(buf, " {} detection_errors", s.detection_errors).unwrap();
+        let result_label = if s.success { "pass" } else { "fail" };
+        write!(buf, "result: {result_label}").unwrap();
+        write!(
+            buf,
+            " {} passed {} failed {} errors",
+            s.passed, s.failed, s.errors
+        )
+        .unwrap();
+        if s.detection_errors > 0 {
+            write!(buf, " {} detection_errors", s.detection_errors).unwrap();
+        }
+        writeln!(buf, " {}ms", s.total_duration.as_millis()).unwrap();
     }
-    writeln!(buf, " {}ms", s.total_duration.as_millis()).unwrap();
 
     if let Some(delta) = &report.delta {
         writeln!(

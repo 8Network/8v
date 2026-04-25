@@ -29,7 +29,7 @@ fn assert_no_detection_errors_passes_on_clean_report() {
 fn assert_project_count_passes_on_correct_count() {
     let fixture = Fixture::e2e("rust-violations");
     let report = run_check(&fixture);
-    assert_project_count(&report, 1);
+    assert_project_count(&report, 3);
 }
 
 #[test]

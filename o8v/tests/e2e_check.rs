@@ -658,3 +658,28 @@ fn rust_fixture_verbose() {
         "verbose should show project name\nstderr: {stderr}"
     );
 }
+
+#[test]
+fn check_non_project_root_emits_helpful_message() {
+    // A directory with no recognizable project files must not silently print
+    // "0 passed 0 failed 0 errors". It must emit a human-readable message
+    // explaining that no project was found.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // Write a plain text file — not a recognizable project marker.
+    std::fs::write(tmp.path().join("notes.txt"), "just a note").expect("write");
+    let out = bin()
+        .args(["check", tmp.path().to_str().unwrap()])
+        .output()
+        .expect("run 8v check");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.to_lowercase().contains("no project")
+            || combined.to_lowercase().contains("nothing to check")
+            || combined.to_lowercase().contains("not a project"),
+        "check at non-project root must explain no project found
+stdout: {stdout}
+stderr: {stderr}"
+    );
+}

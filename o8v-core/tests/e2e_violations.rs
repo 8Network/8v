@@ -275,8 +275,21 @@ fn rust_violations_project_detected() {
     let report = run_check(&fixture);
 
     assert_no_detection_errors(&report);
-    assert_project_count(&report, 1);
-    assert_eq!(report.results()[0].project_name(), "test-violations");
+    // rust-violations is a Cargo workspace root ("test-violations") with two member crates
+    // ("app-crate", "lib-crate"). After the Bug A fix, all three are detected.
+    assert_project_count(&report, 3);
+    assert!(
+        report
+            .results()
+            .iter()
+            .any(|r| r.project_name() == "test-violations"),
+        "workspace root 'test-violations' must be detected; got: {:?}",
+        report
+            .results()
+            .iter()
+            .map(|r| r.project_name())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
