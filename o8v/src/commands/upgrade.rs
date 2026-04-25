@@ -309,7 +309,12 @@ impl Command for UpgradeCommand {
             return Err(CommandError::Interrupted);
         }
 
-        run_impl_report(&self.args, BASE_URL, None, None).map_err(CommandError::Execution)
+        // Test affordance — production uses BASE_URL; tests override via 8V_RELEASE_BASE_URL env var.
+        let base_url = match std::env::var("8V_RELEASE_BASE_URL") {
+            Ok(url) => url,
+            Err(_) => BASE_URL.to_string(),
+        };
+        run_impl_report(&self.args, &base_url, None, None).map_err(CommandError::Execution)
     }
 }
 
