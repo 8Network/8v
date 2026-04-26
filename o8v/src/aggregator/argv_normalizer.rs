@@ -3,18 +3,63 @@
 // See LICENSE file in the project root.
 
 use o8v_core::types::{SessionId, Warning, WarningSink};
-use std::collections::HashSet;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 pub struct ArgvNormalizer {
     warned_sessions: HashSet<String>,
+    // Caches keyed by raw input path string. The aggregator calls these per
+    // event in ~/.8v/events.ndjson; on a busy dev box that means hundreds of
+    // thousands of FS syscalls against the same handful of project roots and
+    // argv tokens. Caching collapses each unique path to a single canonicalize.
+    project_canon_cache: HashMap<String, Option<PathBuf>>,
+    token_canon_cache: HashMap<String, Option<PathBuf>>,
 }
 
 impl ArgvNormalizer {
     pub fn new() -> Self {
         Self {
             warned_sessions: HashSet::new(),
+            project_canon_cache: HashMap::new(),
+            token_canon_cache: HashMap::new(),
         }
+    }
+
+    fn canonicalize_token(&mut self, path: &Path) -> Option<PathBuf> {
+        let key = path.to_string_lossy().into_owned();
+        if let Some(v) = self.token_canon_cache.get(&key) {
+            return v.clone();
+        }
+        // symlink_metadata (lstat) avoids the realpath spin on parent-pointing
+        // symlink loops (sub/loop -> root). canonicalize on a symlinked path
+        // would chase MAXSYMLINKS follow-attempts (~ELOOP, multi-second on
+        // macOS). Skip canonicalize when the path is itself a symlink or
+        // doesn't exist.
+        let resolved = match std::fs::symlink_metadata(path) {
+            Err(_) => None,
+            Ok(m) if m.file_type().is_symlink() => None,
+            Ok(_) => best_effort_canonicalize(path),
+        };
+        self.token_canon_cache.insert(key, resolved.clone());
+        resolved
+    }
+
+    fn canonicalize_project(&mut self, project: &str) -> Option<PathBuf> {
+        if let Some(v) = self.project_canon_cache.get(project) {
+            return v.clone();
+        }
+        let ppath = Path::new(project);
+        let resolved = match std::fs::symlink_metadata(ppath) {
+            Err(_) => Some(ppath.to_path_buf()),
+            Ok(m) if m.file_type().is_symlink() => Some(ppath.to_path_buf()),
+            Ok(_) => match best_effort_canonicalize(ppath) {
+                Some(c) => Some(c),
+                None => Some(ppath.to_path_buf()),
+            },
+        };
+        self.project_canon_cache
+            .insert(project.to_string(), resolved.clone());
+        resolved
     }
 
     fn normalize_token(
@@ -40,26 +85,7 @@ impl ArgvNormalizer {
             return format!("<tmp>{range_suffix}");
         }
         if path.is_absolute() {
-            // Only canonicalize if the path actually exists; otherwise fall
-            // back to <abs> without emitting a warning.  The range suffix has
-            // already been stripped (above), so a nonexistent-file path like
-            // "/repo/src/main.rs" will silently become "<abs>" — no warning.
-            // CanonicalizeFailed is reserved for paths that exist but cannot
-            // be resolved (e.g. permission errors).
-            let canonical_opt = if path.exists() {
-                match std::fs::canonicalize(path) {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        warnings.push(Warning::CanonicalizeFailed {
-                            path: path_part.to_string(),
-                            reason: e.to_string(),
-                        });
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+            let canonical_opt = self.canonicalize_token(path);
             if let Some(canonical) = canonical_opt {
                 if let Some(project) = canonical_project {
                     if canonical.starts_with(project) {
@@ -101,11 +127,8 @@ impl ArgvNormalizer {
         session_id: &str,
         warnings: &mut WarningSink,
     ) -> String {
-        let canonical_project: Option<std::path::PathBuf> =
-            project_path.map(|p| match std::fs::canonicalize(p) {
-                Ok(c) => c,
-                Err(_) => std::path::Path::new(p).to_path_buf(),
-            });
+        let canonical_project: Option<PathBuf> =
+            project_path.and_then(|p| self.canonicalize_project(p));
         // Track whether the next token is a value for a content-carrying flag.
         // Such tokens must NOT be path-normalised; they are user-supplied
         // strings that may incidentally look like paths (e.g. `// comment`).
@@ -145,6 +168,16 @@ pub(crate) fn looks_like_path(token: &str) -> bool {
         || token.starts_with("../")
         || token.contains('/')
         || token.contains('\\')
+}
+
+// argv normalization is a display-shape concern: callers aggregate event-log
+// argv into shape strings for `8v stats`/`8v log`. A failed canonicalize is
+// not a program error — it just means we fall back to lexical handling for
+// that one token. Propagating the io::Error would abort an entire stats run
+// over a single unresolvable path; that is the wrong tradeoff here.
+#[allow(clippy::disallowed_methods)]
+fn best_effort_canonicalize(path: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
 }
 
 fn is_tempdir(path: &Path) -> bool {

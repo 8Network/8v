@@ -382,40 +382,55 @@ fn write_find_replace_rejects_traversal_path() {
 
 // ─── init: outside path ──────────────────────────────────────────────────────
 //
-// FIXME phase-4b-decision: `8v init <path>` anchors its ContainmentRoot to the
-// supplied path argument, not to the current project. Passing an outside dir
-// succeeds by design — init bootstraps a new workspace at any given location.
-// These tests lock current (permissive) behavior and surface it as a decision
-// point: should init refuse to run when invoked from inside an existing project
-// with an outside-project target?
+// POLICY (Phase 4b): `8v init <path>` bootstraps a workspace at the supplied
+// path. Outside paths are intentional and supported. These tests lock that
+// behavior so a future change has to update the policy explicitly.
+
 #[test]
-#[ignore]
-fn init_rejects_absolute_outside_path() {
+fn init_outside_absolute_path_succeeds() {
     let proj = TestProject::new();
     let outside_dir = tempfile::tempdir().expect("outside dir");
-    let outside_path = outside_dir.path().canonicalize().expect("canonicalize");
-    let (code, stderr) = proj.run(&["init", "--yes", outside_path.to_str().unwrap()]);
-    assert_containment_violation(code, &stderr);
+    let outside_path = outside_dir
+        .path()
+        .canonicalize()
+        .expect("canonicalize outside dir");
+    let (code, combined) = proj.run(&["init", "--yes", outside_path.to_str().unwrap()]);
+    assert_eq!(
+        code, 0,
+        "init <outside> should succeed; combined:\n{combined}"
+    );
+    assert!(
+        outside_path.join(".8v").exists()
+            || outside_path.join("8v.toml").exists()
+            || outside_path.join("AGENTS.md").exists(),
+        "init should create workspace markers in outside dir"
+    );
 }
 
-// FIXME phase-4b-decision: same as above — traversal to a sibling dir is
-// accepted because init re-anchors containment to its path arg.
 #[test]
-#[ignore]
-fn init_rejects_traversal_path() {
+fn init_outside_traversal_path_succeeds() {
     let proj = TestProject::new();
-    // Create a sibling directory outside the project root.
+    // Create a sibling dir outside the project that init can populate.
     let parent = proj.root.parent().expect("root has parent");
-    let sibling_dir = parent.join(format!(
-        "sibling_init_{}",
+    let sibling = parent.join(format!(
+        "init_target_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .subsec_nanos()
     ));
-    fs::create_dir(&sibling_dir).expect("create sibling dir");
-    let sibling_name = sibling_dir.file_name().unwrap().to_str().unwrap();
-    let traversal = format!("../{sibling_name}");
-    let (code, stderr) = proj.run(&["init", "--yes", &traversal]);
-    assert_containment_violation(code, &stderr);
+    std::fs::create_dir(&sibling).expect("create sibling dir");
+    let traversal = format!("../{}", sibling.file_name().unwrap().to_str().unwrap());
+    let (code, combined) = proj.run(&["init", "--yes", &traversal]);
+    assert_eq!(
+        code, 0,
+        "init ../<sibling> should succeed; combined:\n{combined}"
+    );
+    assert!(
+        sibling.join(".8v").exists()
+            || sibling.join("8v.toml").exists()
+            || sibling.join("AGENTS.md").exists(),
+        "init should create workspace markers in sibling dir"
+    );
+    let _ = std::fs::remove_dir_all(&sibling);
 }

@@ -315,16 +315,17 @@ fn read_symlink_loop_path_does_not_hang() {
 
 /// `8v stats` reads from the event log, not the file tree — but we test it
 /// anyway to lock the contract.
-// FIXME phase-4a-fix: stats hangs on symlink loop in o8v/src/stats (event log read blocks)
 #[cfg(unix)]
 #[test]
-#[ignore]
 fn stats_does_not_hang_on_symlink_loop() {
     let dir = project_with_symlink_loop();
+    let home = dir.path().join(".home");
+    std::fs::create_dir(&home).unwrap();
     let start = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_8v"))
         .args(["stats"])
         .current_dir(dir.path())
+        .env("_8V_HOME", &home)
         .output()
         .unwrap();
     let elapsed = start.elapsed();
@@ -339,16 +340,17 @@ fn stats_does_not_hang_on_symlink_loop() {
 // ─── log ─────────────────────────────────────────────────────────────────────
 
 /// `8v log` reads from the event log, not the file tree — test it anyway.
-// FIXME phase-4a-fix: log hangs on symlink loop in o8v/src/log (event log read blocks)
 #[cfg(unix)]
 #[test]
-#[ignore]
 fn log_does_not_hang_on_symlink_loop() {
     let dir = project_with_symlink_loop();
+    let home = dir.path().join(".home");
+    std::fs::create_dir(&home).unwrap();
     let start = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_8v"))
         .args(["log"])
         .current_dir(dir.path())
+        .env("_8V_HOME", &home)
         .output()
         .unwrap();
     let elapsed = start.elapsed();
