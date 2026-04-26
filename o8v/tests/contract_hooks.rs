@@ -205,17 +205,17 @@ fn pre_tool_use_blocks_write() {
     );
 }
 
-// ─── 10. Block: Bash ─────────────────────────────────────────────────────────
+// ─── 10. Allow: Bash ─────────────────────────────────────────────────────────
 
 #[test]
-fn pre_tool_use_blocks_bash() {
+fn pre_tool_use_allows_bash() {
     let out = run_pre_tool_use(Some(br#"{"tool_name":"Bash"}"#), 5000)
         .expect("process must complete within timeout");
     let code = out.status.code();
     assert_eq!(
         code,
-        Some(2),
-        "Bash must be blocked → exit 2; got {:?}",
+        Some(0),
+        "Bash must be allowed → exit 0; got {:?}",
         code
     );
 }
@@ -250,32 +250,32 @@ fn pre_tool_use_blocks_grep() {
     );
 }
 
-// ─── 13. Block: Agent ────────────────────────────────────────────────────────
+// ─── 13. Allow: Agent ────────────────────────────────────────────────────────
 
 #[test]
-fn pre_tool_use_blocks_agent() {
+fn pre_tool_use_allows_agent() {
     let out = run_pre_tool_use(Some(br#"{"tool_name":"Agent"}"#), 5000)
         .expect("process must complete within timeout");
     let code = out.status.code();
     assert_eq!(
         code,
-        Some(2),
-        "Agent must be blocked → exit 2; got {:?}",
+        Some(0),
+        "Agent must be allowed → exit 0; got {:?}",
         code
     );
 }
 
-// ─── 14. Block: NotebookEdit ─────────────────────────────────────────────────
+// ─── 14. Allow: NotebookEdit ─────────────────────────────────────────────────
 
 #[test]
-fn pre_tool_use_blocks_notebook_edit() {
+fn pre_tool_use_allows_notebook_edit() {
     let out = run_pre_tool_use(Some(br#"{"tool_name":"NotebookEdit"}"#), 5000)
         .expect("process must complete within timeout");
     let code = out.status.code();
     assert_eq!(
         code,
-        Some(2),
-        "NotebookEdit must be blocked → exit 2; got {:?}",
+        Some(0),
+        "NotebookEdit must be allowed → exit 0; got {:?}",
         code
     );
 }
