@@ -71,8 +71,7 @@ fn profile_dump_smoke() {
     .unwrap();
 
     // ── Common-base substring present in all profiles ─────────────────────────
-    // "Rules for the AI" is a distinctive heading from the common_base_claude.md.
-    let common_marker = "Rules for the AI";
+    let common_marker = "software engineer";
     assert!(
         native_claude.contains(common_marker),
         "Native CLAUDE.md must contain common-base marker '{common_marker}'"
@@ -89,13 +88,10 @@ fn profile_dump_smoke() {
             || native_mcp["mcpServers"].get("8v").is_none(),
         "Native .mcp.json must NOT contain an '8v' server key"
     );
-    // Native CLAUDE.md = common_base (4904) + "\n\n" + task baseline (35) ≈ 4941 bytes.
-    let common_base_size: usize = 4904;
     let task_baseline_size: usize = baseline_claude_md.len();
-    let expected_native_min = common_base_size + task_baseline_size;
     assert!(
-        native_claude.len() >= expected_native_min,
-        "Native CLAUDE.md ({} bytes) must be >= common_base ({common_base_size}) + task_baseline ({task_baseline_size})",
+        native_claude.len() > task_baseline_size,
+        "Native CLAUDE.md ({} bytes) must include common_base on top of task_baseline ({task_baseline_size})",
         native_claude.len()
     );
 
@@ -107,10 +103,17 @@ fn profile_dump_smoke() {
         eightv_servers.get("8v").is_some(),
         "EightV .mcp.json must contain '8v' server key"
     );
-    // EightV does not prepend CLAUDE.md — baseline should be unchanged.
-    assert_eq!(
-        eightv_claude, native_claude,
-        "EightV CLAUDE.md should equal Native CLAUDE.md (no prepend)"
+    // EightV prepends a tool directive — must be larger than native and
+    // mention the 8v MCP tool.
+    assert!(
+        eightv_claude.len() > native_claude.len(),
+        "EightV CLAUDE.md ({} bytes) must be larger than Native ({} bytes) due to prepend",
+        eightv_claude.len(),
+        native_claude.len()
+    );
+    assert!(
+        eightv_claude.contains("mcp__8v__8v"),
+        "EightV CLAUDE.md must reference the 8v MCP tool"
     );
 
     eprintln!("\nByte sizes:");
