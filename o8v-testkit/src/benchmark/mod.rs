@@ -1,0 +1,37 @@
+// Copyright (c) 2026 Soheil Alizadeh / 8Network. All rights reserved.
+// Licensed under the Business Source License 1.1 (BSL-1.1).
+// See LICENSE file in the project root.
+
+//! Benchmark infrastructure — tasks, scenarios, and the run pipeline.
+//!
+//! A **Task** defines what to do: fixture + prompt + variables.
+//! A **Scenario** adds environment: which tools, which permissions, whether 8v is set up.
+//! `run_scenario()` executes the pipeline: setup → run → collect → verify → persist.
+//!
+//! The caller gets an `Observation` back for assertions. Persistence is attempted after each
+//! run; if it fails a warning is logged and the record is still returned. Persistence
+//! failure does not abort the benchmark.
+
+pub mod claude;
+mod codex;
+pub mod experiment;
+mod pipeline;
+pub mod preflight;
+pub mod profiles;
+pub mod provenance;
+pub mod report;
+mod store;
+mod types;
+pub use provenance::Provenance;
+pub use types::PermissionMode;
+
+pub use experiment::{run_experiment, run_experiment_with_matrix, ExperimentMatrix};
+pub use pipeline::{
+    emit_benchmark_event, events_ndjson_path, events_ndjson_path_with, run_scenario,
+};
+pub use profiles::ToolProfile;
+pub use store::BenchmarkStore;
+pub use types::{
+    Agent, AgentFeedback, Effect, Environment, ExperimentConfig, ExperimentResult, Observation,
+    Sample, Scenario, Task, TurnRecord, Verification,
+};

@@ -1,0 +1,28 @@
+[package]
+name = "o8v-core"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license = "BSL-1.1"
+authors = ["Soheil Alizadeh <soheil@8network.io>"]
+readme = "../README.md"
+description = "Core engine for 8v — check, format, and stack tools for code reliability"
+
+[dependencies]
+o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
+o8v-process = { path = "../o8v-process", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+ulid = "1"
+serde_json = "1"
+thiserror = "2"
+toml = "0.8"
+quick-xml = { version = "0.37", features = ["serialize"] }
+tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
+o8v-testkit = { path = "../o8v-testkit", version = "0.1.0" }

@@ -1,0 +1,11 @@
+{
+	"example.com/bad": {
+		"printf": [
+			{
+				"posn": "/tmp/8v-fixtures/govet/main.go:3:27",
+				"end": "/tmp/8v-fixtures/govet/main.go:3:29",
+				"message": "fmt.Printf format %d has arg \"not a number\" of wrong type string"
+			}
+		]
+	}
+}

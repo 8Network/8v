@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "o8v-fs",
+    "o8v-process",
+    "o8v-core",
+    "o8v-stacks",
+    "o8v-check",
+    "o8v-testkit",
+    "o8v",
+]
+exclude = [
+    "o8v-core/tests/fixtures",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.19"
+edition = "2021"
+rust-version = "1.82.0"
+repository = "https://github.com/8network/8v"
+homepage = "https://8vast.io"

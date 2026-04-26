@@ -1,0 +1,5 @@
+apiVersion: v2
+name: hello
+description: A minimal Helm chart
+type: application
+version: 0.1.0

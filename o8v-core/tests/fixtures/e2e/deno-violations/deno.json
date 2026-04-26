@@ -1,0 +1,7 @@
+{
+  "name": "test-violations",
+  "version": "1.0.0",
+  "compilerOptions": {
+    "strict": true
+  }
+}

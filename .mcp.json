@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "8v": {
+      "args": [
+        "mcp"
+      ],
+      "command": "8v"
+    },
+    "8v-debug": {
+      "args": [
+        "mcp"
+      ],
+      "command": "8v-debug"
+    }
+  }
+}

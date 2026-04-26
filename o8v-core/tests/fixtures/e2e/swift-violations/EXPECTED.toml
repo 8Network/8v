@@ -1,0 +1,29 @@
+# Expected diagnostics for the swift-violations fixture.
+#
+# Single Swift package with swiftlint violations:
+#   - force_cast (using as! instead of safe cast)
+#   - line_length (line exceeds recommended length)
+#   - trailing_whitespace
+
+stack = "swift"
+
+[[check]]
+tool = "swiftlint"
+
+[[check.diagnostic]]
+rule = "force_cast"
+file = "Sources/App.swift"
+severity = "error"
+message_contains = "force_cast"
+
+[[check.diagnostic]]
+rule = "line_length"
+file = "Sources/App.swift"
+severity = "error"
+message_contains = "line_length"
+
+[[check.diagnostic]]
+rule = "trailing_whitespace"
+file = "Sources/App.swift"
+severity = "error"
+message_contains = "trailing_whitespace"

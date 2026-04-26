@@ -1,0 +1,24 @@
+[package]
+name = "o8v-stacks"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license = "BSL-1.1"
+authors = ["Soheil Alizadeh <soheil@8network.io>"]
+readme = "../README.md"
+description = "Stack toolchain infrastructure for 8v — per-language checks, parsers, formatters, and tool execution"
+
+[dependencies]
+o8v-core = { path = "../o8v-core", version = "0.1.0" }
+o8v-fs = { path = "../o8v-fs", version = "0.1.0" }
+o8v-process = { path = "../o8v-process", version = "0.1.0" }
+quick-xml = { version = "0.37", features = ["serialize"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+o8v-testkit = { path = "../o8v-testkit", version = "0.1.0" }

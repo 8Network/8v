@@ -1,0 +1,7 @@
+[project]
+name = "acme-automation"
+version = "0.5.2"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = ["packages/core", "packages/cli"]

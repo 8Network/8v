@@ -1,0 +1,16 @@
+# Expected diagnostics for the helm-violations fixture.
+#
+# Helm chart with known violations:
+#   missing apiVersion on Deployment resource
+#   using latest tag for image
+
+stack = "helm"
+
+[[check]]
+tool = "helm lint"
+
+[[check.diagnostic]]
+rule = nil
+file = "templates/deployment.yaml"
+severity = "warning"
+message_contains = "latest"

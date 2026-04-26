@@ -1,0 +1,16 @@
+[package]
+name = "o8v-fs"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license = "MIT"
+authors = ["Soheil Alizadeh <soheil@8network.io>"]
+readme = "../README.md"
+description = "Safe filesystem access — symlink containment, FIFO rejection, size limits, BOM stripping"
+
+[dependencies]
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

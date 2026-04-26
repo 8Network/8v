@@ -1,0 +1,8 @@
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0"
+  }
+}

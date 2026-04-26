@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src\Acme.App\Acme.App.csproj" />
+  <Project Path="tests\Acme.App.Tests\Acme.App.Tests.csproj" />
+  <Folder Name="docs">
+    <File Path="README.md" />
+  </Folder>
+</Solution>

@@ -1,0 +1,64 @@
+# Expected checks for typescript-violations fixture.
+# Requires npm install before tests run.
+# Multiple .ts files with cross-file type errors.
+# tsc: 4 errors across app.ts, service.ts, types.ts (TS2322 chain).
+# eslint: @typescript-eslint/no-unused-vars and no-explicit-any.
+
+stack = "typescript"
+
+[[check]]
+tool = "tsc"
+
+[[check.diagnostic]]
+rule = "TS2322"
+file = "src/app.ts"
+severity = "error"
+message_contains = "not assignable"
+
+[[check.diagnostic]]
+rule = "TS2322"
+file = "src/service.ts"
+severity = "error"
+message_contains = "not assignable"
+
+[[check.diagnostic]]
+rule = "TS2322"
+file = "src/types.ts"
+severity = "error"
+message_contains = "not assignable"
+
+[[check]]
+tool = "eslint"
+
+[[check.diagnostic]]
+rule = "@typescript-eslint/no-unused-vars"
+file = "src/app.ts"
+severity = "error"
+message_contains = "never used"
+
+[[check.diagnostic]]
+rule = "@typescript-eslint/no-unused-vars"
+file = "src/service.ts"
+severity = "error"
+message_contains = "never used"
+
+[[check.diagnostic]]
+rule = "@typescript-eslint/no-explicit-any"
+file = "src/service.ts"
+severity = "error"
+message_contains = "Unexpected any"
+
+[[check]]
+tool = "prettier"
+
+[[check]]
+tool = "biome"
+
+[[check]]
+tool = "oxlint"
+
+# ─── shellcheck ────────────────────────────────────────────────────────────────
+# No shell files in this fixture.
+
+[[check]]
+tool = "shellcheck"

@@ -1,0 +1,9 @@
+{
+  "name": "acme-web-platform",
+  "version": "2.4.1",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "node apps/dashboard/server.js"
+  }
+}

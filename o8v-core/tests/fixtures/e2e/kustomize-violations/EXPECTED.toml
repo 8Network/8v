@@ -1,0 +1,14 @@
+# Expected diagnostics for the kustomize-violations fixture.
+#
+# Kustomization with known violations:
+#   References nonexistent file (nonexistent-file.yaml)
+
+stack = "kustomize"
+
+[[check]]
+tool = "kustomize build"
+
+[[check.diagnostic]]
+rule = nil
+severity = "error"
+message_contains = "nonexistent-file"

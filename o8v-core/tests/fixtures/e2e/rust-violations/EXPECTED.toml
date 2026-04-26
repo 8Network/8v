@@ -1,0 +1,98 @@
+# Expected diagnostics for the rust-violations workspace fixture.
+#
+# Workspace structure:
+#   lib-crate/  — pub library with clippy lints, unused imports, unused vars
+#   app-crate/  — binary that imports lib-crate, has its own violations
+#   src/        — root crate (legacy), formatting violations + unused code
+#
+# Each [[check]] section lists a representative subset of real violations.
+# Tools may produce more diagnostics — extra ones are allowed.
+
+stack = "rust"
+
+# ─── clippy ───────────────────────────────────────────────────────────────────
+# clippy runs with -D warnings, so all warnings become errors.
+
+[[check]]
+tool = "clippy"
+
+[[check.diagnostic]]
+rule = "clippy::needless_return"
+file = "lib-crate/src/lib.rs"
+severity = "error"
+message_contains = "unneeded `return` statement"
+
+[[check.diagnostic]]
+rule = "unused_imports"
+file = "lib-crate/src/lib.rs"
+severity = "error"
+message_contains = "unused import"
+
+[[check.diagnostic]]
+rule = "unused_variables"
+file = "lib-crate/src/lib.rs"
+severity = "error"
+message_contains = "unused variable"
+
+[[check.diagnostic]]
+rule = "dead_code"
+file = "lib-crate/src/lib.rs"
+severity = "error"
+message_contains = "never read"
+
+[[check.diagnostic]]
+rule = "clippy::needless_return"
+file = "src/main.rs"
+severity = "error"
+message_contains = "unneeded `return` statement"
+
+# ─── cargo check ──────────────────────────────────────────────────────────────
+# cargo check emits warnings (not errors).
+
+[[check]]
+tool = "cargo check"
+
+[[check.diagnostic]]
+rule = "unused_imports"
+file = "lib-crate/src/lib.rs"
+severity = "warning"
+message_contains = "unused import"
+
+[[check.diagnostic]]
+rule = "unused_variables"
+file = "app-crate/src/main.rs"
+severity = "warning"
+message_contains = "unused variable"
+
+[[check.diagnostic]]
+rule = "unused_imports"
+file = "app-crate/src/main.rs"
+severity = "warning"
+message_contains = "unused import"
+
+[[check.diagnostic]]
+rule = "unused_variables"
+file = "src/main.rs"
+severity = "warning"
+message_contains = "unused variable"
+
+# ─── cargo fmt ────────────────────────────────────────────────────────────────
+
+[[check]]
+tool = "cargo fmt"
+
+[[check.diagnostic]]
+file = "lib-crate/src/lib.rs"
+severity = "error"
+message_contains = "formatting differs"
+
+[[check.diagnostic]]
+file = "src/main.rs"
+severity = "error"
+message_contains = "formatting differs"
+
+# ─── shellcheck ───────────────────────────────────────────────────────────────
+# No shell files in this fixture, so shellcheck passes with no diagnostics.
+
+[[check]]
+tool = "shellcheck"
