@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "8v": {
+      "args": [
+        "mcp"
+      ],
+      "command": "8v"
+    }
+  }
+}

@@ -29,9 +29,7 @@ In any project:
 8v init
 ```
 
-In Claude Code, this disables Claude's native Read, Edit, Write, Grep,
-and Glob in this project. From now on, file operations go through 8v.
-Bash stays available for git, processes, and environment.
+`8v init` replaces Claude Code's native Read, Edit, Write, Grep, and Glob with 8v. An MCP server is also available: `8v mcp`. Bash stays available for git, processes, and environment.
 
 ## Commands
 
