@@ -486,12 +486,12 @@ fn run_record_roundtrip_with_profile() {
         cache_read_tokens: 0,
         cache_creation_tokens: 0,
         tool_calls_detail: vec![],
-        profile: ToolProfile::Caveman,
+        profile: ToolProfile::EightV,
         profile_version: "stub-v0".to_string(),
     };
     let json = serde_json::to_string(&rec).unwrap();
     let parsed: RunRecord = serde_json::from_str(&json).unwrap();
-    assert_eq!(parsed.profile, ToolProfile::Caveman);
+    assert_eq!(parsed.profile, ToolProfile::EightV);
     assert_eq!(parsed.profile_version, "stub-v0");
 }
 

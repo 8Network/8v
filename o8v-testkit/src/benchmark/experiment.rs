@@ -77,7 +77,7 @@ impl ExperimentMatrix {
 /// persist_experiment) are identical to `run_experiment`.
 ///
 /// Use this instead of `run_experiment` when you need profiles that cannot be
-/// inferred from `scenario.env.setup_8v` (e.g. `ToolProfile::ToolSearch`).
+/// inferred from `scenario.env.setup_8v` (e.g. additional profiles).
 pub fn run_experiment_with_matrix(
     name: &str,
     task_name: &str,

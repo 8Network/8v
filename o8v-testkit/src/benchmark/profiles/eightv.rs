@@ -60,9 +60,25 @@ impl ToolProfileHarness for EightVProfile {
             }
         });
 
+        let prepend = "# 8v tool
+
+`mcp__8v__8v` is a deferred MCP tool. ON YOUR FIRST TURN, before any other tool call, run `ToolSearch` with query `select:mcp__8v__8v` to load it. Then use it for ALL file operations.
+
+Native Read, Edit, Write, Glob, Grep are blocked in this project — use `mcp__8v__8v` instead. Bash is allowed for git, processes, and environment.
+
+Cheatsheet (every command accepts a single `command` string):
+- `8v ls --tree` — list files
+- `8v read <path>` — symbol map; add `:start-end` for a line range, `--full` for whole file
+- `8v read a b c` — batch multiple files in one call
+- `8v search <regex> [path]` — content search
+- `8v write <path>:<line> \"content\"` — replace line; also `--insert`, `--delete`, `--find/--replace`, `--append`
+- `8v test .` / `8v check .` / `8v build .` / `8v fmt .` — verify
+"
+        .to_string();
+
         Ok(ProfileArtifacts {
             mcp_json_fragment: Some(fragment),
-            claude_md_prepend: None,
+            claude_md_prepend: Some(prepend),
             env: Default::default(),
         })
     }

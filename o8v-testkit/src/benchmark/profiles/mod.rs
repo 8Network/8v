@@ -6,11 +6,8 @@ use serde_json::Value;
 
 use crate::benchmark::types::Agent;
 
-pub mod caveman;
 pub mod eightv;
-pub mod mcp2cli;
 pub mod native;
-pub mod tool_search;
 
 #[derive(Clone, Debug, Default)]
 pub struct ProfileArtifacts {
@@ -37,9 +34,6 @@ pub enum ToolProfile {
     #[default]
     Native,
     EightV,
-    Caveman,
-    ToolSearch,
-    Mcp2cli,
 }
 
 impl ToolProfile {
@@ -47,9 +41,6 @@ impl ToolProfile {
         match self {
             ToolProfile::Native => Box::new(native::NativeProfile),
             ToolProfile::EightV => Box::new(eightv::EightVProfile),
-            ToolProfile::Caveman => Box::new(caveman::CavemanProfile),
-            ToolProfile::ToolSearch => Box::new(tool_search::ToolSearchProfile),
-            ToolProfile::Mcp2cli => Box::new(mcp2cli::Mcp2cliProfile),
         }
     }
 }

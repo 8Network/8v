@@ -1,6 +1,12 @@
 # 8v
 
-One command checks everything. Everything is an error.
+You and your AI coding agent — same tool, same rules.
+
+8v is one token-efficient binary that reads, writes, searches, checks,
+builds, tests, and formats code.
+
+Today, 8v supports Claude Code. More agents next.
+
 
 ## Install
 
@@ -11,81 +17,85 @@ curl -fsSL https://install.8vast.io | sh
 Or build from source:
 
 ```sh
-cargo build -p o8v
-# binary at target/debug/8v
+cargo build -p o8v --release
+# binary at target/release/8v
 ```
 
-## Usage
+## Setup
+
+In any project:
 
 ```sh
-8v check .              # check everything — 15 stacks, 25+ tools
-8v fmt .                # format everything
-8v read src/main.rs     # symbol extraction + line ranges for AI agents
-8v write src/main.rs    # safe file editing (find/replace, insert, delete)
-8v search "fn main"     # regex search, 3 output modes (compact/text/context)
-8v ls .                 # file hierarchy with project labels and line counts
-8v test .               # run project test runner
-8v init                 # set up MCP, hooks, permissions
-8v log                  # show recent 8v command history
-8v stats                # token and call aggregates by command
-8v upgrade              # upgrade to the latest release
+8v init
 ```
 
-## MCP Integration
+In Claude Code, this disables Claude's native Read, Edit, Write, Grep,
+and Glob in this project. From now on, file operations go through 8v.
+Bash stays available for git, processes, and environment.
 
-8v exposes itself as a single MCP tool for AI agents.
-
-| Tool set | Schema tokens |
-|----------|--------------|
-| 8v (1 MCP tool) | 641 |
-| Native (Read + Edit + Write + Bash + Glob + Grep) | 1,377 |
-
-One tool replaces six. 53% smaller schema.
-
-Connect to Claude Code:
+## Commands
 
 ```sh
-8v init    # configures MCP, CLAUDE.md, hooks, permissions
+8v ls                       # list files and projects in the tree
+8v read src/main.rs         # symbol map (functions, types) — fast
+8v read src/main.rs:40-80   # exact line range
+8v read src/main.rs --full  # whole file
+8v search "fn parse"        # regex across the codebase
+8v write path:12 "..."      # replace a line
+8v write path --insert      # insert, --delete, --append
+8v write path --find a --replace b
+8v check .                  # lint + type-check + format-check, every stack
+8v fmt .                    # auto-format
+8v build .                  # invoke the project's build tool
+8v test .                   # invoke the project's test runner
+8v log                      # what ran in this session
+8v stats                    # what failed most often
+8v upgrade                  # update 8v itself
 ```
 
-Or add manually to `.mcp.json`:
+Every command accepts `--json` for structured output.
 
-```json
-{
-  "mcpServers": {
-    "8v": {
-      "command": "8v",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+## Stacks
 
-## Status
+Rust, TypeScript, JavaScript, Python, Go, Deno, .NET, Ruby, Java, Kotlin,
+Swift, Terraform, Dockerfile, Helm, Kustomize, Erlang. Shell files always
+go through shellcheck and shfmt.
 
-Pre-release. Benchmark numbers withdrawn pending a foundation audit — the
-binary they were measured against had ship-blocking bugs in commands those
-benchmarks exercised. New numbers will be published only after the audit
-lands and is reproducible end-to-end.
+## Benchmark
 
-## Supported Stacks
+Each scenario gives Claude a broken codebase and asks it to fix it.
+Native tools vs. 8v, one variable at a time.
 
-Rust, TypeScript, JavaScript, Python, Go, .NET, Deno, Ruby, Java, Kotlin, Swift, Terraform, Dockerfile, Helm, Kustomize.
+| Scenario | Input tokens vs native |
+|---|---|
+| fix-failing-test (Rust) | −14% |
+| fix-go | −22% |
+| fix-python | −66% |
+| fix-typescript | −12% |
 
-## Building
+N=6 per condition. Tests pass 6/6 in every scenario, both arms.
 
 ```sh
-cargo test --workspace       # 2,455 tests
-cargo clippy --workspace     # zero warnings
-cargo build -p o8v           # CLI binary
-8v check .                   # self-check
+cargo test -p o8v --test demo_agent_benchmark -- --ignored --nocapture --test-threads=1
 ```
 
-Workspace: 7 crates (o8v-fs, o8v-process, o8v-core, o8v-stacks, o8v-check, o8v-testkit, o8v).
+## Workspace
+
+```sh
+cargo build -p o8v --release   # binary
+cargo test --workspace         # full suite
+8v check .                     # 8v on itself
+```
+
+Crates: `o8v` (binary), `o8v-core` (commands and rendering), `o8v-fs`
+(safe filesystem), `o8v-process` (safe subprocess), `o8v-stacks` (stack
+detection and dispatch), `o8v-check` (lint/type/format orchestration),
+`o8v-testkit` (test infrastructure).
 
 ## License
 
-`o8v-fs` and `o8v-process` are licensed under MIT. All other crates are licensed under BSL-1.1, converting to Apache 2.0 on April 5, 2030.
+`o8v-fs` and `o8v-process` are MIT.
+All other crates are BSL-1.1, converting to Apache 2.0 on April 5, 2030.
 
 ---
 

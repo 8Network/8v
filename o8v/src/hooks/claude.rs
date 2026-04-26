@@ -11,16 +11,7 @@ use std::process::ExitCode;
 // ─── Blocked tools ───────────────────────────────────────────────────────────
 
 /// Tools blocked by default — agent should use 8v commands instead.
-const BLOCKED_TOOLS: &[&str] = &[
-    "Read",
-    "Edit",
-    "Write",
-    "Bash",
-    "Glob",
-    "Grep",
-    "Agent",
-    "NotebookEdit",
-];
+const BLOCKED_TOOLS: &[&str] = &["Read", "Edit", "Write", "Glob", "Grep"];
 
 // ─── Stdin JSON ───────────────────────────────────────────────────────────────
 
@@ -135,16 +126,7 @@ mod tests {
 
     #[test]
     fn known_tools_are_blocked() {
-        for tool in &[
-            "Read",
-            "Edit",
-            "Write",
-            "Bash",
-            "Glob",
-            "Grep",
-            "Agent",
-            "NotebookEdit",
-        ] {
+        for tool in &["Read", "Edit", "Write", "Glob", "Grep"] {
             assert!(
                 BLOCKED_TOOLS.contains(tool),
                 "expected {tool} to be in BLOCKED_TOOLS"
@@ -154,7 +136,11 @@ mod tests {
 
     #[test]
     fn unknown_tool_is_not_blocked() {
-        assert!(!BLOCKED_TOOLS.contains(&"mcp__8v__8v"));
-        assert!(!BLOCKED_TOOLS.contains(&"TodoWrite"));
+        for tool in &["mcp__8v__8v", "TodoWrite", "Bash", "Agent", "NotebookEdit"] {
+            assert!(
+                !BLOCKED_TOOLS.contains(tool),
+                "expected {tool} NOT to be in BLOCKED_TOOLS"
+            );
+        }
     }
 }

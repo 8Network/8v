@@ -28,9 +28,7 @@
 
 mod scenarios;
 
-use o8v_testkit::benchmark::{
-    run_experiment, run_experiment_with_matrix, run_scenario, ExperimentMatrix, ToolProfile,
-};
+use o8v_testkit::benchmark::{run_experiment, run_scenario, ToolProfile};
 
 /// Panic with a clear message if the named gate is not `Some(true)`.
 ///
@@ -194,23 +192,6 @@ fn fix_typescript_8v() {
     require_pass("tsc --noEmit", record.verification.tests_pass);
 }
 
-// ── Caveman profile ──────────────────────────────────────────────────────────
-
-#[test]
-#[ignore = "requires: `claude` in PATH (~60s, costs tokens)"]
-fn fix_test_caveman() {
-    let binary = env!("CARGO_BIN_EXE_8v");
-    let record = run_scenario(
-        &scenarios::FIX_TEST_BASELINE,
-        binary,
-        true,
-        ToolProfile::Caveman,
-        0,
-    );
-
-    require_pass("cargo test", record.verification.tests_pass);
-}
-
 // ── Experiments (N=3 per condition) ──────────────────────────────────────────
 
 #[test]
@@ -341,78 +322,6 @@ fn experiment_fix_typescript() {
     let result = run_experiment(&scenarios::EXPERIMENT_FIX_TS, binary);
 
     // Every condition must actually fix the bugs — tsc --noEmit must pass
-    assert!(
-        result.control.tests_pass_count() == result.n,
-        "Control failed to fix bug in {}/{} runs",
-        result.control.tests_pass_count(),
-        result.n
-    );
-    for sample in &result.treatments {
-        assert!(
-            sample.tests_pass_count() == result.n,
-            "{} failed to fix bug in {}/{} runs",
-            sample.description,
-            sample.tests_pass_count(),
-            result.n
-        );
-    }
-}
-
-// ── Tool Search experiments ───────────────────────────────────────────────
-
-#[test]
-#[ignore = "experiment: native + tool-search × N runs (~9 min, costs tokens)"]
-fn experiment_fix_test_tool_search() {
-    let binary = env!("CARGO_BIN_EXE_8v");
-    let matrix = ExperimentMatrix {
-        profiles: vec![ToolProfile::Native, ToolProfile::ToolSearch],
-    };
-    let result = run_experiment_with_matrix(
-        "tool-search-vs-native",
-        "fix-test-rust",
-        &scenarios::FIX_TEST_BASELINE,
-        &matrix,
-        6,
-        binary,
-    );
-
-    // Every condition must actually fix the bug
-    assert!(
-        result.control.tests_pass_count() == result.n,
-        "Control failed to fix bug in {}/{} runs",
-        result.control.tests_pass_count(),
-        result.n
-    );
-    for sample in &result.treatments {
-        assert!(
-            sample.tests_pass_count() == result.n,
-            "{} failed to fix bug in {}/{} runs",
-            sample.description,
-            sample.tests_pass_count(),
-            result.n
-        );
-    }
-}
-
-// ── mcp2cli experiments ───────────────────────────────────────────────────
-
-#[test]
-#[ignore = "experiment: native + mcp2cli × N runs (~9 min, costs tokens)"]
-fn experiment_fix_test_mcp2cli() {
-    let binary = env!("CARGO_BIN_EXE_8v");
-    let matrix = ExperimentMatrix {
-        profiles: vec![ToolProfile::Native, ToolProfile::Mcp2cli],
-    };
-    let result = run_experiment_with_matrix(
-        "mcp2cli-vs-native",
-        "fix-test-rust",
-        &scenarios::FIX_TEST_BASELINE,
-        &matrix,
-        6,
-        binary,
-    );
-
-    // Every condition must actually fix the bug
     assert!(
         result.control.tests_pass_count() == result.n,
         "Control failed to fix bug in {}/{} runs",
