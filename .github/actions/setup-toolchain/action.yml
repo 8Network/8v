@@ -19,7 +19,7 @@ runs:
     - uses: erlef/setup-beam@v1
       with:
         otp-version: '26'
-        rebar3-version: '3.24.0'
+        rebar3-version: 'nightly'
     - uses: azure/setup-helm@v4
     - uses: hashicorp/setup-terraform@v3
     - uses: terraform-linters/setup-tflint@v4
