@@ -16,7 +16,7 @@ use std::collections::HashMap;
 #[must_use]
 pub fn parse(
     stdout: &str,
-    _stderr: &str,
+    stderr: &str,
     project_root: &std::path::Path,
     tool: &str,
     stack: &str,
@@ -27,7 +27,14 @@ pub fn parse(
     let mut skipped = 0u32;
 
     // go vet emits a stream of JSON objects (one per package), each pretty-printed.
-    let stream = serde_json::Deserializer::from_str(stdout).into_iter::<GoVetPackage>();
+    // Older toolchains write the stream to stderr; newer ones write to stdout.
+    // Pick whichever stream actually contains JSON; fall through both if both have content.
+    let primary = if stdout.trim_start().starts_with('{') {
+        stdout
+    } else {
+        stderr
+    };
+    let stream = serde_json::Deserializer::from_str(primary).into_iter::<GoVetPackage>();
 
     for result in stream {
         let pkg = match result {
@@ -95,7 +102,10 @@ pub fn parse(
         );
     }
 
-    let status = if !diagnostics.is_empty() || parsed_any || stdout.trim().is_empty() {
+    let status = if !diagnostics.is_empty()
+        || parsed_any
+        || (stdout.trim().is_empty() && stderr.trim().is_empty())
+    {
         ParseStatus::Parsed
     } else {
         ParseStatus::Unparsed
