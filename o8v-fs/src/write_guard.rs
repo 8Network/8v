@@ -64,6 +64,91 @@ pub(crate) fn guarded_append(path: &Path, root: &Path, content: &[u8]) -> Result
         cause: e,
     })
 }
+/// Append to a file with an exclusive advisory lock, automatically inserting
+/// a `\n` separator if the file does not end with one.
+///
+/// This serializes peek-last-byte + conditional-separator + append under the
+/// lock, eliminating the race where two concurrent callers both observe a
+/// missing trailing newline and both prepend `\n`, producing a spurious blank
+/// line.
+pub(crate) fn guarded_append_with_separator(
+    path: &Path,
+    root: &Path,
+    content: &[u8],
+) -> Result<(), FsError> {
+    use fs2::FileExt;
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    check_write_target(path, root)?;
+
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(FsError::NotFound {
+                path: path.to_path_buf(),
+            });
+        }
+        Err(e) => return Err(classify_io_error(path, e)),
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| classify_io_error(path, e))?;
+
+    file.lock_exclusive().map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+
+    // Under the lock: check whether the file ends with a newline.
+    let len = file
+        .metadata()
+        .map_err(|e| FsError::Io {
+            path: path.to_path_buf(),
+            cause: e,
+        })?
+        .len();
+
+    if len > 0 {
+        let mut last = [0u8; 1];
+        file.seek(SeekFrom::Start(len - 1))
+            .map_err(|e| FsError::Io {
+                path: path.to_path_buf(),
+                cause: e,
+            })?;
+        file.read_exact(&mut last).map_err(|e| FsError::Io {
+            path: path.to_path_buf(),
+            cause: e,
+        })?;
+        if last[0] != b'\n' {
+            file.write_all(b"\n").map_err(|e| FsError::Io {
+                path: path.to_path_buf(),
+                cause: e,
+            })?;
+        }
+    }
+
+    file.write_all(content).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+
+    if !content.is_empty() && *content.last().unwrap() != b'\n' {
+        file.write_all(b"\n").map_err(|e| FsError::Io {
+            path: path.to_path_buf(),
+            cause: e,
+        })?;
+    }
+
+    file.unlock().map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+
+    Ok(())
+}
 
 /// Create a directory (and parents) within the containment root.
 ///

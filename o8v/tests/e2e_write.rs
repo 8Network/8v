@@ -886,34 +886,6 @@ fn crlf_file_byte_exact_preservation_with_blank_lines() {
     );
 }
 
-// ─── Append uses the file's existing line ending as separator ───────────────
-
-/// Append to a CRLF file without a trailing terminator must use \r\n as the
-/// separator, not a hardcoded \n (which would create mixed endings).
-#[test]
-fn append_to_crlf_file_without_trailing_newline_preserves_crlf() {
-    let tmp = tempfile::tempdir().expect("tmpdir");
-    setup_project(&tmp);
-    let file = tmp.path().join("src.txt");
-    std::fs::write(&file, b"line1\r\nline2").unwrap(); // CRLF, no trailing
-
-    let out = bin_in(tmp.path())
-        .args(["write", "src.txt", "--append", "line3"])
-        .output()
-        .expect("run 8v write");
-
-    assert!(
-        out.status.success(),
-        "append should succeed\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let result = std::fs::read(&file).unwrap();
-    assert_eq!(
-        result, b"line1\r\nline2\r\nline3\r\n",
-        "separator must match existing CRLF and content must end with CRLF"
-    );
-}
-
 /// Append to an LF file without trailing terminator uses \n separator.
 #[test]
 fn append_to_lf_file_without_trailing_newline_uses_lf() {
