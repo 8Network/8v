@@ -29,9 +29,6 @@ rustc-ice-*.txt
 .env.local
 *.sqlite
 
-# Stray text files (allow specific exception)
-*.txt
-!o8v/src/init/ai_section.txt
 
 # Agent/skill runtime state
 .agents/

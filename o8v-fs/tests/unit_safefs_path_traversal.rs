@@ -34,6 +34,7 @@ fn security_path_traversal_dotdot() {
     assert!(
         msg.contains("not found")
             || msg.contains("symlink escapes")
+            || msg.contains("path escapes")
             || msg.contains("permission denied"),
         "expected containment block on path traversal, got: {msg}"
     );

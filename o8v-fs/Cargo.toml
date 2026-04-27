@@ -10,6 +10,7 @@ readme = "../README.md"
 description = "Safe filesystem access — symlink containment, FIFO rejection, size limits, BOM stripping"
 
 [dependencies]
+fs2 = "0.4"
 tracing = "0.1"
 
 [dev-dependencies]

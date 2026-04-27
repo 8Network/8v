@@ -275,3 +275,59 @@ fn stress_empty_directory() {
     assert_eq!(scan.errors().len(), 0);
     assert!(scan.by_name("nonexistent").is_none());
 }
+
+#[test]
+fn append_concurrent_50_no_spurious_blank_lines() {
+    use std::sync::Arc;
+
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("concurrent_append.txt");
+    // Seed without trailing newline to exercise the separator logic.
+    std::fs::write(&file_path, b"seed").unwrap();
+
+    let root = o8v_fs::ContainmentRoot::new(dir.path()).unwrap();
+    let root = Arc::new(root);
+    let file_path = Arc::new(file_path);
+
+    let handles: Vec<_> = (0..50)
+        .map(|i| {
+            let root = Arc::clone(&root);
+            let path = Arc::clone(&file_path);
+            std::thread::spawn(move || {
+                let line = format!("line{i}");
+                o8v_fs::safe_append_with_separator(&path, &root, line.as_bytes())
+                    .expect("append failed");
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("thread panicked");
+    }
+
+    let bytes = std::fs::read(file_path.as_ref()).unwrap();
+    let content = String::from_utf8(bytes).unwrap();
+
+    // No two consecutive newlines (no spurious blank lines).
+    assert!(
+        !content.contains("\n\n"),
+        "spurious blank line detected: {:?}",
+        content
+    );
+
+    // Exactly 51 non-empty lines: 1 seed + 50 line{i}.
+    let non_empty: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        non_empty.len(),
+        51,
+        "expected 51 non-empty lines, got {}: {:?}",
+        non_empty.len(),
+        content
+    );
+
+    assert!(non_empty.contains(&"seed"), "seed line missing");
+    for i in 0..50 {
+        let expected = format!("line{i}");
+        assert!(non_empty.contains(&expected.as_str()), "missing {expected}");
+    }
+}

@@ -25,8 +25,14 @@ struct SuiteSummary {
     ignored: u64,
 }
 
-/// Parse the last `{"type":"suite","event":"ok"|"failed",...}` line from cargo's JSON output.
+/// Parse cargo test output, preferring nightly NDJSON and falling back to
+/// stable libtest's plain-text `test result: ...` summary lines.
 fn parse_suite_summary(stdout: &str) -> Option<SuiteSummary> {
+    parse_suite_summary_json(stdout).or_else(|| parse_suite_summary_text(stdout))
+}
+
+/// Parse the last `{"type":"suite","event":"ok"|"failed",...}` line from cargo's JSON output.
+fn parse_suite_summary_json(stdout: &str) -> Option<SuiteSummary> {
     let mut total: Option<SuiteSummary> = None;
     for line in stdout.lines() {
         let line = line.trim();
@@ -56,6 +62,59 @@ fn parse_suite_summary(stdout: &str) -> Option<SuiteSummary> {
                         acc.ignored += ignored;
                     }
                 }
+            }
+        }
+    }
+    total
+}
+
+/// Stable libtest fallback: parse `test result: ok. N passed; M failed; X ignored; ...`
+/// lines (one per test binary). Multiple summaries are summed.
+fn parse_suite_summary_text(stdout: &str) -> Option<SuiteSummary> {
+    let mut total: Option<SuiteSummary> = None;
+    for line in stdout.lines() {
+        let Some(rest) = line.trim().strip_prefix("test result: ") else {
+            continue;
+        };
+        // rest is e.g. "ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+        let after_dot = rest.split_once(". ").map(|(_, r)| r).unwrap_or(rest);
+        let mut passed = 0u64;
+        let mut failed = 0u64;
+        let mut ignored = 0u64;
+        let mut saw_passed = false;
+        for part in after_dot.split(';') {
+            let mut tokens = part.split_whitespace();
+            let (Some(num), Some(label)) = (tokens.next(), tokens.next()) else {
+                continue;
+            };
+            let Ok(n) = num.parse::<u64>() else {
+                continue;
+            };
+            match label {
+                "passed" => {
+                    passed = n;
+                    saw_passed = true;
+                }
+                "failed" => failed = n,
+                "ignored" => ignored = n,
+                _ => {}
+            }
+        }
+        if !saw_passed {
+            continue;
+        }
+        match &mut total {
+            None => {
+                total = Some(SuiteSummary {
+                    passed,
+                    failed,
+                    ignored,
+                });
+            }
+            Some(acc) => {
+                acc.passed += passed;
+                acc.failed += failed;
+                acc.ignored += ignored;
             }
         }
     }
@@ -178,6 +237,36 @@ impl super::Renderable for TestReport {
 mod tests {
     use super::*;
     use crate::render::Renderable;
+    #[test]
+    fn parse_text_summary_single_suite() {
+        let stdout = "running 2 tests
+test tests::a ... ok
+test tests::b ... FAILED
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+";
+        let s = parse_suite_summary(stdout).expect("text summary should parse");
+        assert_eq!(s.passed, 1);
+        assert_eq!(s.failed, 1);
+        assert_eq!(s.ignored, 0);
+    }
+
+    #[test]
+    fn parse_text_summary_sums_across_suites() {
+        let stdout = "test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+";
+        let s = parse_suite_summary(stdout).expect("multiple suites should sum");
+        assert_eq!(s.passed, 5);
+        assert_eq!(s.failed, 1);
+        assert_eq!(s.ignored, 1);
+    }
+
+    #[test]
+    fn parse_text_summary_returns_none_on_no_result_line() {
+        assert!(parse_suite_summary("error: test failed, to rerun pass --lib").is_none());
+    }
+
     use std::time::Duration;
 
     fn sample_stdout_json() -> String {

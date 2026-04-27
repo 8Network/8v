@@ -187,6 +187,20 @@ pub fn safe_append(
     write_guard::guarded_append(path, root.as_path(), content)
 }
 
+/// Append to a file with an exclusive advisory lock and automatic `\n` separator.
+///
+/// Under the lock, checks whether the file ends with `\n` and inserts one if
+/// needed before appending `content`. This eliminates the TOCTOU race in
+/// concurrent appends where multiple callers all observe a missing trailing
+/// newline and each prepend one, producing spurious blank lines.
+pub fn safe_append_with_separator(
+    path: &std::path::Path,
+    root: &ContainmentRoot,
+    content: &[u8],
+) -> Result<(), FsError> {
+    write_guard::guarded_append_with_separator(path, root.as_path(), content)
+}
+
 /// Create a directory (and parents) safely within a containment boundary.
 pub fn safe_create_dir(path: &std::path::Path, root: &ContainmentRoot) -> Result<(), FsError> {
     write_guard::guarded_create_dir(path, root.as_path())

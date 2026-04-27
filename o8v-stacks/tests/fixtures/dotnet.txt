@@ -1,0 +1,2 @@
+Program.cs(1,1): error CS8805: Program using top-level statements must be an executable. [/tmp/App.csproj]
+Program.cs(1,1): error CS0103: The name 'Console' does not exist in the current context [/tmp/App.csproj]

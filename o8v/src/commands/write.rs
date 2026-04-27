@@ -658,27 +658,18 @@ pub(crate) fn write_to_report(
             ReportOp::Create { line_count }
         }
         WriteOperation::AppendToFile { content } => {
-            let existing = o8v_fs::safe_read(&path, root, &config).map_err(|e| {
-                if matches!(e, o8v_fs::FsError::NotFound { .. }) {
-                    format!("8v: not found: {path_str}")
-                } else {
-                    format!("error: failed to read file: {e}")
+            // Surface NotFound early so the error message matches the existing
+            // behavior ("8v: not found: <path>") without doing a full read.
+            match o8v_fs::safe_exists(&path, root) {
+                Ok(true) => {}
+                Ok(false) => return Err(format!("8v: not found: {path_str}")),
+                Err(o8v_fs::FsError::NotFound { .. }) => {
+                    return Err(format!("8v: not found: {path_str}"));
                 }
-            })?;
-            let existing_content = existing.content();
-            validate_line_endings(existing_content)?;
-            validate_content_line_endings(content)?;
-            let needs_separator = !existing_content.is_empty() && !existing_content.ends_with('\n');
-            let line_ending = detect_line_ending(existing_content);
-            let mut appended = if needs_separator {
-                format!("{line_ending}{content}")
-            } else {
-                content.clone()
-            };
-            if !appended.ends_with('\n') {
-                appended.push_str(line_ending);
+                Err(e) => return Err(format!("error: failed to check if file exists: {e}")),
             }
-            o8v_fs::safe_append(&path, root, appended.as_bytes())
+            validate_content_line_endings(content)?;
+            o8v_fs::safe_append_with_separator(&path, root, content.as_bytes())
                 .map_err(|e| format!("error: failed to append to file: {e}"))?;
             ReportOp::Append
         }

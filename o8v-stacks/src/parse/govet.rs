@@ -16,7 +16,7 @@ use std::collections::HashMap;
 #[must_use]
 pub fn parse(
     stdout: &str,
-    _stderr: &str,
+    stderr: &str,
     project_root: &std::path::Path,
     tool: &str,
     stack: &str,
@@ -26,8 +26,12 @@ pub fn parse(
     let mut parsed_count = 0u32;
     let mut skipped = 0u32;
 
-    // go vet emits a stream of JSON objects (one per package), each pretty-printed.
-    let stream = serde_json::Deserializer::from_str(stdout).into_iter::<GoVetPackage>();
+    // go vet emits a stream of JSON objects (one per package). Some toolchains
+    // write the JSON to stdout, others to stderr; either stream may also contain
+    // '# package/path' comment lines that serde_json cannot skip. Strip those
+    // lines from both streams and concatenate, then deserialize the result.
+    let cleaned = strip_comment_lines(stdout) + &strip_comment_lines(stderr);
+    let stream = serde_json::Deserializer::from_str(&cleaned).into_iter::<GoVetPackage>();
 
     for result in stream {
         let pkg = match result {
@@ -95,7 +99,7 @@ pub fn parse(
         );
     }
 
-    let status = if !diagnostics.is_empty() || parsed_any || stdout.trim().is_empty() {
+    let status = if !diagnostics.is_empty() || parsed_any || cleaned.trim().is_empty() {
         ParseStatus::Parsed
     } else {
         ParseStatus::Unparsed
@@ -106,6 +110,20 @@ pub fn parse(
         status,
         parsed_items: parsed_count,
     }
+}
+/// Drop any line whose first non-whitespace char is '#'. go vet writes
+/// '# package/path' headers and '# [package/path]' suffix-list lines
+/// alongside the JSON stream; serde_json::Deserializer cannot skip them.
+fn strip_comment_lines(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for line in input.lines() {
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 /// Parsed position from go vet's posn string.
@@ -174,6 +192,16 @@ mod tests {
         let result = run("");
         assert_eq!(result.diagnostics.len(), 0);
         assert_eq!(result.status, ParseStatus::Parsed);
+    }
+    #[test]
+    fn skips_pkg_comment_lines_mixed_with_json() {
+        // Some go toolchains interleave '# pkg/path' headers with JSON objects.
+        // Without filtering, serde_json fails on the first '#' and yields zero packages.
+        let input = "# example.com/a\n{}\n# example.com/b\n{}\n";
+        let result = run(input);
+        assert_eq!(result.status, ParseStatus::Parsed);
+        assert_eq!(result.diagnostics.len(), 0);
+        assert_eq!(result.parsed_items, 2);
     }
 
     #[test]
