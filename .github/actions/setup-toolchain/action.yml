@@ -47,9 +47,11 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 -m pip install --upgrade pip
-        python3 -m pip install ruff mypy
-        npm install -g @biomejs/biome prettier eslint oxlint typescript
-        gem install rubocop
+        SUDO=""
+        [ "$RUNNER_OS" = "Linux" ] && SUDO="sudo"
+        python3 -m pip install --user ruff mypy
+        $SUDO npm install -g @biomejs/biome prettier eslint oxlint typescript
+        $SUDO gem install rubocop
         go install honnef.co/go/tools/cmd/staticcheck@latest
         echo "$HOME/go/bin" >> "$GITHUB_PATH"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
