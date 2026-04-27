@@ -992,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "o8v"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-check"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "o8v-core",
  "o8v-fs",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-core"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "base64",
  "o8v-fs",
@@ -1061,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-fs"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "fs2",
  "tempfile",
@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-process"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "libc",
  "tempfile",
@@ -1079,7 +1079,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-stacks"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "o8v-core",
  "o8v-fs",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "o8v-testkit"
-version = "0.1.20"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "comfy-table",
