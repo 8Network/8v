@@ -55,3 +55,4 @@ runs:
         go install honnef.co/go/tools/cmd/staticcheck@latest
         echo "$HOME/go/bin" >> "$GITHUB_PATH"
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        python3 -c 'import site; print(site.USER_BASE)' | awk '{print $0"/bin"}' >> "$GITHUB_PATH"
