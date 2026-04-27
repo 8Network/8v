@@ -330,51 +330,13 @@ fn detect_line_ending(content: &str) -> &'static str {
     }
 }
 
-/// Returns true if `content` contains any lone `\r` (i.e., `\r` not immediately followed by `\n`).
-fn has_lone_cr(content: &str) -> bool {
-    content
-        .chars()
-        .zip(content.chars().skip(1).chain(std::iter::once('\0')))
-        .any(|(c, next)| c == '\r' && next != '\n')
-}
-
 /// Validate that the file's line endings are supported for line-based operations.
 ///
-/// Returns Err for:
-/// - Lone `\r` (classic Mac, no `\n` at all)
-/// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`)
-/// - Mixed `\r\n` and lone `\n`
+/// Delegates to `o8v_fs::validate_line_endings_bytes` so both call sites share
+/// the same logic and produce the same error messages.
 fn validate_line_endings(content: &str) -> Result<(), String> {
-    let has_crlf = content.contains("\r\n");
-    let lone_cr = has_lone_cr(content);
-    let has_lf = content.contains('\n');
-
-    if lone_cr && !has_lf {
-        return Err(
-            "error: file uses classic Mac line endings (\\r only) — 8v does not support this format. Convert to \\n or \\r\\n first."
-                .to_string(),
-        );
-    }
-    if lone_cr && has_lf {
-        return Err(
-            "error: file contains carriage return (\\r) characters outside of \\r\\n sequences — normalize line endings first"
-                .to_string(),
-        );
-    }
-    if has_crlf && has_lf {
-        // Check for standalone \n (not part of \r\n)
-        // We know has_lf is true; check if any \n is not preceded by \r
-        let has_standalone_lf = content
-            .char_indices()
-            .any(|(i, c)| c == '\n' && (i == 0 || content.as_bytes()[i - 1] != b'\r'));
-        if has_standalone_lf {
-            return Err(
-                "error: file has mixed line endings (LF and CRLF) — 8v requires consistent line endings. Normalize the file first."
-                    .to_string(),
-            );
-        }
-    }
-    Ok(())
+    o8v_fs::validate_line_endings_bytes(content.as_bytes())
+        .map_err(|cause| format!("error: {cause}"))
 }
 
 /// Validate content provided by the user for line-based operations.

@@ -67,17 +67,20 @@ pub(crate) fn guarded_append(path: &Path, root: &Path, content: &[u8]) -> Result
 /// Append to a file with an exclusive advisory lock, automatically inserting
 /// a separator if the file does not end with one.
 ///
-/// The separator and trailing terminator match the file's existing line ending
-/// (`\r\n` or `\n`): we read the last **2** bytes under the lock to detect
-/// which convention is in use, so appending to a CRLF file stays CRLF-pure.
+/// Under the lock the function:
+/// 1. Reads the full existing file content.
+/// 2. Validates it with `validate_line_endings_bytes` — rejects CR-only,
+///    lone-`\r`-in-LF, and mixed CRLF+LF files.
+/// 3. Detects the file's line ending (CRLF if any `\r\n` present, else LF).
+/// 4. Inserts a separator using the detected ending when the file is non-empty
+///    and does not already end with `\n`.
+/// 5. Normalises bare `\n` in `content` to `\r\n` when the file uses CRLF.
+/// 6. Appends `content`, then ensures a trailing line terminator.
 ///
-/// If the caller passes pure-LF content into a CRLF file we normalise `\n` to
-/// `\r\n` inside the lock so the written bytes are consistent.
-///
-/// This serializes peek-last-bytes + conditional-separator + append under the
-/// lock, eliminating the race where two concurrent callers both observe a
-/// missing trailing newline and both prepend a separator, producing a spurious
-/// blank line.
+/// This serializes the full read + validate + conditional-separator + append
+/// under the lock, eliminating the race where two concurrent callers both
+/// observe a missing trailing newline and both prepend a separator, producing
+/// a spurious blank line.
 pub(crate) fn guarded_append_with_separator(
     path: &Path,
     root: &Path,
@@ -132,22 +135,15 @@ pub(crate) fn guarded_append_with_separator(
         cause: e,
     })?;
 
-    // Validate existing content: reject files with mixed line endings (R3).
-    // Rule: if both \r\n sequences AND bare \n (not preceded by \r) are
-    // present, the file is mixed.
+    // Validate existing content: reject CR-only, lone-\r-in-LF, and mixed
+    // CRLF+LF files. Unlock before returning so the file descriptor is
+    // released cleanly on error.
     if !existing.is_empty() {
-        let has_crlf = existing.windows(2).any(|w| w == b"\r\n");
-        let has_lone_lf = existing
-            .iter()
-            .enumerate()
-            .any(|(i, &b)| b == b'\n' && (i == 0 || existing[i - 1] != b'\r'));
-        if has_crlf && has_lone_lf {
-            // Unlock before returning the error so the file descriptor is
-            // released cleanly.
+        if let Err(cause) = crate::validate_line_endings_bytes(&existing) {
             let _ = file.unlock();
             return Err(FsError::InvalidContent {
                 path: path.to_path_buf(),
-                cause: "file has mixed line endings (LF and CRLF) \u{2014} 8v requires consistent line endings. Normalize the file first.".to_string(),
+                cause,
             });
         }
     }
