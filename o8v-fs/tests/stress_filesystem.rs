@@ -337,7 +337,6 @@ fn append_concurrent_50_no_spurious_blank_lines() {
 /// Today each thread misdetects the file as LF (same root cause as PR#4-R1),
 /// so the result contains bare \n separators mixed into CRLF content.
 #[test]
-#[ignore = "bug: concurrent append misdetects CRLF on file without trailing newline"]
 fn append_concurrent_50_crlf_seed_no_trailing_newline_preserves_crlf() {
     use std::sync::Arc;
 

@@ -187,12 +187,17 @@ pub fn safe_append(
     write_guard::guarded_append(path, root.as_path(), content)
 }
 
-/// Append to a file with an exclusive advisory lock and automatic `\n` separator.
+/// Append to a file with an exclusive advisory lock and automatic line-ending-aware separator.
 ///
-/// Under the lock, checks whether the file ends with `\n` and inserts one if
-/// needed before appending `content`. This eliminates the TOCTOU race in
-/// concurrent appends where multiple callers all observe a missing trailing
-/// newline and each prepend one, producing spurious blank lines.
+/// Under the lock, reads the full existing file content to:
+/// 1. Detect the file's line ending (CRLF if any `\r\n` present, else LF).
+/// 2. Validate existing content has no mixed endings (returns error if so).
+/// 3. Insert a separator using the detected line ending if the file is non-empty
+///    and doesn't already end with `\n`.
+///
+/// Normalises bare `\n` in `content` to `\r\n` when the file uses CRLF.
+/// Appends a trailing line terminator matching the file's ending if absent.
+/// The full read happens inside the flock so it remains race-safe.
 pub fn safe_append_with_separator(
     path: &std::path::Path,
     root: &ContainmentRoot,

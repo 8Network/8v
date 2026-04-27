@@ -109,55 +109,60 @@ pub(crate) fn guarded_append_with_separator(
         cause: e,
     })?;
 
-    // Under the lock: read the last 2 bytes to detect CRLF vs LF.
-    let len = file
-        .metadata()
-        .map_err(|e| FsError::Io {
-            path: path.to_path_buf(),
-            cause: e,
-        })?
-        .len();
+    // Under the lock: read the entire existing file content.
+    // This is necessary to:
+    //   1. Detect CRLF correctly even when the file has no trailing newline
+    //      (the old 2-byte tail read fails in that case).
+    //   2. Validate that the existing content has no mixed line endings before
+    //      appending (R3 fix).
+    let mut existing = Vec::new();
+    file.seek(SeekFrom::Start(0)).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+    file.read_to_end(&mut existing).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+    // Seek back to end so subsequent write_all appends at EOF.
+    // (O_APPEND on Linux/macOS guarantees this, but we seek explicitly for
+    // clarity and cross-platform safety.)
+    file.seek(SeekFrom::End(0)).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
 
-    // Detect line ending from file tail.
-    // - 0 bytes   => no existing content; default to \n
-    // - 1 byte    => can't be \r\n; treat as LF context
-    // - 2+ bytes  => check if last 2 are \r\n
-    let is_crlf = if len >= 2 {
-        let mut tail = [0u8; 2];
-        file.seek(SeekFrom::Start(len - 2))
-            .map_err(|e| FsError::Io {
+    // Validate existing content: reject files with mixed line endings (R3).
+    // Rule: if both \r\n sequences AND bare \n (not preceded by \r) are
+    // present, the file is mixed.
+    if !existing.is_empty() {
+        let has_crlf = existing.windows(2).any(|w| w == b"\r\n");
+        let has_lone_lf = existing
+            .iter()
+            .enumerate()
+            .any(|(i, &b)| b == b'\n' && (i == 0 || existing[i - 1] != b'\r'));
+        if has_crlf && has_lone_lf {
+            // Unlock before returning the error so the file descriptor is
+            // released cleanly.
+            let _ = file.unlock();
+            return Err(FsError::InvalidContent {
                 path: path.to_path_buf(),
-                cause: e,
-            })?;
-        file.read_exact(&mut tail).map_err(|e| FsError::Io {
-            path: path.to_path_buf(),
-            cause: e,
-        })?;
-        tail == [b'\r', b'\n']
-    } else {
-        false
-    };
+                cause: "file has mixed line endings (LF and CRLF) \u{2014} 8v requires consistent line endings. Normalize the file first.".to_string(),
+            });
+        }
+    }
 
+    // Detect line ending: CRLF if any \r\n is present anywhere in the file,
+    // LF otherwise (includes empty-file case).
+    let is_crlf = existing.windows(2).any(|w| w == b"\r\n");
     let line_ending: &[u8] = if is_crlf { b"\r\n" } else { b"\n" };
 
     // Insert separator if file is non-empty and doesn't end with a newline.
-    if len > 0 {
-        let mut last = [0u8; 1];
-        file.seek(SeekFrom::Start(len - 1))
-            .map_err(|e| FsError::Io {
-                path: path.to_path_buf(),
-                cause: e,
-            })?;
-        file.read_exact(&mut last).map_err(|e| FsError::Io {
+    if !existing.is_empty() && existing.last() != Some(&b'\n') {
+        file.write_all(line_ending).map_err(|e| FsError::Io {
             path: path.to_path_buf(),
             cause: e,
         })?;
-        if last[0] != b'\n' {
-            file.write_all(line_ending).map_err(|e| FsError::Io {
-                path: path.to_path_buf(),
-                cause: e,
-            })?;
-        }
     }
 
     // Normalise content: if the file is CRLF and content uses bare \n, convert.

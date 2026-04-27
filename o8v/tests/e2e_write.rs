@@ -1446,7 +1446,6 @@ fn assert_pure_crlf(bytes: &[u8]) {
 /// `\r\n` those 2 bytes are the last chars of the final word, so detection
 /// falls back to LF and the appended line gets a bare `\n` instead of `\r\n`.
 #[test]
-#[ignore = "bug: is_crlf detection fails when file has no trailing newline"]
 fn append_to_crlf_file_without_trailing_newline_preserves_crlf() {
     let tmp = tempfile::tempdir().expect("tmpdir");
     setup_project(&tmp);
@@ -1476,7 +1475,6 @@ fn append_to_crlf_file_without_trailing_newline_preserves_crlf() {
 /// ends up with mixed endings (due to bug above). A subsequent `8v write`
 /// on that file must still succeed -- today it is rejected by validate_line_endings.
 #[test]
-#[ignore = "bug: post-append file has mixed endings, subsequent write is rejected"]
 fn append_then_subsequent_write_succeeds_on_crlf_file_without_trailing_newline() {
     let tmp = tempfile::tempdir().expect("tmpdir");
     setup_project(&tmp);
@@ -1513,7 +1511,6 @@ fn append_then_subsequent_write_succeeds_on_crlf_file_without_trailing_newline()
 /// Today `--append` skips validate_line_endings on the existing file content,
 /// so it silently appends to a mixed file.
 #[test]
-#[ignore = "bug: append does not validate existing file for mixed endings"]
 fn append_on_pre_existing_mixed_ending_file_is_rejected() {
     let tmp = tempfile::tempdir().expect("tmpdir");
     setup_project(&tmp);
