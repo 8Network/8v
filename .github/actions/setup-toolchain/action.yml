@@ -49,7 +49,7 @@ runs:
         set -euo pipefail
         SUDO=""
         [ "$RUNNER_OS" = "Linux" ] && SUDO="sudo"
-        python3 -m pip install --user ruff mypy
+        python3 -m pip install --user ruff mypy pytest
         $SUDO npm install -g @biomejs/biome prettier eslint oxlint typescript
         $SUDO gem install rubocop
         go install honnef.co/go/tools/cmd/staticcheck@latest
