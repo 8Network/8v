@@ -65,12 +65,22 @@ pub(crate) fn guarded_append(path: &Path, root: &Path, content: &[u8]) -> Result
     })
 }
 /// Append to a file with an exclusive advisory lock, automatically inserting
-/// a `\n` separator if the file does not end with one.
+/// a separator if the file does not end with one.
 ///
-/// This serializes peek-last-byte + conditional-separator + append under the
-/// lock, eliminating the race where two concurrent callers both observe a
-/// missing trailing newline and both prepend `\n`, producing a spurious blank
-/// line.
+/// Under the lock the function:
+/// 1. Reads the full existing file content.
+/// 2. Validates it with `validate_line_endings_bytes` — rejects CR-only,
+///    lone-`\r`-in-LF, and mixed CRLF+LF files.
+/// 3. Detects the file's line ending (CRLF if any `\r\n` present, else LF).
+/// 4. Inserts a separator using the detected ending when the file is non-empty
+///    and does not already end with `\n`.
+/// 5. Normalises bare `\n` in `content` to `\r\n` when the file uses CRLF.
+/// 6. Appends `content`, then ensures a trailing line terminator.
+///
+/// This serializes the full read + validate + conditional-separator + append
+/// under the lock, eliminating the race where two concurrent callers both
+/// observe a missing trailing newline and both prepend a separator, producing
+/// a spurious blank line.
 pub(crate) fn guarded_append_with_separator(
     path: &Path,
     root: &Path,
@@ -102,41 +112,86 @@ pub(crate) fn guarded_append_with_separator(
         cause: e,
     })?;
 
-    // Under the lock: check whether the file ends with a newline.
-    let len = file
-        .metadata()
-        .map_err(|e| FsError::Io {
-            path: path.to_path_buf(),
-            cause: e,
-        })?
-        .len();
-
-    if len > 0 {
-        let mut last = [0u8; 1];
-        file.seek(SeekFrom::Start(len - 1))
-            .map_err(|e| FsError::Io {
-                path: path.to_path_buf(),
-                cause: e,
-            })?;
-        file.read_exact(&mut last).map_err(|e| FsError::Io {
-            path: path.to_path_buf(),
-            cause: e,
-        })?;
-        if last[0] != b'\n' {
-            file.write_all(b"\n").map_err(|e| FsError::Io {
-                path: path.to_path_buf(),
-                cause: e,
-            })?;
-        }
-    }
-
-    file.write_all(content).map_err(|e| FsError::Io {
+    // Under the lock: read the entire existing file content.
+    // This is necessary to:
+    //   1. Detect CRLF correctly even when the file has no trailing newline
+    //      (the old 2-byte tail read fails in that case).
+    //   2. Validate that the existing content has no mixed line endings before
+    //      appending (R3 fix).
+    let mut existing = Vec::new();
+    file.seek(SeekFrom::Start(0)).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+    file.read_to_end(&mut existing).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+    // Seek back to end so subsequent write_all appends at EOF.
+    // (O_APPEND on Linux/macOS guarantees this, but we seek explicitly for
+    // clarity and cross-platform safety.)
+    file.seek(SeekFrom::End(0)).map_err(|e| FsError::Io {
         path: path.to_path_buf(),
         cause: e,
     })?;
 
-    if !content.is_empty() && *content.last().unwrap() != b'\n' {
-        file.write_all(b"\n").map_err(|e| FsError::Io {
+    // Validate existing content: reject CR-only, lone-\r-in-LF, and mixed
+    // CRLF+LF files. Unlock before returning so the file descriptor is
+    // released cleanly on error.
+    if !existing.is_empty() {
+        if let Err(cause) = crate::validate_line_endings_bytes(&existing) {
+            let _ = file.unlock();
+            return Err(FsError::InvalidContent {
+                path: path.to_path_buf(),
+                cause,
+            });
+        }
+    }
+
+    // Detect line ending: CRLF if any \r\n is present anywhere in the file,
+    // LF otherwise (includes empty-file case).
+    let is_crlf = existing.windows(2).any(|w| w == b"\r\n");
+    let line_ending: &[u8] = if is_crlf { b"\r\n" } else { b"\n" };
+
+    // Insert separator if file is non-empty and doesn't end with a newline.
+    if !existing.is_empty() && existing.last() != Some(&b'\n') {
+        file.write_all(line_ending).map_err(|e| FsError::Io {
+            path: path.to_path_buf(),
+            cause: e,
+        })?;
+    }
+
+    // Normalise content: if the file is CRLF and content uses bare \n, convert.
+    let normalised: Vec<u8>;
+    let content_to_write: &[u8] = if is_crlf && content.contains(&b'\n') {
+        // Replace bare \n (not already preceded by \r) with \r\n.
+        let mut out = Vec::with_capacity(content.len() + content.len() / 4);
+        let mut i = 0;
+        while i < content.len() {
+            if content[i] == b'\n' {
+                if i == 0 || content[i - 1] != b'\r' {
+                    out.push(b'\r');
+                }
+                out.push(b'\n');
+            } else {
+                out.push(content[i]);
+            }
+            i += 1;
+        }
+        normalised = out;
+        &normalised
+    } else {
+        content
+    };
+
+    file.write_all(content_to_write).map_err(|e| FsError::Io {
+        path: path.to_path_buf(),
+        cause: e,
+    })?;
+
+    // Ensure trailing line terminator.
+    if !content_to_write.is_empty() && *content_to_write.last().unwrap() != b'\n' {
+        file.write_all(line_ending).map_err(|e| FsError::Io {
             path: path.to_path_buf(),
             cause: e,
         })?;

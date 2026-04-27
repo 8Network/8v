@@ -331,3 +331,59 @@ fn append_concurrent_50_no_spurious_blank_lines() {
         assert!(non_empty.contains(&expected.as_str()), "missing {expected}");
     }
 }
+
+/// PR#4-R10: Concurrent 50-thread append on a CRLF file without trailing newline.
+/// Each thread must detect CRLF and append with \r\n as the separator.
+/// Today each thread misdetects the file as LF (same root cause as PR#4-R1),
+/// so the result contains bare \n separators mixed into CRLF content.
+#[test]
+fn append_concurrent_50_crlf_seed_no_trailing_newline_preserves_crlf() {
+    use std::sync::Arc;
+
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("crlf_concurrent.txt");
+    // CRLF seed with no trailing newline -- triggers the is_crlf detection bug.
+    std::fs::write(&file_path, b"seed\r\nstart").unwrap();
+
+    let root = o8v_fs::ContainmentRoot::new(dir.path()).unwrap();
+    let root = Arc::new(root);
+    let file_path = Arc::new(file_path);
+
+    let handles: Vec<_> = (0..50)
+        .map(|i| {
+            let root = Arc::clone(&root);
+            let path = Arc::clone(&file_path);
+            std::thread::spawn(move || {
+                let line = format!("line{i}");
+                o8v_fs::safe_append_with_separator(&path, &root, line.as_bytes())
+                    .expect("append failed");
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("thread panicked");
+    }
+
+    let bytes = std::fs::read(file_path.as_ref()).unwrap();
+
+    // Every \n must be preceded by \r (pure CRLF).
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'\n' {
+            assert!(
+                i > 0 && bytes[i - 1] == b'\r',
+                "bare \\n at byte {} -- CRLF not preserved under concurrent append; file: {:?}",
+                i,
+                bytes
+            );
+        }
+        if b == b'\r' {
+            assert!(
+                i + 1 < bytes.len() && bytes[i + 1] == b'\n',
+                "lone \\r at byte {} -- malformed CRLF sequence; file: {:?}",
+                i,
+                bytes
+            );
+        }
+    }
+}

@@ -47,6 +47,51 @@ pub use file::{truncate_error, GuardedFile};
 pub use fs_trait::FileSystem;
 pub use root::ContainmentRoot;
 pub use safe_fs::SafeFs;
+
+/// Validate that a byte slice has consistent line endings.
+///
+/// Returns `Err` containing a human-readable cause string for:
+/// - Lone `\r` (classic Mac, no `\n` at all)
+/// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`)
+/// - Mixed `\r\n` and lone `\n`
+///
+/// This is the single authoritative implementation shared by `o8v write`
+/// (str-level callers) and `o8v-fs` (byte-level callers). Callers wrap
+/// the cause in the appropriate error type — `FsError::InvalidContent`
+/// for byte-level callers, or a plain `String` for str-level callers.
+pub fn validate_line_endings_bytes(content: &[u8]) -> Result<(), String> {
+    let has_crlf = content.windows(2).any(|w| w == b"\r\n");
+    let has_lf = content.contains(&b'\n');
+    // A lone \r is any \r not immediately followed by \n.
+    let has_lone_cr = content
+        .iter()
+        .enumerate()
+        .any(|(i, &b)| b == b'\r' && content.get(i + 1) != Some(&b'\n'));
+
+    if has_lone_cr && !has_lf {
+        return Err(
+            "file uses classic Mac line endings (\\r only) \u{2014} 8v does not support this format. Convert to \\n or \\r\\n first.".to_string()
+        );
+    }
+    if has_lone_cr && has_lf {
+        return Err(
+            "file contains carriage return (\\r) characters outside of \\r\\n sequences \u{2014} normalize line endings first".to_string()
+        );
+    }
+    if has_crlf && has_lf {
+        // Check for standalone \n (not part of \r\n).
+        let has_standalone_lf = content
+            .iter()
+            .enumerate()
+            .any(|(i, &b)| b == b'\n' && (i == 0 || content[i - 1] != b'\r'));
+        if has_standalone_lf {
+            return Err(
+                "file has mixed line endings (LF and CRLF) \u{2014} 8v requires consistent line endings. Normalize the file first.".to_string()
+            );
+        }
+    }
+    Ok(())
+}
 pub use scan::{DirEntry, DirScan};
 
 // ─── Standalone safe write operations ───────────────────────────────────────
@@ -187,12 +232,17 @@ pub fn safe_append(
     write_guard::guarded_append(path, root.as_path(), content)
 }
 
-/// Append to a file with an exclusive advisory lock and automatic `\n` separator.
+/// Append to a file with an exclusive advisory lock and automatic line-ending-aware separator.
 ///
-/// Under the lock, checks whether the file ends with `\n` and inserts one if
-/// needed before appending `content`. This eliminates the TOCTOU race in
-/// concurrent appends where multiple callers all observe a missing trailing
-/// newline and each prepend one, producing spurious blank lines.
+/// Under the lock, reads the full existing file content to:
+/// 1. Detect the file's line ending (CRLF if any `\r\n` present, else LF).
+/// 2. Validate existing content has no mixed endings (returns error if so).
+/// 3. Insert a separator using the detected line ending if the file is non-empty
+///    and doesn't already end with `\n`.
+///
+/// Normalises bare `\n` in `content` to `\r\n` when the file uses CRLF.
+/// Appends a trailing line terminator matching the file's ending if absent.
+/// The full read happens inside the flock so it remains race-safe.
 pub fn safe_append_with_separator(
     path: &std::path::Path,
     root: &ContainmentRoot,

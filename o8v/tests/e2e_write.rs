@@ -1248,3 +1248,505 @@ fn append_ensures_trailing_newline() {
         "--append must produce expected content with trailing newline"
     );
 }
+
+// --- Issue #3: CRLF line-ending preservation gaps --------------------------
+//
+// Tests 1-3 verify the fixes for issue #3.
+// Tests 4-5 are positive baselines (Insert and Delete already worked correctly).
+
+/// Issue #3 Test 1 -- Append regression (f330d45):
+/// Seeding a pure CRLF file then appending must produce CRLF endings,
+/// not a trailing bare \n. Today --append hardcodes \n regardless of
+/// the file line ending, so the file ends with `appended\n` breaking CRLF purity.
+#[test]
+fn append_to_crlf_file_preserves_crlf_endings() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf.txt", "--append", "appended"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        out.status.success(),
+        "--append on CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    // The appended line must end with \r\n, not bare \n.
+    assert_eq!(
+        result, b"line1\r\nline2\r\nappended\r\n",
+        "append to CRLF file must preserve CRLF; got bytes: {:?}",
+        result
+    );
+}
+
+/// Issue #3 Test 2 -- Append corrupts CRLF file for the next 8v op:
+/// After appending to a CRLF file the file has mixed endings.
+/// A subsequent 8v write on the file must succeed -- today it fails
+/// because validate_line_endings rejects the now-mixed file.
+#[test]
+fn append_to_crlf_file_subsequent_write_succeeds() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf2.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\n").unwrap();
+
+    // First op: append.
+    let out1 = bin_in(tmp.path())
+        .args(["write", "crlf2.txt", "--append", "appended"])
+        .output()
+        .expect("run 8v write --append");
+    assert!(
+        out1.status.success(),
+        "first append must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out1.stderr)
+    );
+
+    // Second op: replace line 1 -- must NOT be rejected due to mixed endings
+    // introduced by the first append.
+    let out2 = bin_in(tmp.path())
+        .args(["write", "crlf2.txt:1", "replaced"])
+        .output()
+        .expect("run second 8v write");
+
+    assert!(
+        out2.status.success(),
+        "second write after append must exit 0; file likely has mixed endings now\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out2.stdout),
+        String::from_utf8_lossy(&out2.stderr)
+    );
+}
+
+/// Issue #3 Test 3 -- FindReplace with \n in replacement on a CRLF file:
+/// The replacement string "a\nb" must be written as "a\r\nb" (CRLF-normalised)
+/// on a CRLF file. Today the raw \n is injected, creating mixed endings.
+#[test]
+fn find_replace_newline_in_replacement_on_crlf_file_preserves_crlf() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf3.txt");
+    std::fs::write(&file, b"foo\r\nbar\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf3.txt", "--find", "foo", "--replace", "a\nb"])
+        .output()
+        .expect("run 8v write --find --replace");
+
+    assert!(
+        out.status.success(),
+        "find-replace on CRLF file must exit 0\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    // After replacing "foo" with "a\nb", the file must remain pure CRLF.
+    assert_eq!(
+        result, b"a\r\nb\r\nbar\r\n",
+        "find-replace must produce pure CRLF; got bytes: {:?}",
+        result
+    );
+}
+
+/// Issue #3 Test 4 -- Insert + CRLF positive baseline:
+/// `8v write file:2 --insert "X"` on a CRLF file should already preserve
+/// CRLF endings (Insert uses detect_line_ending). This documents that
+/// Insert already works -- the gap is test coverage, not behaviour.
+#[test]
+fn insert_into_crlf_file_preserves_crlf_endings() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf4.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\nline3\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf4.txt:2", "--insert", "X"])
+        .output()
+        .expect("run 8v write --insert");
+
+    assert!(
+        out.status.success(),
+        "insert into CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"line1\r\nX\r\nline2\r\nline3\r\n",
+        "insert into CRLF file must preserve CRLF endings byte-exactly; got: {:?}",
+        result
+    );
+}
+
+/// Issue #3 Test 5 -- Delete + CRLF positive baseline:
+/// `8v write file:2-2 --delete` on a CRLF file should already preserve
+/// CRLF endings (Delete uses detect_line_ending). Documents Delete already
+/// works -- gap is test coverage, not behaviour.
+#[test]
+fn delete_from_crlf_file_preserves_crlf_endings() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf5.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\nline3\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf5.txt:2-2", "--delete"])
+        .output()
+        .expect("run 8v write --delete");
+
+    assert!(
+        out.status.success(),
+        "delete from CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"line1\r\nline3\r\n",
+        "delete from CRLF file must preserve CRLF endings byte-exactly; got: {:?}",
+        result
+    );
+}
+
+// ─── PR #4 review reproducers ─────────────────────────────────────────────────
+//
+// Each test below pins a concrete finding from the three PR #4 review rounds.
+// Tests marked #[ignore] exercise currently-broken behaviour; they will be
+// un-ignored when the underlying bug is fixed.
+
+#[allow(dead_code)]
+fn assert_pure_crlf(bytes: &[u8]) {
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'\n' {
+            assert!(
+                i > 0 && bytes[i - 1] == b'\r',
+                "bare \\n at byte {} in {:?}",
+                i,
+                bytes
+            );
+        }
+        if b == b'\r' {
+            assert!(
+                i + 1 < bytes.len() && bytes[i + 1] == b'\n',
+                "lone \\r at byte {} in {:?}",
+                i,
+                bytes
+            );
+        }
+    }
+}
+
+/// PR#4-R1: CRLF file without trailing newline -- append must produce pure CRLF.
+/// Today `is_crlf` reads only the last 2 bytes; when the file ends without
+/// `\r\n` those 2 bytes are the last chars of the final word, so detection
+/// falls back to LF and the appended line gets a bare `\n` instead of `\r\n`.
+#[test]
+fn append_to_crlf_file_without_trailing_newline_preserves_crlf() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf_no_trail.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\nno_trailing").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf_no_trail.txt", "--append", "appended"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        out.status.success(),
+        "--append on CRLF file without trailing newline must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"line1\r\nline2\r\nno_trailing\r\nappended\r\n",
+        "append to CRLF-without-trailing-newline must produce pure CRLF; got bytes: {:?}",
+        result
+    );
+}
+
+/// PR#4-R2: After appending to a CRLF file without trailing newline the file
+/// ends up with mixed endings (due to bug above). A subsequent `8v write`
+/// on that file must still succeed -- today it is rejected by validate_line_endings.
+#[test]
+fn append_then_subsequent_write_succeeds_on_crlf_file_without_trailing_newline() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf_no_trail2.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\nno_trailing").unwrap();
+
+    // First op: append.
+    let out1 = bin_in(tmp.path())
+        .args(["write", "crlf_no_trail2.txt", "--append", "appended"])
+        .output()
+        .expect("run 8v write --append");
+    assert!(
+        out1.status.success(),
+        "first append must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out1.stderr)
+    );
+
+    // Second op: replace line 1 -- must not be rejected due to mixed endings
+    // left behind by the first (buggy) append.
+    let out2 = bin_in(tmp.path())
+        .args(["write", "crlf_no_trail2.txt:1", "replaced"])
+        .output()
+        .expect("run second 8v write");
+
+    assert!(
+        out2.status.success(),
+        "second write after append must exit 0; file likely has mixed endings\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out2.stdout),
+        String::from_utf8_lossy(&out2.stderr)
+    );
+}
+
+/// PR#4-R3: Appending to an already-mixed file must be REJECTED.
+/// Today `--append` skips validate_line_endings on the existing file content,
+/// so it silently appends to a mixed file.
+#[test]
+fn append_on_pre_existing_mixed_ending_file_is_rejected() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("mixed.txt");
+    // Deliberately mixed: first line CRLF, second LF, third CRLF.
+    std::fs::write(&file, b"line1\r\nline2\nline3\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "mixed.txt", "--append", "x"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        !out.status.success(),
+        "append on mixed-ending file must fail\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        combined.to_lowercase().contains("mixed"),
+        "error must mention mixed line endings; got: {combined}"
+    );
+    // File must be untouched.
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        b"line1\r\nline2\nline3\r\n",
+        "file must be unchanged on rejected append"
+    );
+}
+
+/// PR#4-R4: Pin current behaviour for append with empty content on a CRLF
+/// file that lacks a trailing newline. Empty content is already rejected
+/// globally before any line-ending detection; this ensures that stays true.
+#[test]
+fn append_empty_content_on_crlf_file_without_trailing_newline() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf_no_trail3.txt");
+    std::fs::write(&file, b"line1\r\nline2").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf_no_trail3.txt", "--append", ""])
+        .output()
+        .expect("run 8v write --append");
+
+    // Empty content is rejected before any line-ending processing.
+    assert!(
+        !out.status.success(),
+        "empty append must be rejected\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // File must be untouched.
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        b"line1\r\nline2",
+        "file must be unchanged on rejected empty append"
+    );
+}
+
+/// PR#4-R5: Boundary case -- 2-byte CRLF-only file (b"\r\n").
+/// `is_crlf` checks whether the last 2 bytes are b"\r\n"; this is that
+/// exact boundary -- the entire file is one CRLF sequence.
+#[test]
+fn append_to_two_byte_crlf_file() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("two_byte_crlf.txt");
+    std::fs::write(&file, b"\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "two_byte_crlf.txt", "--append", "x"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        out.status.success(),
+        "--append on 2-byte CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"\r\nx\r\n",
+        "append to 2-byte CRLF file must produce pure CRLF; got: {:?}",
+        result
+    );
+}
+
+/// PR#4-R6: Boundary case -- single lone-CR byte (b"\r").
+/// This is an invalid file; pin that the tool exits cleanly (no crash/abort).
+#[test]
+fn append_to_one_byte_lone_cr_file() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("lone_cr.txt");
+    std::fs::write(&file, b"\r").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "lone_cr.txt", "--append", "x"])
+        .output()
+        .expect("run 8v write --append");
+
+    // A lone-CR file is already invalid. The tool may reject it or fall back
+    // to LF. Either outcome is acceptable. What must NOT happen is a panic or
+    // unclean exit (signal). Pin that the process terminates normally.
+    assert!(
+        out.status.code().is_some(),
+        "process must exit cleanly (no signal/abort); status: {:?}",
+        out.status
+    );
+}
+
+/// PR#4-R7: Empty file -- 0 bytes. No content means no line-ending detection
+/// possible; must default to LF and produce b"x\n".
+#[test]
+fn append_to_empty_file() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("empty_append.txt");
+    std::fs::write(&file, b"").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "empty_append.txt", "--append", "x"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        out.status.success(),
+        "--append on empty file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"x\n",
+        "append to empty file must default to LF; got: {:?}",
+        result
+    );
+}
+
+/// PR#4-R8: find-replace with a newline in the find pattern on a CRLF file
+/// when there is NO match. The operation must fail; the error must reference
+/// the user's original pattern, NOT the internally-normalised CRLF form.
+#[test]
+fn find_replace_with_newline_in_find_zero_matches_on_crlf_file() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf_find.txt");
+    std::fs::write(&file, b"foo\r\nbar\r\n").unwrap();
+
+    // Pattern "baz\nqux" (LF) cannot match anything in this file.
+    let out = bin_in(tmp.path())
+        .args([
+            "write",
+            "crlf_find.txt",
+            "--find",
+            "baz\nqux",
+            "--replace",
+            "x",
+        ])
+        .output()
+        .expect("run 8v write");
+
+    assert!(
+        !out.status.success(),
+        "no-match find must fail\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The error must NOT expose the internally-normalised "baz\r\nqux" form.
+    assert!(
+        !combined.contains("baz\r\nqux"),
+        "error must not expose internal CRLF-normalised pattern; got: {combined}"
+    );
+    // File must be untouched.
+    assert_eq!(std::fs::read(&file).unwrap(), b"foo\r\nbar\r\n");
+}
+
+/// PR#4-R9: find-replace with a newline in the find pattern on a CRLF file
+/// when the pattern DOES match after CRLF-normalisation ("foo\nbar" -> "foo\r\nbar").
+/// If normalisation is implemented the result must be pure CRLF; if not yet
+/// implemented the operation must fail with "no matches found" (not crash).
+#[test]
+fn find_replace_with_newline_in_find_matches_on_crlf_file() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf_find2.txt");
+    std::fs::write(&file, b"foo\r\nbar\r\n").unwrap();
+
+    // "foo\nbar" should match "foo\r\nbar" after normalisation.
+    let out = bin_in(tmp.path())
+        .args([
+            "write",
+            "crlf_find2.txt",
+            "--find",
+            "foo\nbar",
+            "--replace",
+            "x",
+        ])
+        .output()
+        .expect("run 8v write");
+
+    let result = std::fs::read(&file).unwrap();
+
+    if out.status.success() {
+        // Normalisation implemented: result must be pure CRLF.
+        assert_eq!(
+            result, b"x\r\n",
+            "find-replace across CRLF boundary must produce pure CRLF; got: {:?}",
+            result
+        );
+    } else {
+        // Normalisation not yet implemented: must fail with no-match error.
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            combined.contains("no matches found"),
+            "failure must state 'no matches found'; got: {combined}"
+        );
+        assert_eq!(
+            result, b"foo\r\nbar\r\n",
+            "file must be unchanged on no-match"
+        );
+    }
+}

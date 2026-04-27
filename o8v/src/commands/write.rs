@@ -330,51 +330,13 @@ fn detect_line_ending(content: &str) -> &'static str {
     }
 }
 
-/// Returns true if `content` contains any lone `\r` (i.e., `\r` not immediately followed by `\n`).
-fn has_lone_cr(content: &str) -> bool {
-    content
-        .chars()
-        .zip(content.chars().skip(1).chain(std::iter::once('\0')))
-        .any(|(c, next)| c == '\r' && next != '\n')
-}
-
 /// Validate that the file's line endings are supported for line-based operations.
 ///
-/// Returns Err for:
-/// - Lone `\r` (classic Mac, no `\n` at all)
-/// - Any lone `\r` in a `\n`-terminated file (mid-line `\r`)
-/// - Mixed `\r\n` and lone `\n`
+/// Delegates to `o8v_fs::validate_line_endings_bytes` so both call sites share
+/// the same logic and produce the same error messages.
 fn validate_line_endings(content: &str) -> Result<(), String> {
-    let has_crlf = content.contains("\r\n");
-    let lone_cr = has_lone_cr(content);
-    let has_lf = content.contains('\n');
-
-    if lone_cr && !has_lf {
-        return Err(
-            "error: file uses classic Mac line endings (\\r only) — 8v does not support this format. Convert to \\n or \\r\\n first."
-                .to_string(),
-        );
-    }
-    if lone_cr && has_lf {
-        return Err(
-            "error: file contains carriage return (\\r) characters outside of \\r\\n sequences — normalize line endings first"
-                .to_string(),
-        );
-    }
-    if has_crlf && has_lf {
-        // Check for standalone \n (not part of \r\n)
-        // We know has_lf is true; check if any \n is not preceded by \r
-        let has_standalone_lf = content
-            .char_indices()
-            .any(|(i, c)| c == '\n' && (i == 0 || content.as_bytes()[i - 1] != b'\r'));
-        if has_standalone_lf {
-            return Err(
-                "error: file has mixed line endings (LF and CRLF) — 8v requires consistent line endings. Normalize the file first."
-                    .to_string(),
-            );
-        }
-    }
-    Ok(())
+    o8v_fs::validate_line_endings_bytes(content.as_bytes())
+        .map_err(|cause| format!("error: {cause}"))
 }
 
 /// Validate content provided by the user for line-based operations.
@@ -685,7 +647,22 @@ pub(crate) fn write_to_report(
             })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
-            let match_count = existing_content.matches(find.as_str()).count();
+            let line_ending = detect_line_ending(existing_content);
+
+            // Normalise find/replace to the file's line ending so that a user
+            // who passes pure-LF patterns against a CRLF file gets correct
+            // matches and CRLF-preserving output.
+            let find_normalised;
+            let replace_normalised;
+            let (effective_find, effective_replace) = if line_ending == "\r\n" {
+                find_normalised = find.replace('\n', "\r\n");
+                replace_normalised = replace.replace('\n', "\r\n");
+                (find_normalised.as_str(), replace_normalised.as_str())
+            } else {
+                (find.as_str(), replace.as_str())
+            };
+
+            let match_count = existing_content.matches(effective_find).count();
 
             if match_count == 0 {
                 return Err(render_not_found_hint(find, existing_content, &path_str));
@@ -701,9 +678,9 @@ pub(crate) fn write_to_report(
             }
 
             let new_content = if *all {
-                existing_content.replace(find.as_str(), replace.as_str())
+                existing_content.replace(effective_find, effective_replace)
             } else {
-                existing_content.replacen(find.as_str(), replace.as_str(), 1)
+                existing_content.replacen(effective_find, effective_replace, 1)
             };
 
             let count = if *all { match_count } else { 1 };
