@@ -685,7 +685,22 @@ pub(crate) fn write_to_report(
             })?;
             let existing_content = file.content();
             validate_line_endings(existing_content)?;
-            let match_count = existing_content.matches(find.as_str()).count();
+            let line_ending = detect_line_ending(existing_content);
+
+            // Normalise find/replace to the file's line ending so that a user
+            // who passes pure-LF patterns against a CRLF file gets correct
+            // matches and CRLF-preserving output.
+            let find_normalised;
+            let replace_normalised;
+            let (effective_find, effective_replace) = if line_ending == "\r\n" {
+                find_normalised = find.replace('\n', "\r\n");
+                replace_normalised = replace.replace('\n', "\r\n");
+                (find_normalised.as_str(), replace_normalised.as_str())
+            } else {
+                (find.as_str(), replace.as_str())
+            };
+
+            let match_count = existing_content.matches(effective_find).count();
 
             if match_count == 0 {
                 return Err(render_not_found_hint(find, existing_content, &path_str));
@@ -701,9 +716,9 @@ pub(crate) fn write_to_report(
             }
 
             let new_content = if *all {
-                existing_content.replace(find.as_str(), replace.as_str())
+                existing_content.replace(effective_find, effective_replace)
             } else {
-                existing_content.replacen(find.as_str(), replace.as_str(), 1)
+                existing_content.replacen(effective_find, effective_replace, 1)
             };
 
             let count = if *all { match_count } else { 1 };

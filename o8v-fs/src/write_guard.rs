@@ -65,12 +65,19 @@ pub(crate) fn guarded_append(path: &Path, root: &Path, content: &[u8]) -> Result
     })
 }
 /// Append to a file with an exclusive advisory lock, automatically inserting
-/// a `\n` separator if the file does not end with one.
+/// a separator if the file does not end with one.
 ///
-/// This serializes peek-last-byte + conditional-separator + append under the
+/// The separator and trailing terminator match the file's existing line ending
+/// (`\r\n` or `\n`): we read the last **2** bytes under the lock to detect
+/// which convention is in use, so appending to a CRLF file stays CRLF-pure.
+///
+/// If the caller passes pure-LF content into a CRLF file we normalise `\n` to
+/// `\r\n` inside the lock so the written bytes are consistent.
+///
+/// This serializes peek-last-bytes + conditional-separator + append under the
 /// lock, eliminating the race where two concurrent callers both observe a
-/// missing trailing newline and both prepend `\n`, producing a spurious blank
-/// line.
+/// missing trailing newline and both prepend a separator, producing a spurious
+/// blank line.
 pub(crate) fn guarded_append_with_separator(
     path: &Path,
     root: &Path,
@@ -102,7 +109,7 @@ pub(crate) fn guarded_append_with_separator(
         cause: e,
     })?;
 
-    // Under the lock: check whether the file ends with a newline.
+    // Under the lock: read the last 2 bytes to detect CRLF vs LF.
     let len = file
         .metadata()
         .map_err(|e| FsError::Io {
@@ -111,6 +118,29 @@ pub(crate) fn guarded_append_with_separator(
         })?
         .len();
 
+    // Detect line ending from file tail.
+    // - 0 bytes   => no existing content; default to \n
+    // - 1 byte    => can't be \r\n; treat as LF context
+    // - 2+ bytes  => check if last 2 are \r\n
+    let is_crlf = if len >= 2 {
+        let mut tail = [0u8; 2];
+        file.seek(SeekFrom::Start(len - 2))
+            .map_err(|e| FsError::Io {
+                path: path.to_path_buf(),
+                cause: e,
+            })?;
+        file.read_exact(&mut tail).map_err(|e| FsError::Io {
+            path: path.to_path_buf(),
+            cause: e,
+        })?;
+        tail == [b'\r', b'\n']
+    } else {
+        false
+    };
+
+    let line_ending: &[u8] = if is_crlf { b"\r\n" } else { b"\n" };
+
+    // Insert separator if file is non-empty and doesn't end with a newline.
     if len > 0 {
         let mut last = [0u8; 1];
         file.seek(SeekFrom::Start(len - 1))
@@ -123,20 +153,44 @@ pub(crate) fn guarded_append_with_separator(
             cause: e,
         })?;
         if last[0] != b'\n' {
-            file.write_all(b"\n").map_err(|e| FsError::Io {
+            file.write_all(line_ending).map_err(|e| FsError::Io {
                 path: path.to_path_buf(),
                 cause: e,
             })?;
         }
     }
 
-    file.write_all(content).map_err(|e| FsError::Io {
+    // Normalise content: if the file is CRLF and content uses bare \n, convert.
+    let normalised: Vec<u8>;
+    let content_to_write: &[u8] = if is_crlf && content.contains(&b'\n') {
+        // Replace bare \n (not already preceded by \r) with \r\n.
+        let mut out = Vec::with_capacity(content.len() + content.len() / 4);
+        let mut i = 0;
+        while i < content.len() {
+            if content[i] == b'\n' {
+                if i == 0 || content[i - 1] != b'\r' {
+                    out.push(b'\r');
+                }
+                out.push(b'\n');
+            } else {
+                out.push(content[i]);
+            }
+            i += 1;
+        }
+        normalised = out;
+        &normalised
+    } else {
+        content
+    };
+
+    file.write_all(content_to_write).map_err(|e| FsError::Io {
         path: path.to_path_buf(),
         cause: e,
     })?;
 
-    if !content.is_empty() && *content.last().unwrap() != b'\n' {
-        file.write_all(b"\n").map_err(|e| FsError::Io {
+    // Ensure trailing line terminator.
+    if !content_to_write.is_empty() && *content_to_write.last().unwrap() != b'\n' {
+        file.write_all(line_ending).map_err(|e| FsError::Io {
             path: path.to_path_buf(),
             cause: e,
         })?;

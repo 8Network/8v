@@ -1248,3 +1248,167 @@ fn append_ensures_trailing_newline() {
         "--append must produce expected content with trailing newline"
     );
 }
+
+// --- Issue #3: CRLF line-ending preservation gaps --------------------------
+//
+// Tests 1-3 verify the fixes for issue #3.
+// Tests 4-5 are positive baselines (Insert and Delete already worked correctly).
+
+/// Issue #3 Test 1 -- Append regression (f330d45):
+/// Seeding a pure CRLF file then appending must produce CRLF endings,
+/// not a trailing bare \n. Today --append hardcodes \n regardless of
+/// the file line ending, so the file ends with `appended\n` breaking CRLF purity.
+#[test]
+fn append_to_crlf_file_preserves_crlf_endings() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf.txt", "--append", "appended"])
+        .output()
+        .expect("run 8v write --append");
+
+    assert!(
+        out.status.success(),
+        "--append on CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    // The appended line must end with \r\n, not bare \n.
+    assert_eq!(
+        result, b"line1\r\nline2\r\nappended\r\n",
+        "append to CRLF file must preserve CRLF; got bytes: {:?}",
+        result
+    );
+}
+
+/// Issue #3 Test 2 -- Append corrupts CRLF file for the next 8v op:
+/// After appending to a CRLF file the file has mixed endings.
+/// A subsequent 8v write on the file must succeed -- today it fails
+/// because validate_line_endings rejects the now-mixed file.
+#[test]
+fn append_to_crlf_file_subsequent_write_succeeds() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf2.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\n").unwrap();
+
+    // First op: append.
+    let out1 = bin_in(tmp.path())
+        .args(["write", "crlf2.txt", "--append", "appended"])
+        .output()
+        .expect("run 8v write --append");
+    assert!(
+        out1.status.success(),
+        "first append must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out1.stderr)
+    );
+
+    // Second op: replace line 1 -- must NOT be rejected due to mixed endings
+    // introduced by the first append.
+    let out2 = bin_in(tmp.path())
+        .args(["write", "crlf2.txt:1", "replaced"])
+        .output()
+        .expect("run second 8v write");
+
+    assert!(
+        out2.status.success(),
+        "second write after append must exit 0; file likely has mixed endings now\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out2.stdout),
+        String::from_utf8_lossy(&out2.stderr)
+    );
+}
+
+/// Issue #3 Test 3 -- FindReplace with \n in replacement on a CRLF file:
+/// The replacement string "a\nb" must be written as "a\r\nb" (CRLF-normalised)
+/// on a CRLF file. Today the raw \n is injected, creating mixed endings.
+#[test]
+fn find_replace_newline_in_replacement_on_crlf_file_preserves_crlf() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf3.txt");
+    std::fs::write(&file, b"foo\r\nbar\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf3.txt", "--find", "foo", "--replace", "a\nb"])
+        .output()
+        .expect("run 8v write --find --replace");
+
+    assert!(
+        out.status.success(),
+        "find-replace on CRLF file must exit 0\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    // After replacing "foo" with "a\nb", the file must remain pure CRLF.
+    assert_eq!(
+        result, b"a\r\nb\r\nbar\r\n",
+        "find-replace must produce pure CRLF; got bytes: {:?}",
+        result
+    );
+}
+
+/// Issue #3 Test 4 -- Insert + CRLF positive baseline:
+/// `8v write file:2 --insert "X"` on a CRLF file should already preserve
+/// CRLF endings (Insert uses detect_line_ending). This documents that
+/// Insert already works -- the gap is test coverage, not behaviour.
+#[test]
+fn insert_into_crlf_file_preserves_crlf_endings() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf4.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\nline3\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf4.txt:2", "--insert", "X"])
+        .output()
+        .expect("run 8v write --insert");
+
+    assert!(
+        out.status.success(),
+        "insert into CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"line1\r\nX\r\nline2\r\nline3\r\n",
+        "insert into CRLF file must preserve CRLF endings byte-exactly; got: {:?}",
+        result
+    );
+}
+
+/// Issue #3 Test 5 -- Delete + CRLF positive baseline:
+/// `8v write file:2-2 --delete` on a CRLF file should already preserve
+/// CRLF endings (Delete uses detect_line_ending). Documents Delete already
+/// works -- gap is test coverage, not behaviour.
+#[test]
+fn delete_from_crlf_file_preserves_crlf_endings() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    setup_project(&tmp);
+    let file = tmp.path().join("crlf5.txt");
+    std::fs::write(&file, b"line1\r\nline2\r\nline3\r\n").unwrap();
+
+    let out = bin_in(tmp.path())
+        .args(["write", "crlf5.txt:2-2", "--delete"])
+        .output()
+        .expect("run 8v write --delete");
+
+    assert!(
+        out.status.success(),
+        "delete from CRLF file must exit 0\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let result = std::fs::read(&file).unwrap();
+    assert_eq!(
+        result, b"line1\r\nline3\r\n",
+        "delete from CRLF file must preserve CRLF endings byte-exactly; got: {:?}",
+        result
+    );
+}
