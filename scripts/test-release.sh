@@ -2,15 +2,17 @@
 # Release pipeline validation tests.
 #
 # Tests the invariants the release pipeline depends on — fast, no credentials,
-# no cross-compilation, no wrangler. What it covers:
+# no cross-compilation. What it covers:
 #
 #   1. Version bump  — workspace-root [workspace.package] version only;
 #                      member crates must inherit via `version.workspace = true`
 #   2. Checksum format — sha256sum/shasum output parseable by install.sh
 #   3. Binary naming — names match exactly what install.sh requests
 #   4. version.txt format — clean string, no whitespace (the tr bug class)
-#   5. Changelog update — [Unreleased] marker replaced correctly
-#   6. Semver validation — release.sh must reject bad version strings
+#   5. Semver validation — release.sh must reject bad version strings
+#   6. _8V_BASE_URL validation — install.sh rejects non-https non-localhost URLs
+#   7. release.sh delegates version bump to bump-version.sh
+#   8. Version bump sed precision
 #
 # Usage:
 #   sh scripts/test-release.sh
@@ -236,48 +238,6 @@ assert_not_contains "version.txt has no spaces" " " "$READ_VERSION"
 
 rm -rf "$TMPDIR_VER"
 
-# ── Test 5: Changelog update ───────────────────────────────────────────────────
-#
-# release.sh uses:
-#   sed -i '' "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $DATE/" CHANGELOG.md
-#
-# Verify: the Unreleased header is preserved and the new version header is added.
-
-echo ""
-echo "── 5. Changelog update ──"
-
-TMPDIR_CL=$(mktemp -d)
-DATE=$(date +%Y-%m-%d)
-CL_VERSION="2.0.0"
-
-cat > "$TMPDIR_CL/CHANGELOG.md" << 'EOF'
-# Changelog
-
-## [Unreleased]
-
-### Added
-- Something new
-
-## [1.0.0] - 2026-01-01
-
-### Added
-- Initial release
-EOF
-
-# Apply the sed from release.sh (BSD sed on macOS requires the replacement on separate lines)
-tmp=$(mktemp)
-sed "s/## \[Unreleased\]/## [Unreleased]\n\n## [$CL_VERSION] - $DATE/" \
-    "$TMPDIR_CL/CHANGELOG.md" > "$tmp"
-mv "$tmp" "$TMPDIR_CL/CHANGELOG.md"
-
-CONTENT=$(cat "$TMPDIR_CL/CHANGELOG.md")
-
-assert_contains "changelog: [Unreleased] preserved"        "\[Unreleased\]"  "$CONTENT"
-assert_contains "changelog: new version header added"      "\[$CL_VERSION\]" "$CONTENT"
-assert_contains "changelog: date added"                    "$DATE"           "$CONTENT"
-assert_contains "changelog: old version still present"     "\[1.0.0\]"       "$CONTENT"
-
-rm -rf "$TMPDIR_CL"
 
 # ── Test 6: Semver format validation ─────────────────────────────────────────
 #

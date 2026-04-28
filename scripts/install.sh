@@ -49,16 +49,46 @@ detect_platform() {
 }
 
 # ============================================================================
+# Validate _8V_BASE_URL (test hook — must be https:// or http://localhost/127)
+# ============================================================================
+
+validate_base_url() {
+  URL="$1"
+  case "$URL" in
+    https://*) return 0 ;;
+    http://localhost*) return 0 ;;
+    http://127.0.0.1*) return 0 ;;
+    *)
+      echo "Error: _8V_BASE_URL must be https:// or http://localhost (got: $URL)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+
+# ============================================================================
 # Get latest version (follow GitHub /releases/latest redirect)
 # ============================================================================
 
 get_version() {
   REPO="$1"
+
+  # _8V_BASE_URL test hook: fetch version from $BASE_URL/latest/version.txt
+  if [ -n "${_8V_BASE_URL:-}" ]; then
+    VERSION_URL="${_8V_BASE_URL}/latest/version.txt"
+      VERSION=$(curl -fsSL --connect-timeout 15 --max-time 30 "$VERSION_URL" 2>/dev/null | sed 's/[[:space:]]//g')
+    if [ -z "$VERSION" ]; then
+      echo "Error: failed to fetch version from $VERSION_URL" >&2
+      exit 1
+    fi
+    echo "$VERSION"
+    return 0
+  fi
+
   RELEASES_URL="https://github.com/${REPO}/releases/latest"
 
   # GitHub redirects /releases/latest → /releases/tag/vX.Y.Z. Parse Location.
-  REDIRECT=$(curl -fsSI --connect-timeout 15 --max-time 30 "$RELEASES_URL" 2>/dev/null \
-    | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+  REDIRECT=$(curl -fsSI --connect-timeout 15 --max-time 30 "$RELEASES_URL" 2>/dev/null | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
 
   if [ -z "$REDIRECT" ]; then
     echo "Error: failed to resolve latest release from $RELEASES_URL" >&2
@@ -85,7 +115,14 @@ download_binary() {
   VERSION="$2"
   REPO="$3"
   BINARY_NAME="8v-${PLATFORM}"
-  BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
+
+  # _8V_BASE_URL test hook overrides the GitHub download base
+  if [ -n "${_8V_BASE_URL:-}" ]; then
+    BASE="${_8V_BASE_URL}/v${VERSION}"
+  else
+    BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
+  fi
+
   BINARY_URL="${BASE}/${BINARY_NAME}"
   CHECKSUMS_URL="${BASE}/checksums.txt"
 
@@ -219,6 +256,11 @@ install_binary() {
 TEMP_DIR=$(mktemp -d)
 
 REPO="${_8V_REPO:-8network/8v}"
+
+# Validate _8V_BASE_URL if set (prevents accidental plain-http production use)
+if [ -n "${_8V_BASE_URL:-}" ]; then
+  validate_base_url "$_8V_BASE_URL"
+fi
 
 PLATFORM=$(detect_platform)
 VERSION=$(get_version "$REPO")

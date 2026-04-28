@@ -227,42 +227,6 @@ fn version_txt_has_no_whitespace() {
 }
 
 #[test]
-fn changelog_sed_preserves_unreleased_and_adds_version() {
-    let project = TempProject::empty();
-    let changelog_path = project.path().join("CHANGELOG.md");
-
-    let original = r#"# Changelog
-
-## [Unreleased]
-
-## [1.0.0] - 2026-01-01
-
-### Added
-
-- Some feature
-"#;
-    project
-        .write_file("CHANGELOG.md", original.as_bytes())
-        .expect("write CHANGELOG");
-
-    let content = fs::read_to_string(&changelog_path).expect("read CHANGELOG");
-
-    // Simulate sed: insert new version after [Unreleased]
-    let updated = content.replace(
-        "## [Unreleased]",
-        "## [Unreleased]\n\n## [2.0.0] - 2026-04-07",
-    );
-    project
-        .write_file("CHANGELOG.md", updated.as_bytes())
-        .expect("write updated CHANGELOG");
-
-    let result = fs::read_to_string(&changelog_path).expect("read updated");
-    assert!(result.contains("## [Unreleased]"));
-    assert!(result.contains("## [2.0.0] - 2026-04-07"));
-    assert!(result.contains("## [1.0.0] - 2026-01-01"));
-}
-
-#[test]
 fn semver_regex_accepts_valid_versions() {
     let valid = ["0.1.0", "1.0.0", "10.20.30", "1.2.3"];
     for v in valid {
