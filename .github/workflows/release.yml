@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Build: macOS (arm64 + x64, native cross-compile) ──────────────────────
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build darwin-arm64
+        run: cargo build --release -p o8v --target aarch64-apple-darwin
+
+      - name: Build darwin-x64
+        run: cargo build --release -p o8v --target x86_64-apple-darwin
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PWD=$(openssl rand -base64 32)
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERTIFICATE_PWD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" \
+            "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+      - name: Sign macOS binaries
+        run: |
+          IDENTITY=$(security find-identity -v -p codesigning \
+            | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          codesign --sign "$IDENTITY" --options runtime --timestamp \
+            target/aarch64-apple-darwin/release/8v
+          codesign --sign "$IDENTITY" --options runtime --timestamp \
+            target/x86_64-apple-darwin/release/8v
+
+      - name: Decode Apple API key
+        env:
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/apple"
+          echo "$APPLE_API_KEY_B64" | base64 --decode \
+            > "$RUNNER_TEMP/apple/AuthKey_${APPLE_KEY_ID}.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/apple/AuthKey_${APPLE_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Notarize darwin-arm64
+        env:
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+        run: |
+          cd target/aarch64-apple-darwin/release
+          zip -q 8v-darwin-arm64.zip 8v
+          xcrun notarytool submit 8v-darwin-arm64.zip \
+            --key "$APPLE_API_KEY" \
+            --key-id "$APPLE_KEY_ID" \
+            --issuer "$APPLE_ISSUER_ID" \
+            --wait
+          rm 8v-darwin-arm64.zip
+
+      - name: Notarize darwin-x64
+        env:
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+        run: |
+          cd target/x86_64-apple-darwin/release
+          zip -q 8v-darwin-x64.zip 8v
+          xcrun notarytool submit 8v-darwin-x64.zip \
+            --key "$APPLE_API_KEY" \
+            --key-id "$APPLE_KEY_ID" \
+            --issuer "$APPLE_ISSUER_ID" \
+            --wait
+          rm 8v-darwin-x64.zip
+
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp target/aarch64-apple-darwin/release/8v dist/8v-darwin-arm64
+          cp target/x86_64-apple-darwin/release/8v  dist/8v-darwin-x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-macos
+          path: dist/
+
+  # ── Build: Linux (x64 + arm64, musl via cargo-zigbuild) ───────────────────
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install zig + cargo-zigbuild
+        run: |
+          sudo snap install zig --classic --beta || pip3 install ziglang
+          cargo install cargo-zigbuild
+
+      - name: Build linux-x64
+        run: cargo zigbuild --release -p o8v --target x86_64-unknown-linux-musl
+
+      - name: Build linux-arm64
+        run: cargo zigbuild --release -p o8v --target aarch64-unknown-linux-musl
+
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-musl/release/8v  dist/8v-linux-x64
+          cp target/aarch64-unknown-linux-musl/release/8v dist/8v-linux-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-linux
+          path: dist/
+
+  # ── Release: collect binaries, generate checksums, publish ────────────────
+  release:
+    name: Publish release
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-macos
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux
+          path: dist/
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum 8v-* > checksums.txt
+          cat checksums.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            dist/8v-darwin-arm64 \
+            dist/8v-darwin-x64 \
+            dist/8v-linux-x64 \
+            dist/8v-linux-arm64 \
+            dist/checksums.txt
