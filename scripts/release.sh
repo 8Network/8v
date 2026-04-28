@@ -76,7 +76,7 @@ fi
 success "Git working tree is clean"
 
 # Required tools
-for cmd in cargo-zigbuild wrangler codesign xcrun; do
+for cmd in cargo-zigbuild codesign xcrun; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         # sha256sum may not exist on macOS, that's ok (use shasum)
         if [ "$cmd" = "sha256sum" ]; then
@@ -88,8 +88,6 @@ for cmd in cargo-zigbuild wrangler codesign xcrun; do
             error "MISSING: $cmd"
             if [ "$cmd" = "cargo-zigbuild" ]; then
                 echo "  Install: cargo install cargo-zigbuild"
-            elif [ "$cmd" = "wrangler" ]; then
-                echo "  Install: npm install -g wrangler"
             elif [ "$cmd" = "codesign" ] || [ "$cmd" = "xcrun" ]; then
                 echo "  Install: Xcode command line tools"
             elif [ "$cmd" = "zig" ]; then
@@ -142,13 +140,6 @@ if ! security find-identity -v -p codesigning | grep -q "Developer ID Applicatio
 fi
 success "Developer ID certificate found in keychain"
 
-# Wrangler authenticated
-if ! wrangler r2 bucket list >/dev/null 2>&1; then
-    error "MISSING: wrangler not authenticated"
-    echo "  Run: wrangler login"
-    exit 1
-fi
-success "wrangler is authenticated"
 
 # ============================================================================
 # 2. BUMP VERSION (must happen BEFORE build so CARGO_PKG_VERSION bakes in)
@@ -358,7 +349,7 @@ fi
 
 step "Creating release commit and tag..."
 
-git add -A
+git add Cargo.toml Cargo.lock
 git commit -m "Release v$VERSION"
 git tag -a "v$VERSION" -m "Release v$VERSION"
 success "Commit and tag created"
@@ -387,7 +378,7 @@ fi
 
 gh release create "v$VERSION" \
     --title "v$VERSION" \
-    --notes "Release v$VERSION" \
+    --generate-notes \
     dist/8v-darwin-arm64 \
     dist/8v-darwin-x64 \
     dist/8v-linux-arm64 \
