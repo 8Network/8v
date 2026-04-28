@@ -1,62 +1,34 @@
-# Releasing 8v
+# Releasing
 
-Two paths exist: a local script (used today) and a tag-triggered CI workflow (available once secrets are added).
+The release pipeline is one workflow: `.github/workflows/release.yml`. A tag push triggers it.
 
-## Path 1: Local script
+## How to release
 
-```sh
-./scripts/release.sh X.Y.Z          # full release
-./scripts/release.sh X.Y.Z --dry-run # verify without committing
-```
+1. Bump the version in `Cargo.toml` (`[workspace.package] version = "X.Y.Z"`).
+2. Commit: `git commit -am "Release vX.Y.Z"`
+3. Tag: `git tag vX.Y.Z`
+4. Push: `git push origin main vX.Y.Z`
 
-The script: bumps `[workspace.package] version` in `Cargo.toml`, builds all 4 platform binaries, signs and notarizes macOS binaries, generates `checksums.txt`, commits and tags, pushes to `origin`, and creates the GitHub release with `--generate-notes`.
+The workflow builds the four binaries (darwin-arm64, darwin-x64, linux-arm64, linux-x64), signs and notarizes the macOS ones, and creates a GitHub release with auto-generated notes (`gh release create --generate-notes`).
 
-**Local prerequisites** (must be present on the machine running the script):
+## Versioning
 
-| Tool | Install |
-|------|---------|
-| `cargo-zigbuild` | `cargo install cargo-zigbuild` |
-| `zig` | `brew install zig` |
-| `codesign`, `xcrun` | Xcode command-line tools |
-| `gh` | `brew install gh` |
-| Developer ID cert | imported into keychain |
-| `~/.8v/secrets/apple/notarize.env` | `APPLE_API_KEY=<path-to-.p8>`, `APPLE_KEY_ID=<id>`, `APPLE_ISSUER_ID=<uuid>` |
+Semver. Patch for bug fixes. Minor for non-breaking features. Major for breaking changes.
 
-## Path 2: Tag-triggered CI (.github/workflows/release.yml)
+## Required GitHub Secrets
 
-Push a tag after the version-bump commit is on `main`:
+The workflow needs these secrets in repo settings → Secrets → Actions. They're a one-time setup:
 
-```sh
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin vX.Y.Z
-```
-
-CI builds all 4 platforms, signs and notarizes macOS, generates checksums, and publishes the GitHub release with `--generate-notes`.
-
-**Required GitHub Secrets** (Settings → Secrets and variables → Actions → New repository secret):
-
-| Secret | Contents |
-|--------|----------|
-| `MACOS_CERTIFICATE` | Base64-encoded Developer ID `.p12`: `base64 -i cert.p12` |
+| Secret | What it is |
+|---|---|
+| `MACOS_CERTIFICATE` | Base64 of your Developer ID Application `.p12` |
 | `MACOS_CERTIFICATE_PWD` | Password for the `.p12` |
-| `APPLE_API_KEY` | Base64-encoded App Store Connect `.p8`: `base64 -i AuthKey_*.p8` |
-| `APPLE_KEY_ID` | 10-character key ID (e.g. `ABCDE12345`) |
-| `APPLE_ISSUER_ID` | Issuer UUID from App Store Connect |
+| `APPLE_API_KEY` | Base64 of the `.p8` notarization API key |
+| `APPLE_KEY_ID` | The 10-char API key ID (from App Store Connect) |
+| `APPLE_ISSUER_ID` | The issuer UUID (from App Store Connect) |
 
-See [GitHub docs on encrypted secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions).
-
-The workflow does **not** bump versions — that step always runs locally via `scripts/release.sh` or `scripts/bump-version.sh` before the tag is pushed.
-
-## Versioning policy
-
-Semver: `MAJOR.MINOR.PATCH`
-
-- `PATCH` — bug fixes, security updates, no API changes
-- `MINOR` — new features, backward-compatible
-- `MAJOR` — breaking changes
-
-No `v`-prefix in `Cargo.toml`; the tag carries the `v` (e.g. `v0.1.20`).
+Encode the `.p12` and `.p8` with `base64 -i path/to/file -o /dev/stdout | pbcopy`.
 
 ## Release notes
 
-Notes are auto-generated from PR titles since the previous tag (`--generate-notes`). Write descriptive PR titles — they become the changelog. Format: `type: short description` (e.g. `fix: race in append`, `feat: CRLF preservation`).
+Auto-generated from PR titles since the previous tag. Use clear PR titles (`fix: …`, `feat: …`, `chore: …`) so the categorization is useful.
