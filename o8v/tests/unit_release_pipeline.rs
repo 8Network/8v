@@ -23,26 +23,13 @@ fn validate_base_url(url: &str) -> bool {
         || url.starts_with("http://127.0.0.1")
 }
 
-/// Verify the version-bump logic lives in bump-version.sh and is referenced
-/// from release.sh. release.sh delegates — bump-version.sh is the single
-/// source of truth so CI-visible drift is impossible.
-fn bump_version_script() -> &'static str {
-    include_str!("../../scripts/bump-version.sh")
-}
-
-fn release_sh_delegates_to_bump_version() -> bool {
-    let release_sh = include_str!("../../scripts/release.sh");
-    release_sh.contains("bump-version.sh")
-}
-
-/// Extract binary names from release.sh build section.
-fn extract_binary_names_from_release_sh() -> Vec<String> {
-    let release_sh = include_str!("../../scripts/release.sh");
+/// Extract binary names from the release workflow file.
+fn extract_binary_names_from_workflow() -> Vec<String> {
+    let workflow = include_str!("../../.github/workflows/release.yml");
     let mut binaries = Vec::new();
-
-    for line in release_sh.lines() {
-        if line.contains("cp target") && line.contains("dist/8v-") {
-            if let Some(start) = line.find("dist/") {
+    for line in workflow.lines() {
+        if line.trim_start().starts_with("cp ") && line.contains("dist/8v-") {
+            if let Some(start) = line.find("dist/8v-") {
                 let rest = &line[start + 5..];
                 let binary = rest.split_whitespace().next().unwrap_or("");
                 if !binary.is_empty() {
@@ -69,24 +56,31 @@ fn workspace_cargo_toml_has_version_field() {
     );
     assert!(
         content.contains("version = \""),
-        "Workspace Cargo.toml missing version field — release.sh sed would silently skip it"
+        "Workspace Cargo.toml missing version field — bump the version in [workspace.package]"
     );
 }
 
 #[test]
-fn release_sh_version_bump_targets_workspace_root() {
+fn workflow_targets_workspace_package_version() {
+    let root = workspace_root();
+    let cargo_toml = root.join("Cargo.toml");
+    let content = fs::read_to_string(&cargo_toml).expect("read workspace Cargo.toml");
+    // The workflow releases whatever version is in [workspace.package].
+    // Verify the section and version key are present so a tag push reflects
+    // the correct version.
     assert!(
-        release_sh_delegates_to_bump_version(),
-        "release.sh must delegate to scripts/bump-version.sh for version bumping"
+        content.contains("[workspace.package]"),
+        "[workspace.package] section missing — workflow release would use wrong version"
     );
-    let bump = bump_version_script();
+    let in_section = content
+        .lines()
+        .skip_while(|l| !l.trim().starts_with("[workspace.package]"))
+        .skip(1)
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .any(|l| l.trim_start().starts_with("version = \""));
     assert!(
-        bump.contains("[workspace.package]"),
-        "bump-version.sh does not target the [workspace.package] section"
-    );
-    assert!(
-        bump.contains("^version = "),
-        "bump-version.sh does not anchor on ^version = (may match dependency versions)"
+        in_section,
+        "version field not found under [workspace.package] — CI release would be unversioned"
     );
 }
 
@@ -187,14 +181,17 @@ fn checksum_format_parseable() {
 
 #[test]
 fn binary_names_match_install_platforms() {
-    let binaries = extract_binary_names_from_release_sh();
-    assert!(!binaries.is_empty(), "Failed to extract binary names");
+    let binaries = extract_binary_names_from_workflow();
+    assert!(
+        !binaries.is_empty(),
+        "Failed to extract binary names from workflow"
+    );
 
     let expected = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
     for expected_name in expected {
         assert!(
             binaries.iter().any(|b| b.contains(expected_name)),
-            "Binary name {} not found in release.sh",
+            "Binary name {} not found in release workflow",
             expected_name
         );
     }
@@ -224,42 +221,6 @@ fn version_txt_has_no_whitespace() {
         !trimmed.starts_with(' '),
         "Version should not have leading space"
     );
-}
-
-#[test]
-fn changelog_sed_preserves_unreleased_and_adds_version() {
-    let project = TempProject::empty();
-    let changelog_path = project.path().join("CHANGELOG.md");
-
-    let original = r#"# Changelog
-
-## [Unreleased]
-
-## [1.0.0] - 2026-01-01
-
-### Added
-
-- Some feature
-"#;
-    project
-        .write_file("CHANGELOG.md", original.as_bytes())
-        .expect("write CHANGELOG");
-
-    let content = fs::read_to_string(&changelog_path).expect("read CHANGELOG");
-
-    // Simulate sed: insert new version after [Unreleased]
-    let updated = content.replace(
-        "## [Unreleased]",
-        "## [Unreleased]\n\n## [2.0.0] - 2026-04-07",
-    );
-    project
-        .write_file("CHANGELOG.md", updated.as_bytes())
-        .expect("write updated CHANGELOG");
-
-    let result = fs::read_to_string(&changelog_path).expect("read updated");
-    assert!(result.contains("## [Unreleased]"));
-    assert!(result.contains("## [2.0.0] - 2026-04-07"));
-    assert!(result.contains("## [1.0.0] - 2026-01-01"));
 }
 
 #[test]

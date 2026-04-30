@@ -8,11 +8,11 @@ dist/
 **/node_modules/
 **/.ruff_cache/
 **/.mypy_cache/
+o8v/tests/fixtures/build-go/buildtest
 
 # Local state
 .8v/
 .claude/
-.wrangler/
 
 # Logs and crashes
 *.log
